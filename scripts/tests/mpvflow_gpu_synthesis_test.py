@@ -149,8 +149,8 @@ def main() -> None:
         # source blend. The occlusion oracle must reject this (old/new red
         # ghosts), rather than merely checking that output is nonuniform.
         source_only = shader_source
-        soft_output = "outc=FLOW_RESULT(mix(fallback,visibilityWarped,softWarpTrust),boundaryConflict?12:0,confidence,boundaryConflict?captureReason:0);"
-        source_output = "outc=FLOW_RESULT(mix(texelFetch(frame0,p,0),texelFetch(frame1,p,0),pc.timestep),0,confidence,0);"
+        soft_output = "outc=mix(fallback,visibilityWarped,softWarpTrust);"
+        source_output = "outc=mix(texelFetch(frame0,p,0),texelFetch(frame1,p,0),pc.timestep);"
         if source_only.count(soft_output) != 1 or source_only.count("outc=warped;") != 1:
             raise SystemExit("Source-only occlusion mutant anchors are missing or duplicated")
         source_only = source_only.replace(soft_output, source_output, 1).replace(
@@ -221,7 +221,7 @@ def main() -> None:
         def field_shader(text: str) -> str:
             # Execute the ACTUAL helper, not a Python reconstruction. Changing
             # confidence must not move coordinates or expose the coarse lattice.
-            text = text.replace("void main(){ FLOW_BEGIN", "void unusedSynthesisMain(){ FLOW_BEGIN", 1)
+            text = text.replace("void main(){", "void unusedSynthesisMain(){", 1)
             return text + "\nvoid main(){ ivec2 p=ivec2(gl_GlobalInvocationID.xy),sz=imageSize(outTex); if(any(greaterThanEqual(p,sz)))return; vec2 q=clamp((vec2(p)+0.5)*vec2(pc.cfg.zw)/vec2(sz)-0.5,vec2(0.0),vec2(pc.cfg.zw-1)); float v=flowAtBilinear(q,0).x/8.0; imageStore(outTex,p,vec4(v,v,v,1.0)); }\n"
 
         run(large, compile_variant(field_shader(shader_source), "continuous_field"), ("0", "0", "0", "field"), "continuous field across asymmetric grid confidence")

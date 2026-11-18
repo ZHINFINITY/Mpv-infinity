@@ -276,45 +276,6 @@ class PlayerActivity :
       nativeEngineBuilt.value = true
     }
   }
-  private val flowDiagnosticsCaptureManager by lazy { FlowDiagnosticsCaptureManager(this) }
-  internal val flowDiagnosticsCaptureState get() = flowDiagnosticsCaptureManager.state
-
-  internal fun startFlowDiagnosticsCapture(pairedOutput: Boolean = false, singleOutput: Boolean = false): String? {
-    if (!BuildConfig.DEBUG) return "debug_build_required"
-    if (singleOutput && !BuildConfig.MPV_HAS_FONGMI_DIAGNOSTICS) return "fongmi_diagnostics_build_required"
-    return when (activeEngineMode) {
-      PlaybackEngineMode.AUTO -> "active_engine_unresolved"
-      PlaybackEngineMode.MPV ->
-        flowDiagnosticsCaptureManager.start(
-          engine = "mpv",
-          pairedOutput = pairedOutput,
-          singleOutput = singleOutput,
-          startRequest = { sessionId, baseDirectory ->
-            binding.player.startFlowDiagnosticCapture(
-              sessionId, baseDirectory.absolutePath, pairedOutput, singleOutput)
-          },
-          stopRequest = { sessionId ->
-            binding.player.stopFlowDiagnosticCapture(sessionId)
-          },
-          timingSnapshot = binding.player::flowDiagnosticTimingSnapshot,
-        )
-      PlaybackEngineMode.NATIVE -> if (singleOutput) "single_output_requires_fongmi_mpv" else
-        flowDiagnosticsCaptureManager.start(
-          engine = "native-media3",
-          pairedOutput = pairedOutput,
-          startRequest = { sessionId, baseDirectory ->
-            nativeEngineOrNull()?.startFlowDiagnosticCapture(
-              sessionId, baseDirectory.absolutePath, pairedOutput,
-            ) ?: "native_engine_unavailable"
-          },
-          stopRequest = { sessionId -> nativeEngineOrNull()?.stopFlowDiagnosticCapture(sessionId) },
-          timingSnapshot = { nativeEngineOrNull()?.flowDiagnosticTimingSnapshot() },
-        )
-    }
-  }
-
-  internal fun stopFlowDiagnosticsCapture(): String? = flowDiagnosticsCaptureManager.stop()
-
   private var nativeEngineConfigured = false
   /** Observable twin of [nativeEngineConfigured] for collectors that start before a video needs it. */
   private val nativeEngineBuilt = MutableStateFlow(false)
@@ -667,22 +628,6 @@ class PlayerActivity :
 
   override fun onVideoAspectChanged() {
     noteUserAspectChange()
-    if (!BuildConfig.DEBUG || isNativeEngineActive()) return
-    val surface = binding.player
-    val valid = runCatching { surface.holder.surface.isValid }.getOrDefault(false)
-    Log.d(
-      TAG,
-      "MPV_ASPECT_DIAGNOSTIC event=aspect_change aspect=${viewModel.videoAspect.value} " +
-        "override=${PlaybackSession.getPropertyDouble("video-aspect-override") ?: "unavailable"} " +
-        "panscan=${PlaybackSession.getPropertyDouble("panscan") ?: "unavailable"} " +
-        "interpolation=${PlaybackSession.getPropertyString("interpolation") ?: "unavailable"} " +
-        "videoSync=${PlaybackSession.getPropertyString("video-sync") ?: "unavailable"} " +
-        "vo=${PlaybackSession.getPropertyString("vo") ?: "unavailable"} " +
-        "gpuApi=${PlaybackSession.getPropertyString("gpu-api") ?: "unavailable"} " +
-        "gpuContext=${PlaybackSession.getPropertyString("gpu-context") ?: "unavailable"} " +
-        "surface=${surface.width}x${surface.height} valid=$valid " +
-        "attached=${PlaybackSession.state.value.surfaceAttached} ambient=$composedVideoAmbientPresentationActive",
-    )
   }
 
   private var interpolationControlRequestGeneration = 0L

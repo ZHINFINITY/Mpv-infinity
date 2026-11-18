@@ -30,7 +30,7 @@ jobs:
           fetch-depth: 0
       - name: Test arm64 workflow cache and validation invariants
         run: python3 scripts/tests/mpvflow_arm64_workflow_test.py
-      - name: Test experimental region3 attenuation invariants
+      - name: Test Region3 transition invariants
         run: python3 scripts/tests/region3_transition_test.py
       - name: Test runtime AAR overlay accepts new shared libraries
         run: python3 scripts/tests/package_mpv_runtime_aar_test.py

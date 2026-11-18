@@ -177,12 +177,6 @@ if(MPVFLOW_ENABLE_VULKAN_BACKEND)
         pl_vulkan_default_params pl_vulkan_create pl_vulkan_destroy
         pl_vulkan_wrap pl_vulkan_hold_ex pl_vulkan_release_ex
         "pl_log_create_${MPVFLOW_DETECTED_PLACEBO_API_VER}")
-    if(MPVFLOW_DETECTED_PLACEBO_API_VER MATCHES "^(387|391)$")
-        # API version alone does not identify the FongMi fork's extended struct ABI.
-        list(APPEND MPVFLOW_REQUIRED_PLACEBO_SYMBOLS
-            pl_vulkan_swapchain_set_diagnostics
-            pl_vulkan_swapchain_get_diagnostics)
-    endif()
     foreach(MPVFLOW_REQUIRED_PLACEBO_SYMBOL IN LISTS MPVFLOW_REQUIRED_PLACEBO_SYMBOLS)
         set(MPVFLOW_SYMBOL_EXPORTED FALSE)
         foreach(MPVFLOW_EXPORT_LINE IN LISTS MPVFLOW_PLACEBO_EXPORT_LINES)
@@ -219,7 +213,6 @@ if(MPVFLOW_ENABLE_VULKAN_BACKEND)
     add_library(media3flow_vulkan SHARED
         media3flow_vulkan_jni.cpp
         mpvflow/mpvflow_gpu.c
-        mpvflow/mpvflow_capture_io.c
         mpvflow/mpvflow_vulkan_qcom.c
         mpvflow/mpvflow_vulkan_optical.c
         mpvflow/mpvflow_opencl.c
@@ -230,8 +223,6 @@ if(MPVFLOW_ENABLE_VULKAN_BACKEND)
         C_EXTENSIONS ON
         CXX_STANDARD 17
         CXX_STANDARD_REQUIRED ON)
-    target_compile_definitions(media3flow_vulkan PRIVATE
-        $<$<CONFIG:Debug>:MPVFLOW_DEBUG_CAPTURE=1>)
     if(MPVFLOW_HAS_RENDERER_HOOK)
         target_compile_definitions(media3flow_vulkan PRIVATE MPVFLOW_HAVE_RENDERER_HOOK=1)
     endif()

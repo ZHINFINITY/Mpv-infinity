@@ -57,8 +57,6 @@ def test_manifests_match_and_cover_pins() -> None:
         "include-api-387",
         "pl_desc=40",
         "pl_shader_desc=72",
-        "pl_vulkan_swapchain_set_diagnostics",
-        "pl_vulkan_swapchain_get_diagnostics",
         "FongMi/mpv",
         "FongMi/FFmpeg",
         "f2c5162b7c4b3e8835de270ff78cecc524decad1",

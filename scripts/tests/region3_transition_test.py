@@ -39,7 +39,7 @@ class Region3TransitionTest(unittest.TestCase):
 
     def test_safety_and_soft_blend_are_preserved(self):
         for fragment in ('return cycleQuality*matchQuality*uniquenessQuality*valid;',
-                         'else if(boundaryConflict) outc=FLOW_RESULT(mix(texelFetch(frame0,p,0),texelFetch(frame1,p,0),pc.timestep),12,confidence,captureReason);',
+                         'else if(boundaryConflict) outc=mix(texelFetch(frame0,p,0),texelFetch(frame1,p,0),pc.timestep);',
                          'float softWarpTrust=smoothstep(0.0,0.60,confidence)*boundaryTrust;',
                          'float confidence=softBlend?max(confidence0,confidence1):min(confidence0,confidence1);',
                          'if(confidence<=0.0||(softBlend&&confidence<=0.15))',

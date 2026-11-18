@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Guard native FongMi MPV integration and the restored Native Media3 diagnostics path."""
+"""Guard native FongMi MPV integration and retained production output/timing invariants."""
 from __future__ import annotations
 
 import pathlib
@@ -77,30 +77,4 @@ require(LOG_REPOSITORY, "isNativeMedia3FlowDiagnostic", "debug logs must retain 
 require(CRASH_ACTIVITY, '"media3_flow_route"', "crash exports must include Media3 route records")
 require(MEDIA3_SINK, "outputMetric=successful_eglSwapBuffers_return_not_scanout", "Media3 cadence must not be presented as confirmed scanout FPS")
 require(PLAYER_CONTROLS, "NativeStatsDisplay.interpolationFps", "the player must keep displaying interpolated output FPS")
-for removed_capture_ui in (
-    "Start marked capture",
-    "Start paired Soft Blend comparison",
-):
-    assert removed_capture_ui not in MORE_SHEET, f"the More sheet must not expose {removed_capture_ui}"
-require(MORE_SHEET, "One-shot FongMi diagnostic", "the FongMi one-shot action must be explicitly labeled")
-require(MORE_SHEET, "collectFlowAsState()", "capture state must use Compose's StateFlow collector")
-assert re.search(
-    r"if\s*\(\s*BuildConfig\.DEBUG\s*&&\s*BuildConfig\.MPV_HAS_FONGMI_DIAGNOSTICS"
-    r"\s*&&\s*activeEngine\s*==\s*PlaybackEngineMode\.MPV\s*&&\s*activity\s*!=\s*null\s*\)",
-    MORE_SHEET,
-    re.S,
-), "the capture control must be debug-only, diagnostic-build-only, and MPV-only"
-require(MORE_SHEET, "activity.startFlowDiagnosticsCapture(singleOutput = true)", "the UI must request the bounded one-output mode")
-require(MORE_SHEET, "activity.stopFlowDiagnosticsCapture()", "the user must be able to stop an armed capture")
-require(MORE_SHEET, "nothing is uploaded", "the UI must state that captures stay local")
-require(MORE_SHEET, "Saved: $location", "the UI must show where the local diagnostic ZIP was exported")
-assert MORE_SHEET.count("startFlowDiagnosticsCapture(") == 1
-assert re.search(
-    r"fongmiDiagnosticCaptureEnabled\s*=\s*BuildConfig\.DEBUG\s*&&"
-    r"\s*BuildConfig\.MPV_HAS_FONGMI_DIAGNOSTICS\s*&&\s*mpvFlowFrameInterpolationActive",
-    MPV_VIEW,
-), "the capture option must be diagnostic-build-only and follow active FongMi interpolation"
-require(MPV_VIEW, 'PlaybackSession.setIntegrationOptionString("fongmi-diagnostic-control-file", optionValue)', "the native VO must receive the dedicated FongMi control file")
-capture_config = MPV_VIEW[MPV_VIEW.index("private fun configureMpvFlowCaptureControl"):MPV_VIEW.index("/** Arms the MPV VO")]
-assert "!BuildConfig.MPV_HAS_MPVFLOW" not in capture_config, "FongMi capture must not require the separate MPVFlow renderer"
-print("Native FongMi MPV and pre-FongMi Native Media3 diagnostic regression tests passed")
+print("Native FongMi MPV and Native Media3 production output/timing invariants passed")

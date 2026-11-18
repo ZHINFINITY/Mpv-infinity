@@ -7,18 +7,14 @@ index bd3d1aa..75ffbb1 100644
 +#include <limits.h>
 +#include <stdio.h>
 +#include <string.h>
-+#include <libplacebo/vulkan.h>
 @@ -52,0 +58,4 @@
 +#include "mpvflow_gpu.h"
-+#include "mpvflow_capture_io.h"
 +#include "mpvflow_rate_limit.h"
 +#include "mpvflow_synthesis_scale.h"
 @@ -157,0 +167,79 @@ struct priv {
 +    // MPVFLOW_GPU_INTEGRATION
 +    MPVFlowGPUContext *flow_gpu;
 +    MPVFlowGPUPair *flow_pair;
-+    bool flow_swapchain_diagnostics_enabled;
-+    bool flow_wsi_created_logged;
 +    uint64_t flow_pair_ids[2];
 +    pl_fmt flow_input_fmt;
 +    pl_fmt flow_rgba16f_fmt;
@@ -64,12 +60,6 @@ index bd3d1aa..75ffbb1 100644
 +    uint64_t flow_cadence_temporal_pair;
 +    uint64_t flow_cadence_flip_wait_total_ns;
 +    uint64_t flow_cadence_flip_wait_max_ns;
-+    uint64_t flow_cadence_swap_buffers_total_ns;
-+    uint64_t flow_cadence_swap_buffers_max_ns;
-+    uint64_t flow_cadence_swap_buffers_samples;
-+    uint64_t flow_cadence_acquire_call_total_ns;
-+    uint64_t flow_cadence_acquire_call_max_ns;
-+    uint64_t flow_cadence_acquire_call_samples;
 +    int64_t flow_cadence_last_render_ns;
 +    uint64_t flow_cadence_render_attempts;
 +    uint64_t flow_cadence_render_pair_callbacks;
@@ -87,11 +77,6 @@ index bd3d1aa..75ffbb1 100644
 +    uint64_t flow_cadence_pair_analysis_attempts;
 +    uint64_t flow_cadence_pair_analysis_failures;
 +    uint64_t flow_cadence_pair_cache_reuses;
-+    char flow_capture_base_dir[PATH_MAX];
-+    char flow_capture_session_id[81];
-+    bool flow_capture_pending;
-+    bool flow_capture_paired;
-+    int64_t flow_capture_poll_ns;
 +
 @@ -184,0 +273,1 @@ static void update_lut(struct priv *p, struct user_lut *lut);
 +static void flow_update_context(struct vo *vo);
@@ -104,7 +89,6 @@ index bd3d1aa..75ffbb1 100644
 +    int mpvflow_target_fps;
 +    int mpvflow_quality;
 +    int mpvflow_compute_api;
-+    char *mpvflow_diagnostic_control_file;
 @@ -213,0 +312,9 @@ const struct m_sub_options gl_next_conf = {
 +        {"mpvflow", OPT_BOOL(mpvflow)},
 +        {"mpvflow-visibility-resolver", OPT_BOOL(mpvflow_visibility_resolver)},
@@ -114,7 +98,6 @@ index bd3d1aa..75ffbb1 100644
 +        {"mpvflow-target-fps", OPT_INT(mpvflow_target_fps), M_RANGE(1, 240)},
 +        {"mpvflow-quality", OPT_INT(mpvflow_quality), M_RANGE(0, 100)},
 +        {"mpvflow-compute-api", OPT_INT(mpvflow_compute_api), M_RANGE(0, 2)},
-+        {"mpvflow-diagnostic-control-file", OPT_STRING(mpvflow_diagnostic_control_file)},
 @@ -239,0 +347,8 @@ const struct m_sub_options gl_next_conf = {
 +        .mpvflow_max_dimension = 640,
 +        .mpvflow_synthesis_max_dimension = 1920,
@@ -123,7 +106,6 @@ index bd3d1aa..75ffbb1 100644
 +        .mpvflow_compute_api = MPVFLOW_GPU_COMPUTE_AUTO,
 +        .mpvflow_visibility_resolver = false,
 +        .mpvflow_soft_blend = false,
-+        .mpvflow_diagnostic_control_file = NULL,
 @@ -560,0 +676,11 @@ struct frame_priv {
 +    uint64_t frame_id;
 +    pl_tex flow_source;
@@ -212,12 +194,6 @@ index bd3d1aa..75ffbb1 100644
 +        p->flow_cadence_temporal_pair = 0;
 +        p->flow_cadence_flip_wait_total_ns = 0;
 +        p->flow_cadence_flip_wait_max_ns = 0;
-+        p->flow_cadence_swap_buffers_total_ns = 0;
-+        p->flow_cadence_swap_buffers_max_ns = 0;
-+        p->flow_cadence_swap_buffers_samples = 0;
-+        p->flow_cadence_acquire_call_total_ns = 0;
-+        p->flow_cadence_acquire_call_max_ns = 0;
-+        p->flow_cadence_acquire_call_samples = 0;
 +        p->flow_cadence_last_render_ns = 0;
 +        p->flow_cadence_render_attempts = 0;
 +        p->flow_cadence_render_pair_callbacks = 0;
@@ -262,12 +238,6 @@ index bd3d1aa..75ffbb1 100644
 +        p->flow_preacquire_logged = false;
 +        p->flow_bypass_logged_mask = 0;
 +        p->flow_cadence_window_start_ns = 0;
-+        p->flow_cadence_acquire_call_total_ns = 0;
-+        p->flow_cadence_acquire_call_max_ns = 0;
-+        p->flow_cadence_acquire_call_samples = 0;
-+        p->flow_cadence_swap_buffers_total_ns = 0;
-+        p->flow_cadence_swap_buffers_max_ns = 0;
-+        p->flow_cadence_swap_buffers_samples = 0;
 +        p->flow_cadence_last_render_ns = 0;
 +        p->flow_cadence_render_attempts = 0;
 +        p->flow_cadence_render_pair_callbacks = 0;
@@ -710,157 +680,6 @@ index bd3d1aa..75ffbb1 100644
 +    struct frame_priv *fp = mpi->priv;
 +    flow_release_frame(fp->vo, fp, true);
 @@ -1341,0 +2037,654 @@ static void update_hook_opts_dynamic(struct priv *p, const struct pl_hook *hook,
-+static void flow_capture_terminal(struct priv *p, const char *base_dir,
-+                                  const char *session_id, const char *backend,
-+                                  const char *reason)
-+{
-+    if (!p || !base_dir || !session_id || !*session_id)
-+        return;
-+    char settings[768];
-+    snprintf(settings, sizeof(settings),
-+             "{\"target_fps\":%d,\"quality\":%d,\"analysis_cap_px\":%d,"
-+             "\"synthesis_cap_px\":%d,\"compute_api_requested\":%d,"
-+             "\"compute_api_resolved\":\"%s\",\"color_primaries\":\"unknown\","
-+             "\"color_transfer\":\"unknown\"}",
-+             p->next_opts->mpvflow_target_fps, p->next_opts->mpvflow_quality,
-+             p->flow_max_dimension, p->flow_synthesis_max_dimension,
-+             p->next_opts->mpvflow_compute_api, backend ? backend : "unknown");
-+    (void) mpvflow_capture_io_write_terminal_manifest(
-+        base_dir, session_id, "mpv", backend ? backend : "unknown",
-+        settings, p->flow_capture_paired,
-+        reason ? reason : "capture_stopped_before_synthesis");
-+}
-+
-+static void flow_capture_poll_control(struct vo *vo)
-+{
-+    struct priv *p = vo->priv;
-+    const char *path = p->next_opts->mpvflow_diagnostic_control_file;
-+    if (!path || !path[0])
-+        return;
-+    const int64_t now = mp_time_ns();
-+    if (now <= 0 || now - p->flow_capture_poll_ns < 100000000LL)
-+        return;
-+    p->flow_capture_poll_ns = now;
-+    FILE *file = fopen(path, "r");
-+    if (!file)
-+        return;
-+    char line[PATH_MAX + 128] = {0};
-+    const bool read_ok = fgets(line, sizeof(line), file) != NULL;
-+    fclose(file);
-+    if (!read_ok)
-+        return;
-+
-+    char id[81] = {0};
-+    char base_dir[PATH_MAX] = {0};
-+    bool paired_output = false;
-+    int start_fields = sscanf(line, "START_PAIRED\t%80[A-Za-z0-9_-]\t%4095[^\n]", id, base_dir);
-+    if (start_fields == 2)
-+        paired_output = true;
-+    else
-+        start_fields = sscanf(line, "START\t%80[A-Za-z0-9_-]\t%4095[^\n]", id, base_dir);
-+    if (start_fields == 2 &&
-+        base_dir[0] == '/') {
-+        if (!strcmp(id, p->flow_capture_session_id))
-+            return;
-+        if (p->flow_gpu && mpvflow_gpu_capture_active(p->flow_gpu))
-+            mpvflow_gpu_capture_stop(p->flow_gpu);
-+        else if (p->flow_capture_pending)
-+            flow_capture_terminal(p, p->flow_capture_base_dir,
-+                p->flow_capture_session_id, "unknown", "capture_replaced_before_synthesis");
-+        snprintf(p->flow_capture_session_id, sizeof(p->flow_capture_session_id), "%s", id);
-+        snprintf(p->flow_capture_base_dir, sizeof(p->flow_capture_base_dir), "%s", base_dir);
-+        p->flow_capture_paired = paired_output;
-+        p->flow_capture_pending = true;
-+        if (!p->flow_gpu) {
-+            flow_capture_terminal(p, p->flow_capture_base_dir,
-+                p->flow_capture_session_id, "unavailable", "mpvflow_context_unavailable");
-+            p->flow_capture_pending = false;
-+            MP_WARN(vo, "MPVFLOW_DIAGNOSTIC component=capture event=start state=failed reason=mpvflow_context_unavailable\n");
-+        }
-+        return;
-+    }
-+    if (sscanf(line, "STOP\t%80[A-Za-z0-9_-]", id) == 1 &&
-+        !strcmp(id, p->flow_capture_session_id)) {
-+        if (p->flow_gpu && mpvflow_gpu_capture_active(p->flow_gpu))
-+            mpvflow_gpu_capture_stop(p->flow_gpu);
-+        else if (p->flow_capture_pending)
-+            flow_capture_terminal(p, p->flow_capture_base_dir,
-+                p->flow_capture_session_id,
-+                p->flow_gpu ? mpvflow_gpu_get_compute_api_name(p->flow_gpu) : "unknown",
-+                "capture_stopped_before_synthesis");
-+        p->flow_capture_pending = false;
-+        p->flow_capture_paired = false;
-+        p->flow_capture_session_id[0] = '\0';
-+    }
-+}
-+
-+static bool flow_capture_start_for_pair(struct vo *vo,
-+                                        const struct pl_frame *image0,
-+                                        const struct pl_frame *image1,
-+                                        const struct frame_priv *fp0,
-+                                        const struct frame_priv *fp1)
-+{
-+    struct priv *p = vo->priv;
-+    if (!p->flow_capture_pending || !p->flow_gpu || !image0 || !image1 || !fp0 || !fp1)
-+        return false;
-+    const struct pl_color_space *c0 = &image0->color;
-+    const struct pl_color_space *c1 = &image1->color;
-+    const bool known_sdr = c0->primaries != PL_COLOR_PRIM_UNKNOWN &&
-+        c1->primaries != PL_COLOR_PRIM_UNKNOWN &&
-+        c0->transfer != PL_COLOR_TRC_UNKNOWN && c1->transfer != PL_COLOR_TRC_UNKNOWN &&
-+        !pl_color_transfer_is_hdr(c0->transfer) && !pl_color_transfer_is_hdr(c1->transfer) &&
-+        !pl_color_space_is_hdr(c0) && !pl_color_space_is_hdr(c1) &&
-+        !fp0->flow_linear_hdr_source && !fp1->flow_linear_hdr_source;
-+    const char *backend = mpvflow_gpu_get_compute_api_name(p->flow_gpu);
-+    char settings[1024];
-+    if (p->flow_capture_paired) {
-+        snprintf(settings, sizeof(settings),
-+                 "{\"target_fps\":%d,\"quality\":%d,\"analysis_cap_px\":%d,"
-+                 "\"synthesis_cap_px\":%d,\"compute_api_requested\":%d,"
-+                 "\"compute_api_resolved\":\"%s\",\"visibility_resolver\":false,"
-+                 "\"preserve_motion_blend_on_conflict\":%s,"
-+                 "\"comparison_visibility_resolver_override\":true,"
-+                 "\"source_dimensions\":[%d,%d],\"processing_dimensions\":[%d,%d],"
-+                 "\"color_primaries\":\"%s\",\"color_transfer\":\"%s\"}",
-+                 p->next_opts->mpvflow_target_fps, p->next_opts->mpvflow_quality,
-+                 p->flow_max_dimension, p->flow_synthesis_max_dimension,
-+                 p->next_opts->mpvflow_compute_api, backend ? backend : "unknown",
-+                 p->next_opts->mpvflow_soft_blend ? "true" : "false",
-+                 fp0->flow_source_w, fp0->flow_source_h, fp0->flow_w, fp0->flow_h,
-+                 pl_color_primaries_name(c0->primaries), pl_color_transfer_name(c0->transfer));
-+    } else {
-+        snprintf(settings, sizeof(settings),
-+             "{\"target_fps\":%d,\"quality\":%d,\"analysis_cap_px\":%d,"
-+             "\"synthesis_cap_px\":%d,\"compute_api_requested\":%d,"
-+             "\"compute_api_resolved\":\"%s\",\"visibility_resolver\":%s,"
-+             "\"soft_blend\":%s,\"preserve_motion_blend_on_conflict\":%s,"
-+             "\"source_dimensions\":[%d,%d],\"processing_dimensions\":[%d,%d],"
-+             "\"color_primaries\":\"%s\",\"color_transfer\":\"%s\"}",
-+             p->next_opts->mpvflow_target_fps, p->next_opts->mpvflow_quality,
-+             p->flow_max_dimension, p->flow_synthesis_max_dimension,
-+             p->next_opts->mpvflow_compute_api, backend ? backend : "unknown",
-+             p->next_opts->mpvflow_visibility_resolver ? "true" : "false",
-+             p->next_opts->mpvflow_soft_blend ? "true" : "false",
-+             p->next_opts->mpvflow_soft_blend ? "true" : "false",
-+             fp0->flow_source_w, fp0->flow_source_h, fp0->flow_w, fp0->flow_h,
-+             pl_color_primaries_name(c0->primaries), pl_color_transfer_name(c0->transfer));
-+    }
-+    if (!known_sdr) {
-+        flow_capture_terminal(p, p->flow_capture_base_dir,
-+            p->flow_capture_session_id, backend,
-+            "hdr_dolby_vision_or_unknown_color_refused");
-+        p->flow_capture_pending = false;
-+        MP_WARN(vo, "MPVFLOW_DIAGNOSTIC component=capture event=start state=refused reason=hdr_dolby_vision_or_unknown_color\n");
-+        return false;
-+    }
-+    const enum MPVFlowGPUResult result = mpvflow_gpu_capture_start(
-+        p->flow_gpu, p->flow_capture_base_dir, p->flow_capture_session_id,
-+        "mpv", settings, p->flow_capture_paired);
-+    p->flow_capture_pending = false;
-+    if (result != MPVFLOW_GPU_OK)
-+        MP_WARN(vo, "MPVFLOW_DIAGNOSTIC component=capture event=start state=failed status=%d\n", result);
-+    return result == MPVFLOW_GPU_OK;
-+}
 +struct flow_prepared_frame {
 +    int nearest;
 +    int before;
@@ -889,7 +708,6 @@ index bd3d1aa..75ffbb1 100644
 +        .bypass_status = MPVFLOW_GPU_OK,
 +    };
 +    flow_update_context(vo);
-+    flow_capture_poll_control(vo);
 +    prepared->prepared = true;
 +    prepared->bypass_reason = p->flow_gpu ? "no_temporal_pair" : "gpu_context_unavailable";
 +
@@ -1053,12 +871,10 @@ index bd3d1aa..75ffbb1 100644
 +            }
 +
 +            if (p->flow_pair) {
-+                (void) flow_capture_start_for_pair(vo, image0, image1, fp0, fp1);
 +                const bool renderer_fusion_eligible = temporal_identity_valid &&
 +                    !p->flow_renderer_fusion_disabled &&
 +                    !p->next_opts->mpvflow_soft_blend &&
 +                    !p->next_opts->mpvflow_visibility_resolver &&
-+                    !mpvflow_gpu_capture_active(p->flow_gpu) &&
 +                    mpvflow_gpu_renderer_hook_supported(p->flow_gpu, p->flow_pair,
 +                        fp0->flow_source, fp1->flow_source);
 +                if (renderer_fusion_eligible) {
@@ -1078,16 +894,12 @@ index bd3d1aa..75ffbb1 100644
 +                pl_tex output = NULL;
 +                stats_time_start(p->stats, "mpvflow-synthesis");
 +                enum MPVFlowGPUResult status;
-+                if (mpvflow_gpu_capture_is_paired(p->flow_gpu)) {
-+                    status = mpvflow_gpu_capture_paired_sample(
-+                        p->flow_gpu, p->flow_pair, fp0->flow_source, fp1->flow_source, t,
-+                        fp0->pts, fp1->pts, output_pts,
-+                        p->next_opts->mpvflow_soft_blend,
-+                        p->next_opts->mpvflow_visibility_resolver,
-+                        p->next_opts->mpvflow_soft_blend,
-+                        p->next_opts->mpvflow_soft_blend, &output);
-+                } else {
-+                    status = mpvflow_gpu_synthesize_with_policy(
++                status = mpvflow_gpu_synthesize_with_policy(
++                    p->flow_gpu, p->flow_pair, fp0->flow_source, fp1->flow_source, t,
++                    p->next_opts->mpvflow_visibility_resolver,
++                    p->next_opts->mpvflow_soft_blend,
++                    p->next_opts->mpvflow_soft_blend, &output);
+                    status = mpvflow_gpu_synthesize_with_policy(
 +                        p->flow_gpu, p->flow_pair, fp0->flow_source, fp1->flow_source, t,
 +                        p->next_opts->mpvflow_visibility_resolver,
 +                        p->next_opts->mpvflow_soft_blend,
@@ -1095,18 +907,6 @@ index bd3d1aa..75ffbb1 100644
 +                }
 +                stats_time_end(p->stats, "mpvflow-synthesis");
 +                if (status == MPVFLOW_GPU_OK && output) {
-+                    if (mpvflow_gpu_capture_active(p->flow_gpu) &&
-+                        !mpvflow_gpu_capture_is_paired(p->flow_gpu)) {
-+                        const enum MPVFlowGPUResult capture_status = mpvflow_gpu_capture_sample(
-+                            p->flow_gpu, p->flow_pair, fp0->flow_source, fp1->flow_source,
-+                            output, t, fp0->pts, fp1->pts, output_pts,
-+                            p->next_opts->mpvflow_visibility_resolver,
-+                            p->next_opts->mpvflow_soft_blend,
-+                            p->next_opts->mpvflow_soft_blend);
-+                        if (capture_status != MPVFLOW_GPU_OK)
-+                            MP_WARN(vo, "MPVFLOW_DIAGNOSTIC component=capture event=sample state=failed status=%d\n",
-+                                    capture_status);
-+                    }
 +                    prepared->before = before;
 +                    prepared->output = output;
 +                    p->flow_cached_synthesis = output;
@@ -1469,76 +1269,10 @@ index bd3d1aa..75ffbb1 100644
 +            }
 +        }
 +    }
-+    if (p->gpu && p->gpu->glsl.vulkan && p->sw &&
-+        p->flow_swapchain_diagnostics_enabled != p->next_opts->mpvflow) {
-+        const bool flow_wsi_requested = p->next_opts->mpvflow;
-+        const bool flow_wsi_set =
-+            pl_vulkan_swapchain_set_diagnostics(p->sw, flow_wsi_requested);
-+        const int flow_parent_msg_level = mp_msg_level(vo->log);
-+        if (flow_wsi_set) {
-+            p->flow_swapchain_diagnostics_enabled = flow_wsi_requested;
-+            if (flow_wsi_requested)
-+                p->flow_wsi_created_logged = false;
-+        }
-+        MP_INFO(vo, "MPVFLOW_DIAGNOSTIC event=wsi_diagnostics_toggle engine=mpv "
-+                "requested=%d applied=%d setter_result=%d diagnostics_gate_enabled=%d "
-+                "logger_policy=all=info,vo/gpu-next=v parent_msg_level=%d "
-+                "libplacebo_info_enabled=%d first_runtime_wsi_sample=next_start_frame\n",
-+                flow_wsi_requested, p->flow_swapchain_diagnostics_enabled,
-+                flow_wsi_set, p->flow_swapchain_diagnostics_enabled,
-+                flow_parent_msg_level, flow_parent_msg_level >= MSGL_V);
-+    }
-+    if (p->next_opts->mpvflow && !p->flow_wsi_created_logged) {
-+        int requested_mode = VK_PRESENT_MODE_FIFO_KHR;
-+        int created_mode = VK_PRESENT_MODE_FIFO_KHR;
-+        int requested_depth = 0;
-+        uint32_t create_min_images = 0, actual_images = 0;
-+        if (pl_vulkan_swapchain_get_diagnostics(
-+                p->sw, &requested_mode, &created_mode, &requested_depth,
-+                &create_min_images, &actual_images)) {
-+            const char *requested_name =
-+                requested_mode == VK_PRESENT_MODE_MAILBOX_KHR ? "mailbox" :
-+                requested_mode == VK_PRESENT_MODE_IMMEDIATE_KHR ? "immediate" :
-+                requested_mode == VK_PRESENT_MODE_FIFO_RELAXED_KHR ? "fifo_relaxed" :
-+                requested_mode == VK_PRESENT_MODE_FIFO_KHR ? "fifo" : "other";
-+            const char *created_name =
-+                created_mode == VK_PRESENT_MODE_MAILBOX_KHR ? "mailbox" :
-+                created_mode == VK_PRESENT_MODE_IMMEDIATE_KHR ? "immediate" :
-+                created_mode == VK_PRESENT_MODE_FIFO_RELAXED_KHR ? "fifo_relaxed" :
-+                created_mode == VK_PRESENT_MODE_FIFO_KHR ? "fifo" : "other";
-+            MP_INFO(vo, "MPVFLOW_DIAGNOSTIC event=wsi_swapchain_created engine=mpv "
-+                    "requested_mode=%s requested_vk=%d created_mode=%s created_vk=%d "
-+                    "fallback=%d requested_depth=%d create_min_images=%u actual_images=%u "
-+                    "source=successful_vkCreateSwapchainKHR_create_info metric=created_config_not_scanout\n",
-+                    requested_name, (int) requested_mode, created_name,
-+                    (int) created_mode, requested_mode != created_mode,
-+                    requested_depth, create_min_images, actual_images);
-+            p->flow_wsi_created_logged = true;
-+        }
-+    }
-+    const int64_t flow_acquire_start_ns = p->next_opts->mpvflow ? mp_time_ns() : 0;
 +    const bool swapchain_frame_started =
 +        should_draw && pl_swapchain_start_frame(p->sw, &swframe);
 +    if (p->next_opts->mpvflow && flow_synthesis_rate_limited && should_draw)
 +        p->flow_cadence_synthesis_rate_limited++;
-+    if (flow_acquire_start_ns > 0 && should_draw) {
-+        const int64_t now_ns = mp_time_ns();
-+        const uint64_t wait_ns = now_ns > flow_acquire_start_ns
-+            ? (uint64_t) (now_ns - flow_acquire_start_ns) : 0;
-+        p->flow_cadence_acquire_call_total_ns += wait_ns;
-+        p->flow_cadence_acquire_call_samples++;
-+        if (wait_ns > p->flow_cadence_acquire_call_max_ns)
-+            p->flow_cadence_acquire_call_max_ns = wait_ns;
-+        static int64_t last_report_ns;
-+        if (wait_ns >= 2000000 &&
-+            (!last_report_ns || now_ns - last_report_ns >= 1000000000LL)) {
-+            last_report_ns = now_ns;
-+            MP_INFO(vo, "MPVFLOW_DIAGNOSTIC event=swapchain_wait stage=pl_swapchain_start_frame "
-+                    "wait_ms=%.3f threshold_ms=2.0 target_fps=%d "
-+                    "metric=cpu_blocking_call_not_scanout\n",
-+                    wait_ns / 1000000.0, p->next_opts->mpvflow_target_fps);
-+        }
-+    }
 +    if (!should_draw || !swapchain_frame_started) {
 @@ -1574,8 +3089,14 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 -            // Advance the queue state to the current PTS to discard unused frames
@@ -1681,12 +1415,6 @@ index bd3d1aa..75ffbb1 100644
 +            const double callback_interval_avg_ms = p->flow_cadence_callback_interval_samples
 +                ? (double) p->flow_cadence_callback_interval_total_ns /
 +                  p->flow_cadence_callback_interval_samples / 1000000.0 : 0.0;
-+            const double pl_swapchain_start_frame_avg_ms = p->flow_cadence_acquire_call_samples
-+                ? (double) p->flow_cadence_acquire_call_total_ns /
-+                  p->flow_cadence_acquire_call_samples / 1000000.0 : 0.0;
-+            const double swap_buffers_call_avg_ms = p->flow_cadence_swap_buffers_samples
-+                ? (double) p->flow_cadence_swap_buffers_total_ns /
-+                  p->flow_cadence_swap_buffers_samples / 1000000.0 : 0.0;
 +            const uint64_t source_ticks = p->flow_cadence_source_synced +
 +                                          p->flow_cadence_source_unsynced;
 +            const double source_sync_pct = source_ticks
@@ -1698,14 +1426,12 @@ index bd3d1aa..75ffbb1 100644
 +                    "mix_pair_callbacks=%llu synthesized_render_callbacks=%llu frame_repeat_count=%llu "
 +                    "render_cpu_avg_ms=%.3f render_cpu_max_ms=%.3f render_cpu_samples=%llu "
 +                    "callback_interval_avg_ms=%.3f callback_interval_max_ms=%.3f callback_interval_samples=%llu "
-+                    "pl_swapchain_start_frame_avg_ms=%.3f pl_swapchain_start_frame_max_ms=%.3f pl_swapchain_start_frame_samples=%llu "
 +                    "swap_submit_fps=%.2f synthesized_submit_fps=%.2f successful_submits=%llu "
 +                    "swap_attempts=%llu swap_failures=%llu pair_analysis_attempts=%llu "
 +                    "pair_analysis_failures=%llu pair_cache_reuses=%llu synthesized_submits=%llu "
 +                    "source_batches=%llu source_sync_pct=%.1f source_unsynced_batches=%llu "
 +                    "empty_batch_redraws=%llu temporal_pair_submits=%llu "
-+                    "submit_call_avg_ms=%.3f submit_call_max_ms=%.3f "
-+                    "swap_buffers_call_avg_ms=%.3f swap_buffers_call_max_ms=%.3f swap_buffers_call_samples=%llu\n",
++                    "submit_call_avg_ms=%.3f submit_call_max_ms=%.3f\n",
 +                    window_ms, p->next_opts->mpvflow_target_fps, render_callback_fps,
 +                    (unsigned long long) p->flow_cadence_render_attempts,
 +                    (unsigned long long) p->flow_cadence_render_failures,
@@ -1719,9 +1445,6 @@ index bd3d1aa..75ffbb1 100644
 +                    callback_interval_avg_ms,
 +                    p->flow_cadence_callback_interval_max_ns / 1000000.0,
 +                    (unsigned long long) p->flow_cadence_callback_interval_samples,
-+                    pl_swapchain_start_frame_avg_ms,
-+                    p->flow_cadence_acquire_call_max_ns / 1000000.0,
-+                    (unsigned long long) p->flow_cadence_acquire_call_samples,
 +                    submit_fps, synth_fps,
 +                    (unsigned long long) p->flow_cadence_submitted,
 +                    (unsigned long long) p->flow_cadence_swap_attempts,
@@ -1738,9 +1461,6 @@ index bd3d1aa..75ffbb1 100644
 +                        ? (double) p->flow_cadence_flip_wait_total_ns /
 +                          p->flow_cadence_submitted / 1000000.0 : 0.0,
 +                    p->flow_cadence_flip_wait_max_ns / 1000000.0,
-+                    swap_buffers_call_avg_ms,
-+                    p->flow_cadence_swap_buffers_max_ns / 1000000.0,
-+                    (unsigned long long) p->flow_cadence_swap_buffers_samples);
 +            p->flow_cadence_window_start_ns = now_ns;
 +            p->flow_cadence_submitted = 0;
 +            p->flow_cadence_synthesized = 0;
@@ -1750,12 +1470,6 @@ index bd3d1aa..75ffbb1 100644
 +            p->flow_cadence_temporal_pair = 0;
 +            p->flow_cadence_flip_wait_total_ns = 0;
 +            p->flow_cadence_flip_wait_max_ns = 0;
-+            p->flow_cadence_swap_buffers_total_ns = 0;
-+            p->flow_cadence_swap_buffers_max_ns = 0;
-+            p->flow_cadence_swap_buffers_samples = 0;
-+            p->flow_cadence_acquire_call_total_ns = 0;
-+            p->flow_cadence_acquire_call_max_ns = 0;
-+            p->flow_cadence_acquire_call_samples = 0;
 +            p->flow_cadence_render_attempts = 0;
 +            p->flow_cadence_synthesis_rate_limited = 0;
 +            p->flow_cadence_previous_present_budget_skips = 0;
@@ -1781,26 +1495,6 @@ index bd3d1aa..75ffbb1 100644
 +    p->flow_pending_source_batch = 0;
 +    p->flow_pending_mix_frames = 0;
 +    p->flow_pending_rate_limiter_eligible = false;
-+    const int64_t flow_swap_wait_start_ns = p->next_opts->mpvflow ? mp_time_ns() : 0;
-@@ -1804,0 +3525,18 @@ static void flip_page(struct vo *vo)
-+    if (flow_swap_wait_start_ns > 0) {
-+        const int64_t now_ns = mp_time_ns();
-+        const uint64_t wait_ns = now_ns > flow_swap_wait_start_ns
-+            ? (uint64_t) (now_ns - flow_swap_wait_start_ns) : 0;
-+        p->flow_cadence_swap_buffers_total_ns += wait_ns;
-+        p->flow_cadence_swap_buffers_samples++;
-+        if (wait_ns > p->flow_cadence_swap_buffers_max_ns)
-+            p->flow_cadence_swap_buffers_max_ns = wait_ns;
-+        static int64_t last_report_ns;
-+        if (wait_ns >= 2000000 &&
-+            (!last_report_ns || now_ns - last_report_ns >= 1000000000LL)) {
-+            last_report_ns = now_ns;
-+            MP_INFO(vo, "MPVFLOW_DIAGNOSTIC event=swapchain_wait stage=swap_buffers "
-+                    "wait_ms=%.3f threshold_ms=2.0 target_fps=%d "
-+                    "metric=cpu_blocking_call_not_scanout\n",
-+                    wait_ns / 1000000.0, p->next_opts->mpvflow_target_fps);
-+        }
-+    }
 @@ -2466,0 +4205,4 @@ static void uninit(struct vo *vo)
 +    flow_release_pair(p);
 +    mpvflow_gpu_destroy(p->flow_gpu);

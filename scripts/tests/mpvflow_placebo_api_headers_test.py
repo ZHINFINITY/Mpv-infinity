@@ -132,18 +132,7 @@ def assert_api391_upstream_snapshot() -> None:
         path = include_root / relative
         assert path.is_file(), f"missing API-391 SDK header {relative}"
         data = path.read_bytes()
-        if relative == "libplacebo/vulkan.h":
-            text = data.decode("utf-8")
-            patch = (
-                "PL_API bool pl_vulkan_swapchain_set_diagnostics(pl_swapchain sw, bool enabled);\n"
-                "PL_API bool pl_vulkan_swapchain_get_diagnostics(\n"
-                "    pl_swapchain sw, int *requested_mode,\n"
-                "    int *created_mode, int *requested_depth,\n"
-                "    uint32_t *create_min_images, uint32_t *actual_images);\n"
-            )
-            assert text.count(patch) == 1, "API-391 diagnostics header extension changed"
-            data = text.replace(patch, "", 1).encode("utf-8")
-        elif relative == "libplacebo/config.h":
+        if relative == "libplacebo/config.h":
             text = data.decode("utf-8")
             changes = (
                 ("#define PL_HAVE_GLSLANG 1\n", "#undef PL_HAVE_GLSLANG\n"),
@@ -180,9 +169,9 @@ assert "MPVFLOW_PLACEBO_API_COUNT" in CMAKE
 assert "Unsupported libplacebo logging ABI" in CMAKE
 assert "MPVFLOW_PLACEBO_INCLUDE_DIR" in CMAKE
 assert "MPVFLOW_PLACEBO_CONFIG_HEADER" in CMAKE
-assert "pl_vulkan_swapchain_set_diagnostics" in CMAKE
-assert "pl_vulkan_swapchain_get_diagnostics" in CMAKE
-assert 'MATCHES "^(387|391)$"' in CMAKE
+assert 'STREQUAL "374"' in CMAKE
+assert 'STREQUAL "387"' in CMAKE
+assert 'STREQUAL "391"' in CMAKE
 assert "does not export ${MPVFLOW_REQUIRED_PLACEBO_SYMBOL}" in CMAKE
 assert '"${MPVFLOW_PLACEBO_INCLUDE_DIR}"' in CMAKE
 assert '"${CMAKE_CURRENT_SOURCE_DIR}/third_party/libplacebo/include"' in CMAKE
@@ -226,8 +215,6 @@ for api in (387, 391):
     assert "PL_HAVE_FONGMI_VULKAN_YCBCR" in config
     assert "PL_HAVE_FONGMI_CHECKED_DOVI" in config
     vulkan_header = (API_HEADERS[api] / "vulkan.h").read_text(encoding="utf-8")
-    assert "pl_vulkan_swapchain_set_diagnostics" in vulkan_header
-    assert "pl_vulkan_swapchain_get_diagnostics" in vulkan_header
 
 assert config_api(API_HEADERS[374]) == 374
 assert_snapshot_hashes(387)

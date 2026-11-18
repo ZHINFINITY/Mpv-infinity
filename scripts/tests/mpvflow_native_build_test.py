@@ -181,32 +181,8 @@ for marker in (
     "*status = MPVFLOW_GPU_UNSUPPORTED_SHADER",
 ):
     assert marker in gpu_source, f"pair-gate shader setup failure must remain diagnosable: missing {marker!r}"
-capture_define = "#define MPVFLOW_DEBUG_CAPTURE 1\n"
-capture_default = prepare.configure_debug_capture_source(gpu_source, enabled=False)
-assert capture_define not in capture_default, "default MPV source preparation must not enable debug capture"
 prepare_source = PREPARE.read_text(encoding="utf-8")
-assert 'debug_capture_enabled = os.environ.get("MPVFLOW_DEBUG_CAPTURE") == "1"' in prepare_source
-assert "MPVFLOW_DEBUG_CAPTURE is unsupported with the pinned FongMi 645 motion core" in prepare_source
-assert "Enabled bounded one-shot FongMi diagnostics for this debug runtime" not in prepare_source
-assert "FongMi one-shot diagnostics disabled; leaving motion/VO sources uninstrumented" in prepare_source
-capture_debug = prepare.configure_debug_capture_source(gpu_source, enabled=True)
-assert capture_debug.count(capture_define) == 1, "debug capture define must be injected exactly once"
-assert capture_debug.index("*/") < capture_debug.index(capture_define) < capture_debug.index("#include"), "debug capture define must follow the SPDX notice"
-assert prepare.configure_debug_capture_source(capture_debug, enabled=True) == capture_debug, "debug capture source preparation must be idempotent"
-assert prepare.configure_debug_capture_source(capture_debug, enabled=False) == capture_default, "disabling debug capture must restore the default source"
-cmake_native = (ROOT / "app/src/main/cpp/CMakeLists.txt").read_text(encoding="utf-8")
-assert "target_compile_definitions(media3flow_vulkan PRIVATE\n        $<$<CONFIG:Debug>:MPVFLOW_DEBUG_CAPTURE=1>)" in cmake_native, "Media3 Vulkan capture define must be Debug-only"
-app_build = (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
-assert 'project.findProperty("mpvFlowFongmiDiagnosticCapture")?.toString() == "true"' in app_build
-assert 'buildConfigField("boolean", "MPV_HAS_FONGMI_DIAGNOSTICS", includeMpvFlowFongmiDiagnostics.toString())' in app_build
-assert 'buildConfigField("boolean", "MPV_HAS_FONGMI_DIAGNOSTICS", "false")' in app_build
-assert 'buildConfigField("boolean", "MPV_JELLY_MASK_PREVIEW", "false")' in app_build
-assert 'create("jellyPreview")' in app_build
-jelly_preview_type = app_build.split('create("jellyPreview")', 1)[1].split("\n    }", 1)[0]
-assert 'applicationIdSuffix = ".debug"' in jelly_preview_type
-assert 'matchingFallbacks += listOf("debug")' in jelly_preview_type
-assert 'buildConfigField("boolean", "MPV_JELLY_MASK_PREVIEW", "true")' in jelly_preview_type
-assert 'resValue("string", "app_name", "Mpv∞-Jelly Blend Test")' in jelly_preview_type
+assert "MPVFLOW_DEBUG_CAPTURE" not in prepare_source
 
 old_dependency = "vulkan = dependency('vulkan', version: '>= 1.3.238', required: vulkan_opt)"
 new_dependency = "vulkan = dependency('vulkan', required: vulkan_opt)"
@@ -376,39 +352,6 @@ for bad_timer_source in (
     else:
         raise AssertionError("unexpected libplacebo timer-ring layout must fail closed")
 
-wsi_header = "PL_API bool pl_vulkan_swapchain_suboptimal(pl_swapchain sw);\n"
-patched_wsi_header = prepare.add_libplacebo_swapchain_diagnostics_api(wsi_header)
-assert "PL_API bool pl_vulkan_swapchain_set_diagnostics(pl_swapchain sw, bool enabled);" in patched_wsi_header
-assert "PL_API bool pl_vulkan_swapchain_get_diagnostics(" in patched_wsi_header
-assert "int *created_mode, int *requested_depth" in patched_wsi_header
-assert prepare.add_libplacebo_swapchain_diagnostics_api(patched_wsi_header) == patched_wsi_header
-legacy_wsi_header = wsi_header + "PL_API bool pl_vulkan_swapchain_set_diagnostics(pl_swapchain sw, bool enabled);\n"
-upgraded_wsi_header = prepare.add_libplacebo_swapchain_diagnostics_api(legacy_wsi_header)
-assert upgraded_wsi_header.count("PL_API bool pl_vulkan_swapchain_set_diagnostics(") == 1
-assert "PL_API bool pl_vulkan_swapchain_get_diagnostics(" in upgraded_wsi_header
-for bad_wsi_header in ("no swapchain declaration here\n", wsi_header + wsi_header):
-    try:
-        prepare.add_libplacebo_swapchain_diagnostics_api(bad_wsi_header)
-    except SystemExit:
-        pass
-    else:
-        raise AssertionError("unexpected libplacebo Vulkan API changes must fail closed")
-stub_source = "bool pl_vulkan_swapchain_suboptimal(pl_swapchain sw)\n{\n    pl_unreachable();\n}\n"
-patched_stub_source = prepare.add_libplacebo_swapchain_diagnostics_stub(stub_source)
-assert "bool pl_vulkan_swapchain_set_diagnostics(pl_swapchain sw, bool enabled)" in patched_stub_source
-assert "bool pl_vulkan_swapchain_get_diagnostics(" in patched_stub_source
-assert prepare.add_libplacebo_swapchain_diagnostics_stub(patched_stub_source) == patched_stub_source
-legacy_stub_source = stub_source + "bool pl_vulkan_swapchain_set_diagnostics(pl_swapchain sw, bool enabled)\n{\n    pl_unreachable();\n}\n"
-upgraded_stub_source = prepare.add_libplacebo_swapchain_diagnostics_stub(legacy_stub_source)
-assert upgraded_stub_source.count("bool pl_vulkan_swapchain_set_diagnostics(") == 1
-assert "bool pl_vulkan_swapchain_get_diagnostics(" in upgraded_stub_source
-for bad_stub_source in ("unrecognized no-Vulkan stubs\n", stub_source + stub_source):
-    try:
-        prepare.add_libplacebo_swapchain_diagnostics_stub(bad_stub_source)
-    except SystemExit:
-        pass
-    else:
-        raise AssertionError("unexpected libplacebo no-Vulkan stubs must fail closed")
 formats_source = (
     'static const struct vk_format vk_formats[] = {\n'
     '    {VK_FORMAT_R16G16_SINT,           REGFMT("rg16i",    2, 16, SINT)},\n'
@@ -588,98 +531,6 @@ for bad_wsi_recovery in (
         pass
     else:
         raise AssertionError("unexpected pinned WSI recovery changes must fail closed")
-patched_wsi_source = prepare.instrument_libplacebo_swapchain(wsi_source)
-prepare.validate_libplacebo_suboptimal_recovery(patched_wsi_source)
-direct_submit_block = (
-    "    int qidx = cmd->qindex;\n"
-    "    if (!CMD_SUBMIT(&cmd)) {\n"
-    "        pl_mutex_unlock(&p->lock);\n"
-    "        return false;\n"
-    "    }\n"
-)
-vk_tex_hold_block = (
-    "    int qidx;\n"
-    "    bool held = vk_tex_hold(gpu, pl_vulkan_hold_params(\n"
-    "        .tex = current->images.elem[idx],\n"
-    "    ), &p->frames_in_flight, &qidx);\n"
-    "    if (!held) {\n"
-    "        pl_mutex_unlock(&p->lock);\n"
-    "        return false;\n"
-    "    }\n"
-)
-assert wsi_source.count(direct_submit_block) == 1
-vk_tex_hold_wsi_source = wsi_source.replace(direct_submit_block, vk_tex_hold_block, 1)
-patched_vk_tex_hold_wsi_source = prepare.instrument_libplacebo_swapchain(vk_tex_hold_wsi_source)
-prepare.validate_libplacebo_suboptimal_recovery(patched_vk_tex_hold_wsi_source)
-assert 'FLOW_WSI_COMMAND_SUBMIT, "vk_tex_hold"' in patched_vk_tex_hold_wsi_source
-assert patched_vk_tex_hold_wsi_source.index("pl_clock_t flow_submit_start") < patched_vk_tex_hold_wsi_source.index(
-    "bool held = vk_tex_hold("
-), "vk_tex_hold host timing must start before the wrapper call"
-hold_call_pos = patched_vk_tex_hold_wsi_source.index("bool held = vk_tex_hold(")
-hold_report_pos = patched_vk_tex_hold_wsi_source.index('FLOW_WSI_COMMAND_SUBMIT, "vk_tex_hold"')
-hold_failure_pos = patched_vk_tex_hold_wsi_source.index("if (!held)", hold_call_pos)
-assert hold_call_pos < hold_report_pos < hold_failure_pos, (
-    "vk_tex_hold timing must report the host call result before preserving its original failure handling"
-)
-assert prepare.instrument_libplacebo_swapchain(patched_vk_tex_hold_wsi_source) == patched_vk_tex_hold_wsi_source
-fongmi_wsi_source = wsi_source.replace(
-    "    bool has_swapchain_maintenance1;\n    struct pl_color_repr color_repr;",
-    "    bool has_swapchain_maintenance1;\n    uint64_t generation;\n    struct pl_color_repr color_repr;",
-    1,
-).replace(
-    "    if (p->suboptimal || p->needs_recreate || width_changed || height_changed)\n"
-    "        ok = vk_sw_recreate(sw, *width, *height);",
-    "    bool recreate = p->suboptimal || p->needs_recreate || width_changed || height_changed;\n"
-    "    if (ok && recreate)\n        ok = vk_sw_recreate(sw, *width, *height);",
-    1,
-).replace(
-    "    vk->lock_queue(vk->queue_ctx, pool->qf, qidx);\n"
-    "    VkResult res = vk->QueuePresentKHR(queue, &pinfo);\n"
-    "    vk->unlock_queue(vk->queue_ctx, pool->qf, qidx);",
-    "    vk->lock_queue(vk->queue_ctx, pool->qf, qidx);\n"
-    "    uint64_t begin = timing.presentID ? present_time(sw) : 0;\n"
-    "    VkResult res = vk->QueuePresentKHR(queue, &pinfo);\n"
-    "    vk_present_submit(history, timing.presentID, begin, res);\n"
-    "    vk->unlock_queue(vk->queue_ctx, pool->qf, qidx);",
-    1,
-)
-prepare.validate_libplacebo_suboptimal_recovery(fongmi_wsi_source)
-fongmi_patched_wsi_source = prepare.instrument_libplacebo_swapchain(fongmi_wsi_source)
-prepare.validate_libplacebo_suboptimal_recovery(fongmi_patched_wsi_source)
-assert "uint64_t generation;\n    atomic_bool flow_diagnostics;" in fongmi_patched_wsi_source
-assert "bool recreate = p->suboptimal || p->needs_recreate || width_changed || height_changed;" in fongmi_patched_wsi_source
-assert "vk_present_submit(history, timing.presentID, begin, res);" in fongmi_patched_wsi_source
-bad_fongmi_resize = fongmi_wsi_source.replace("width_changed || height_changed", "false", 1)
-try:
-    prepare.validate_libplacebo_suboptimal_recovery(bad_fongmi_resize)
-except SystemExit:
-    pass
-else:
-    raise AssertionError("FongMi resize recovery must fail closed if size-change handling is lost")
-bad_instrumented_recovery = patched_wsi_source.replace(
-    "bool flow_retry_recreate_ok = vk_sw_recreate(sw, 0, 0);",
-    "bool flow_retry_recreate_ok = false;",
-    1,
-)
-try:
-    prepare.validate_libplacebo_suboptimal_recovery(bad_instrumented_recovery)
-except SystemExit:
-    pass
-else:
-    raise AssertionError("repeated preparation must fail closed if timed out-of-date recreation is lost")
-for recovery_marker in (
-    "if (p->suboptimal && !p->params.allow_suboptimal)\n        recreate = true;",
-    "case VK_SUBOPTIMAL_KHR:\n            p->suboptimal = true;\n            // fall through\n        case VK_SUCCESS:",
-    "case VK_ERROR_OUT_OF_DATE_KHR:\n        // We can silently ignore this error, since the next start_frame will\n        // recreate the swapchain automatically.\n        return true;",
-    "if (p->suboptimal || p->needs_recreate || width_changed || height_changed)\n        ok = vk_sw_recreate(sw, *width, *height);",
-):
-    assert recovery_marker in patched_wsi_source, f"pinned WSI recovery changed: {recovery_marker!r}"
-assert "case VK_ERROR_OUT_OF_DATE_KHR: {" in patched_wsi_source
-assert "bool flow_retry_recreate_ok = vk_sw_recreate(sw, 0, 0);" in patched_wsi_source
-assert "if (!flow_retry_recreate_ok) {" in patched_wsi_source and "continue;" in patched_wsi_source, (
-    "the timed instrumentation must preserve out-of-date recreation failure handling and retry"
-)
-
 def should_recreate_on_start(current: bool, needs_recreate: bool, suboptimal: bool, allow_suboptimal: bool) -> bool:
     recreate = not current or needs_recreate
     if suboptimal and not allow_suboptimal:
@@ -697,80 +548,6 @@ def should_recreate_on_resize(suboptimal: bool, needs_recreate: bool, width_chan
 assert should_recreate_on_resize(False, False, True, False), "surface width changes must still recreate under Mailbox"
 assert should_recreate_on_resize(False, False, False, True), "surface height changes must still recreate under Mailbox"
 assert should_recreate_on_resize(True, False, False, False), "explicit resize must clear a tolerated suboptimal swapchain"
-
-for marker in (
-    "atomic_bool flow_diagnostics",
-    "VkPresentModeKHR flow_created_present_mode",
-    "uint32_t flow_created_image_count",
-    "flow_created_info_valid, flow_created_info_reported",
-    "flow_report_created_swapchain(p);",
-    "create_min_images=%u",
-    "actual_images=%u",
-    "uint32_t flow_surface_min_image_count, flow_surface_max_image_count",
-    "surface_min_images=%u surface_max_images=%u",
-    "p->flow_surface_min_image_count = caps.minImageCount;",
-    "p->flow_surface_max_image_count = caps.maxImageCount;",
-    "event=wsi_swapchain_created",
-    'FLOW_WSI_ACQUIRE, "vkAcquireNextImageKHR"',
-    'FLOW_WSI_FENCE_WAIT, "present_fence_wait"',
-    'FLOW_WSI_PRESENT, "vkQueuePresentKHR"',
-    "bool pl_vulkan_swapchain_set_diagnostics(pl_swapchain sw, bool enabled)",
-    "bool pl_vulkan_swapchain_get_diagnostics(",
-):
-    assert marker in patched_wsi_source, f"libplacebo WSI diagnostic instrumentation is missing {marker!r}"
-assert "metric=host_call_duration_not_scanout" in patched_wsi_source
-assert "if (!atomic_load_explicit(&p->flow_diagnostics, memory_order_relaxed))" in patched_wsi_source
-assert "bool first_sample = !p->flow_diag_last_report[stage];" in patched_wsi_source
-assert "if (window_s < 5.0 && !first_sample && !low_frequency_stage)" in patched_wsi_source, (
-    "WSI timings must emit their first sample, then remain rate-limited rather than log per frame"
-)
-low_frequency_stage_body = patched_wsi_source.split("bool low_frequency_stage = ", 1)[1].split(";", 1)[0]
-assert "FLOW_WSI_IMAGE_INIT" not in low_frequency_stage_body, (
-    "per-frame vk_sw_image_init timings must be retained as five-second aggregates, not emitted per call"
-)
-assert 'FLOW_WSI_IMAGE_INIT, "vk_sw_image_init"' in patched_wsi_source, (
-    "vk_sw_image_init timing must remain measured in the periodic aggregate"
-)
-assert "acquire_semaphore_signal=%s" not in patched_wsi_source, (
-    "vkAcquireNextImageKHR returning VK_SUCCESS does not prove its semaphore has signaled at host return"
-)
-assert patched_wsi_source.index("p->flow_created_present_mode = sinfo.presentMode;") < patched_wsi_source.index(
-    "flow_report_created_swapchain(p);"
-), "the created swapchain mode must be stored before it is reported"
-assert patched_wsi_source.index("p->flow_created_image_count = num_images;") < patched_wsi_source.index(
-    "flow_report_created_swapchain(p);"
-), "actual image count must be stored before the created swapchain is reported"
-assert patched_wsi_source.index("p->flow_surface_min_image_count = caps.minImageCount;") < patched_wsi_source.index(
-    "// Check for hidden/invisible window"
-), "surface image-count limits must be captured at the shared caps_ready path"
-diagnostic_setter = patched_wsi_source.split(
-    "bool pl_vulkan_swapchain_set_diagnostics(pl_swapchain sw, bool enabled)", 1
-)[1]
-assert "if (enabled)\n        flow_report_created_swapchain(p);" in diagnostic_setter, (
-    "enabling diagnostics after creation must report the effective swapchain mode"
-)
-assert prepare.instrument_libplacebo_swapchain(patched_wsi_source) == patched_wsi_source
-for call in (
-    "vk->AcquireNextImageKHR(vk->dev, p->current->swapchain, UINT64_MAX,",
-    "vk->WaitForFences(vk->dev, 1, pfence, VK_TRUE, UINT64_MAX)",
-):
-    assert patched_wsi_source.count(call) == wsi_source.count(call) == 1, (
-        f"WSI instrumentation must preserve the original infinite-timeout API call: {call}"
-    )
-assert "VK_TRUE, UINT64_MAX" in patched_wsi_source and "vk->ResetFences(vk->dev, 1, pfence);" in patched_wsi_source, (
-    "WSI instrumentation must preserve the original present-fence wait/reset sequence"
-)
-for bad_wsi_source in (
-    "unrecognized Vulkan swapchain source\n",
-    wsi_source + "\n" + wsi_source,
-    vk_tex_hold_wsi_source.replace("bool held = vk_tex_hold(", "bool held = vk_tex_hold_unrecognized(", 1),
-):
-    try:
-        prepare.instrument_libplacebo_swapchain(bad_wsi_source)
-    except SystemExit:
-        pass
-    else:
-        raise AssertionError("unexpected libplacebo swapchain implementation must fail closed")
 
 build = BUILD.read_text(encoding="utf-8")
 prepare_source = PREPARE.read_text(encoding="utf-8")
@@ -813,10 +590,7 @@ assert '"--input", str(FONGMI_PATCH)' not in prepare_source
 assert '"mpvflow-vo-gpu-next.patch"' not in prepare_source
 assert '"mpvflow-aimagereader-vulkan.patch"' not in prepare_source
 assert '"video/out/gpu_next/motion.c"' in prepare_source
-assert 'scripts/patch_fongmi_motion_diagnostics.py' not in prepare_source
-assert 'scripts/patch_fongmi_vo_diagnostics.py' not in prepare_source
 assert 'subprocess.run([sys.executable, str(patcher), str(mpv_dir)], cwd=ROOT, check=True)' not in prepare_source
-assert "MPVFLOW_DEBUG_CAPTURE is unsupported with the pinned FongMi 645 motion core" in prepare_source
 assert '"motion-interpolation", OPT_INT(motion_fps)' in prepare_source
 assert '"video/out/hwdec/hwdec_aimagereader_vk_direct.c"' in prepare_source
 assert '"motion-interpolation-info", mp_property_motion_info' in prepare_source
@@ -834,8 +608,9 @@ assert "mpvflow_gpu.c" not in prepare_source, "MPV runtime preparation must not 
 prepare_call = 'python3 "$ROOT/scripts/prepare-mpvflow.py" --mpv-dir "$BUILDSCRIPTS/deps/mpv" --libplacebo-dir "$BUILDSCRIPTS/deps/libplacebo"'
 assert prepare_call in build, "the native build must patch pinned libplacebo before compilation"
 workflow_source = (ROOT / ".github/workflows/mpvflow-debug-arm64.yml").read_text(encoding="utf-8")
-assert "scripts/patch_fongmi_motion_diagnostics.py" not in workflow_source
-assert "scripts/patch_fongmi_vo_diagnostics.py" not in workflow_source
+assert "MPVFLOW_DEBUG_CAPTURE" not in workflow_source
+assert "MPVFLOW_JELLY" not in workflow_source
+assert "jelly_test" not in workflow_source and "jelly_preview" not in workflow_source
 native_cmake = (ROOT / "app/src/main/cpp/CMakeLists.txt").read_text(encoding="utf-8")
 assert "target_compile_options(media3flow_vulkan PRIVATE -fvisibility=hidden)" in native_cmake
 assert "target_link_options(media3flow_vulkan PRIVATE -Wl,--strip-all)" in native_cmake
@@ -1443,7 +1218,7 @@ assert "effective_compute_api=${effectiveComputeApiName()}" in media3_sink_sourc
 assert "backend=vulkan-spirv" not in media3_sink_source, (
     "Media3 Flow diagnostics must not claim Vulkan compute when OpenCL was requested or selected"
 )
-for source in ("mpvflow/mpvflow_capture_io.c", "mpvflow/mpvflow_opencl.c", "mpvflow/mpvflow_opencl_vk_bridge.c"):
+for source in ("mpvflow/mpvflow_opencl.c", "mpvflow/mpvflow_opencl_vk_bridge.c"):
     assert source in cmake_source, f"Native Media3 must compile {source}"
 assert "dl" in cmake_source and 'android:name="libOpenCL.so"' in manifest_source and 'android:required="false"' in manifest_source, (
     "OpenCL must be dynamically loaded as an optional Android vendor library"

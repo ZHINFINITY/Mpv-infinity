@@ -114,32 +114,19 @@ assert re.search(
     r"visibilityResolverEnabled == JNI_TRUE,\s*softBlendEnabled == JNI_TRUE,\s*softBlendEnabled == JNI_TRUE, &synthesized",
     JNI,
 ), "Native Media3 must pass resolver, soft blend, and the existing conflict bias into shared synthesis"
-assert re.search(
-    r"visibilityResolverEnabled == JNI_TRUE,\s*softBlendEnabled == JNI_TRUE,\s*softBlendEnabled == JNI_TRUE\);",
-    JNI,
-), "capture metadata must record the effective Native Media3 synthesis settings"
 assert 'PlaybackSession.setOptionString("motion-interpolation", targetFps.toString())' in MPV_VIEW
 assert '"motion-interpolation", OPT_INT(motion_fps)' in MPV_PREPARE
 assert "FONGMI_PATCH" not in MPV_PREPARE
 assert "mpvflow_gpu_synthesize_with_policy(" in JNI, "Media3 must share the production Vulkan synthesis policy"
 assert "mpvflow_gpu_synthesize_with_policy_to_texture(" in JNI
 assert "outputStorageImageSupported" in JNI and "VK_IMAGE_USAGE_STORAGE_BIT" in JNI
-assert "!capturePaired && !captureActive" in JNI, "direct output must not bypass diagnostic capture ownership"
 assert 'directOutput ? "direct_storage_write" : "nearest_blit"' in JNI
 assert "PL_TEX_SAMPLE_NEAREST" in JNI, "fallback transfer must not soften equal-size synthesized output"
 assert "target_compatible ? output_target : pair->visibility_output" in GPU, (
     "the optional visibility resolver should write directly to a compatible final output when available"
 )
 assert "return smoothstep(0.0,1.0,margin);" in GPU, "both engines must fade source/cycle boundary support instead of switching coordinate spaces abruptly"
-paired_helper = GPU.split("enum MPVFlowGPUResult mpvflow_gpu_capture_paired_sample(", 1)[1].split("\n}", 1)[0]
-assert "const bool blend_variants[MPVFLOW_CAPTURE_PAIRED_SAMPLES_PER_PAIR] = {\n        false, true," in paired_helper
-assert "const float capture_timestep = 0.5f;" in paired_helper
-assert "ctx, pair, source0, source1, capture_timestep,\n                false, soft_blend, preserve_motion_blend_on_conflict, &variant_output" in paired_helper
-assert "ctx, pair, source0, source1, variant_output, capture_timestep,\n            source_pts0, source_pts1, capture_pts,\n            false, soft_blend, preserve_motion_blend_on_conflict" in paired_helper
-assert "ctx, pair, source0, source1, timestep,\n        production_visibility_resolver" in paired_helper
-assert "production_visibility_resolver, production_soft_blend,\n        production_preserve_motion_blend_on_conflict, production_output" in paired_helper
 assert "mp_motion_capture" in MPV_PREPARE and "mp_motion_render_views" in MPV_PREPARE
-assert "mpvflow_gpu_capture_paired_sample(" in JNI and "source0->texture, source1->texture, timestep," in JNI
 assert "Media3FlowDebugSettingsPolicy.effective(" in NATIVE_ENGINE
 assert "visibilityResolverEnabled || media3FlowDebugSettings.softBlendEnabled" in NATIVE_ENGINE
 assert "MpvFlowComputeApi.VULKAN" in NATIVE_ENGINE

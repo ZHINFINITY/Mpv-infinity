@@ -82,11 +82,8 @@ assert "verify_reprepare_cycle(patched)" in PAIRED_COLOR_TEST
 assert "zero-conflict 0.03/0.035 stays on the old blend" in PAIRED_COLOR_TEST
 assert "balanced texture" in PAIRED_COLOR_TEST
 assert 'os.environ.get("MPVFLOW_ANALYSIS_DOWNSAMPLE_AA") == "1"' in PREPARE
-assert "Mpv-infinity FongMi 645 test does not enable Jelly variants" in PREPARE
-assert "apply_motion_jelly" not in PREPARE and "patch_fongmi_motion_jelly" not in PREPARE
 assert "MOTION_PASS_PREPARE" in PREPARE and "pl_dispatch_prepare_compute" in PREPARE
 assert "mp_motion_render_owned" in PREPARE and "mp_motion_capture_supported" in PREPARE
-assert "MPVFLOW_DEBUG_CAPTURE is unsupported with the pinned FongMi 645 motion core" in PREPARE
 assert MPV_SHA in SOURCE_VERIFIER and MOTION_SHA256 in SOURCE_VERIFIER
 assert "MOTION_ANTIALIAS_SHA256" in SOURCE_VERIFIER
 assert MOTION_HEADER_SHA256 in SOURCE_VERIFIER
@@ -135,8 +132,6 @@ assert "mpv-infinity-${{ inputs.flavor }}-${{ inputs.target_abi }}-debug" in WOR
 assert "scripts/patch_fongmi_motion_downsample.py" in WORKFLOWS[1]
 assert "MPVFLOW_ANALYSIS_DOWNSAMPLE_AA: '1'" in WORKFLOWS[1]
 assert "--require-analysis-downsample-aa" in WORKFLOWS[1]
-assert "scripts/patch_fongmi_motion_jelly.py" not in WORKFLOWS[1]
-assert "scripts/tests/mpvrx_motion_jelly_test.py" not in WORKFLOWS[1]
 assert "jelly_test" not in WORKFLOWS[1] and "jelly_preview" not in WORKFLOWS[1]
 assert "MPVFLOW_JELLY" not in WORKFLOWS[1]
 assert "MPVFLOW_ANALYSIS_DOWNSAMPLE_AA: '1'" in WORKFLOWS[1]
@@ -145,7 +140,6 @@ assert "MPVRx" not in "\n".join(WORKFLOWS)
 for workflow in (WORKFLOWS[0], WORKFLOWS[2]):
     assert "scripts/patch_fongmi_motion_downsample.py" not in workflow
     assert "MPVFLOW_ANALYSIS_DOWNSAMPLE_AA" not in workflow
-    assert "patch_fongmi_motion_jelly.py" not in workflow
     assert "MPVFLOW_JELLY_EXPERIMENTAL" not in workflow
     assert "MPVFLOW_JELLY_PREVIEW" not in workflow
     assert "jelly_test" not in workflow
@@ -158,11 +152,6 @@ assert "fongmi_paired_color_mask_test.py --source" in WORKFLOWS[0]
 assert "--require-paired-color-mask" in WORKFLOWS[0]
 assert "--require-paired-color-mask" in WORKFLOWS[1]
 assert "--require-paired-color-mask" in WORKFLOWS[2]
-assert 'if [[ "${MPVFLOW_SKIP_CAPTURE_IO_TEST:-0}" == "1" ]]; then' in CORE_TEST
-assert "skip_unrelated_capture_test" in WORKFLOWS[0] and "default: false" in WORKFLOWS[0]
-assert "MPVFLOW_SKIP_CAPTURE_IO_TEST=1" in WORKFLOWS[0]
-assert "skip_unrelated_capture_test" not in WORKFLOWS[1]
-assert "skip_unrelated_capture_test" not in WORKFLOWS[2]
 
 assert MANIFEST == PACKAGED
 for text in (MANIFEST, LICENSES):

@@ -362,15 +362,6 @@ private fun retainPinnedFlowDiagnostics(
       .takeLast(FLOW_RENDERER_CONFIG_PIN_COUNT)
   val failures = entries.filter(DebugLogEntry::isFlowFailureRecord).takeLast(FLOW_FAILURE_ENTRY_PIN_COUNT)
   val latestPresentMode = entries.filter { it.message.contains("event=present_mode", ignoreCase = true) }.takeLast(1)
-  val latestWsiToggle = entries.filter { it.message.contains("event=wsi_diagnostics_toggle", ignoreCase = true) }.takeLast(1)
-  val wsiSwapchains = entries.filter { it.message.contains("event=wsi_swapchain_created", ignoreCase = true) }
-  val wsiSwapchainEvidence = (wsiSwapchains.take(1) + wsiSwapchains.takeLast(1)).distinctBy(DebugLogEntry::id)
-  val wsiTimingEntries =
-    entries
-      .filter { it.message.contains("event=wsi_timing", ignoreCase = true) }
-      .mapNotNull { entry -> entry.flowWsiTimingStage()?.let { it to entry } }
-      .groupBy({ it.first }, { it.second })
-      .values
       .mapNotNull { it.lastOrNull() }
   val latestQcomCapabilities = entries.filter { it.message.contains("event=qcom_gpu_timing", ignoreCase = true) }.takeLast(1)
   val latestQcomDispatchTiming = entries.filter { it.message.contains("event=qcom_dispatch_timing", ignoreCase = true) }.takeLast(1)
@@ -394,8 +385,7 @@ private fun retainPinnedFlowDiagnostics(
   val latestQcomBlockMatchDispatchState =
     entries.filter { it.message.contains("event=qcom_block_match_dispatch", ignoreCase = true) }.takeLast(1)
   val pinned =
-    (startup + latestRendererConfigs + failures + latestPresentMode + latestWsiToggle +
-      wsiSwapchainEvidence + wsiTimingEntries + latestQcomCapabilities + latestQcomDispatchTiming +
+    (startup + latestRendererConfigs + failures + latestPresentMode + latestQcomCapabilities + latestQcomDispatchTiming +
       latestQcomBlockMatchCapability + latestQcomBlockMatchInit + qcomBlockMatchImages +
       latestQcomBlockMatchImageState + latestQcomBlockMatchDispatchState)
       .distinctBy(DebugLogEntry::id)
@@ -405,10 +395,6 @@ private fun retainPinnedFlowDiagnostics(
     .sortedBy(DebugLogEntry::timeMillis)
 }
 
-private fun DebugLogEntry.flowWsiTimingStage(): String? {
-  if (!message.contains("event=wsi_timing", ignoreCase = true)) return null
-  return Regex("(?:^|\\s)stage=([^\\s]+)").find(message)?.groupValues?.get(1)
-}
 
 private fun DebugLogEntry.flowQcomCreatedImageName(): String? {
   if (!message.contains("event=qcom_block_match_image", ignoreCase = true)) return null

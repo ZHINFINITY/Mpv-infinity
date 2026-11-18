@@ -408,11 +408,6 @@ PL_API pl_swapchain pl_vulkan_create_swapchain(pl_vulkan vk,
 // as being suboptimal (VK_SUBOPTIMAL_KHR). This might be of use to clients
 // who have `params->allow_suboptimal` enabled.
 PL_API bool pl_vulkan_swapchain_suboptimal(pl_swapchain sw);
-PL_API bool pl_vulkan_swapchain_set_diagnostics(pl_swapchain sw, bool enabled);
-PL_API bool pl_vulkan_swapchain_get_diagnostics(
-    pl_swapchain sw, int *requested_mode,
-    int *created_mode, int *requested_depth,
-    uint32_t *create_min_images, uint32_t *actual_images);
 
 #define PL_HAVE_VULKAN_PRESENTATION_FEEDBACK 1
 

@@ -47,8 +47,6 @@ shader_names = (
     "shader_flow",
     "shader_synthesize",
     "shader_visibility_resolver",
-    "shader_capture_color",
-    "shader_capture_maps",
 )
 shaders = {name: shader_source(name) for name in shader_names}
 for name, shader in shaders.items():
@@ -66,11 +64,6 @@ optical_luma = shaders["shader_optical_luma"]
 optical_seed = shaders["shader_optical_seed"]
 synthesis = shaders["shader_synthesize"]
 visibility_resolver = shaders["shader_visibility_resolver"]
-capture_color = shaders["shader_capture_color"]
-capture_maps = shaders["shader_capture_maps"]
-require(capture_color, "int ow=pc.cfg.z,oh=pc.cfg.w", "capture color panels must accept independent synthesized-output dimensions")
-require(capture_color, "if(p.x>=atlasW||p.y>=atlasH)return", "capture shader must guard each independently sized atlas extent")
-require(capture_maps, "int tileW=gw; if(p.x>=tileW*7||p.y>=gh)return", "motion-map atlas shader must retain its native map-grid layout")
 require(synthesis, "layout(set=0,binding=7,rgba8) writeonly uniform image2D outTex;", "SDR synthesis output must remain RGBA8")
 require(SOURCE, "shader_replace_once(", "HDR synthesis must derive a second shader from the validated baseline")
 require(SOURCE, "layout(set=0,binding=7,rgba16f) writeonly uniform image2D outTex;", "HDR shader variant must write RGBA16F")
@@ -113,13 +106,14 @@ require(synthesis, "inverseResidual0Valid", "forward validity must be independen
 require(synthesis, "inverseResidual1Valid", "backward validity must be independently guarded")
 require(synthesis, "cycleSamplesFinite=flowFinite(backAt0)&&flowFinite(forwardAt1)", "cycle samples must be finite before reliability")
 require(synthesis, "bool staticPixel=", "static low-motion pixels should bypass the full-resolution warp path")
-require(synthesis, "else if(boundaryConflict) outc=FLOW_RESULT(mix(texelFetch(frame0,p,0),texelFetch(frame1,p,0),pc.timestep),12,confidence,captureReason);", "conflicting warped samples must fall back to a source-frame blend instead of trusting a single possibly corrupted warp")
+require(synthesis, "else if(boundaryConflict) outc=mix(texelFetch(frame0,p,0),texelFetch(frame1,p,0),pc.timestep);", "conflicting warped samples must fall back to a source-frame blend instead of trusting a single possibly corrupted warp")
+assert not any(marker in synthesis for marker in ("FLOW_RESULT", "FLOW_REASON", "captureReason")), "production synthesis must not carry decision-capture instrumentation"
 require(synthesis, "ivec2 outSize=imageSize(outTex),motionSize=pc.cfg.zw;", "synthesis bounds must use the actual storage-image extent, not only host-provided dimensions")
 require(synthesis, "flowP=clamp(uv*vec2(motionSize)-vec2(0.5),vec2(0.0),vec2(motionSize-1))", "Vulkan output pixel centers must map to analysis pixel centers without a half-pixel offset")
 require(visibility_resolver, "flowP=(vec2(p)+0.5)*vec2(motionSize)/vec2(outSize)-vec2(0.5)", "optional resolver must share the corrected pixel-center mapping")
 require(visibility_resolver, "layout(set=0,binding=7) uniform sampler2D motionWarped;", "resolver must sample the already-produced production frame as fallback")
 require(visibility_resolver, "layout(set=0,binding=8,rgba8) writeonly uniform image2D outTex;", "resolver output must remain a separate RGBA8 storage image")
-require(visibility_resolver, "layout(set=0,binding=9,rgba8) writeonly uniform image2D maskTex;", "resolver diagnostic mask must not alias the production output")
+assert "maskTex" not in visibility_resolver, "resolver must not allocate or write an unused diagnostic mask"
 require(visibility_resolver, "for(int y=-2;y<=2;y++)for(int x=-2;x<=2;x++)", "resolver must compare a full-resolution 5x5 patch")
 require(visibility_resolver, "bool uniquelySupported=bestEnergy>0.012&&margin>max(0.025,best*0.30)&&centerError<0.04&&forwardSupport&&backwardSupport", "resolver must require distinct-cost, center, and bidirectional support")
 require(visibility_resolver, "baselineCost-best>0.035&&baselineDistance>3.0", "resolver must materially improve on production and reject near-duplicate motions")
@@ -127,7 +121,8 @@ require(visibility_resolver, "result=mix(fallback,mix(ca,cb,t),0.25)", "resolver
 require(SOURCE, '"mpvflow_visibility_resolver_shader.h"', "the native GPU implementation must include the validated embedded GLSL")
 require(SOURCE, "mpvflow_gpu_synthesize_internal(ctx, pair, source0, source1, t,\n                                           false, false, false, NULL, output)", "the public production synthesis API must keep the resolver and Media3 policy disabled")
 require(SOURCE, "bool enable_soft_blend,\n    bool preserve_motion_blend_on_conflict, pl_tex *output)", "the policy API must keep the Media3 edge preference explicit")
-require(SOURCE, "*pass = make_pass(ctx->gpu, glsl, resolver_desc, 10)", "resolver pass must be initialized lazily only after explicit opt-in")
+require(SOURCE, "*pass = make_pass(ctx->gpu, glsl, resolver_desc, 9)", "resolver pass must be initialized lazily only after explicit opt-in")
+require(SOURCE, "run_pass(ctx, pass, bindings, 9, cfg, t, output_w, output_h,", "resolver pass must bind only production inputs and output")
 require(SOURCE, "fallback=production_output", "resolver failure paths must retain the production result")
 synthesis_main = synthesis.split("void main()", 1)[1]
 output_guard = "if(any(greaterThanEqual(p,outSize))) return;"
@@ -259,7 +254,7 @@ require(synthesis, "smoothstep(0.0,0.60,confidence)*boundaryTrust", "default war
 require(synthesis, "bool softBlend=(pc.cfg.x&0x40000000)!=0", "the soft path must use an explicit per-synthesis debug flag")
 require(synthesis, "softBlendAlpha=clamp(0.5+(pc.timestep-0.5)*1.35,0.0,1.0)", "soft fallback must sharpen uncertain temporal blends continuously without a midpoint jump")
 require(synthesis, "texelFetch(frame1,p,0),softBlendAlpha", "soft fallback must use its biased temporal alpha only for source-frame blending")
-require(synthesis, "outc=softBlend?softBlendColor(p,ca,cb,confidence,preserveMotionBlend):FLOW_RESULT(mix(texelFetch(frame0,p,0),texelFetch(frame1,p,0),pc.timestep)", "Vulkan low-confidence fallback must blend source endpoints instead of creating hard spatial endpoint patches")
+require(synthesis, "outc=softBlend?softBlendColor(p,ca,cb,confidence,preserveMotionBlend):mix(texelFetch(frame0,p,0),texelFetch(frame1,p,0),pc.timestep)", "Vulkan low-confidence fallback must blend source endpoints instead of creating hard spatial endpoint patches")
 require(synthesis, "float softWarpTrust=smoothstep(0.0,0.60,confidence)*boundaryTrust", "Soft Blend must continuously qualify the visibility warp rather than branch at a conflict contour")
 require(synthesis, "preserveMotionBlend=(pc.cfg.x&0x20000000)!=0", "the continuous-motion blend policy must use a separate synthesis flag")
 require(synthesis, "if(preserveMotionBlend) warpWeight=min(warpWeight,0.40);", "conflict blending must retain at least 60 percent of the temporally blended source colors")
@@ -851,7 +846,7 @@ for marker in (
 def renderer_hook_shader(stage: str) -> str:
     hook = synthesis[synthesis.index("vec4 flowImageAt"):]
     replacements = (
-        ("void main(){ FLOW_BEGIN ivec2 p=ivec2(gl_GlobalInvocationID.xy); ivec2 outSize=imageSize(outTex),motionSize=pc.cfg.zw;",
+        ("void main(){ ivec2 p=ivec2(gl_GlobalInvocationID.xy); ivec2 outSize=imageSize(outTex),motionSize=pc.cfg.zw;",
          "void mpvflowSynthesizeAt(ivec2 p, out vec4 result){ ivec2 outSize=textureSize(frame0,0),motionSize=textureSize(luma0Tex,0);"),
         ("if(any(greaterThanEqual(p,outSize))) return; ",
          "if(any(greaterThanEqual(p,outSize))){ result=vec4(0.0); return; } "),
@@ -881,9 +876,6 @@ layout(push_constant) uniform FlowParams { float flowTimestep; int flowFlags; } 
 #define flowLoad(tex,pos) texelFetch(tex,pos,0)
 #define flowSize(tex) textureSize(tex,0)
 #define flowStore(tex,pos,value) result = value
-#define FLOW_BEGIN
-#define FLOW_REASON(bits)
-#define FLOW_RESULT(value,id,confidence,reasons) value
 """
     if stage == "frag":
         ending = "layout(location=0) out vec4 colorOut;\nvoid main(){ mpvflowSynthesizeAt(ivec2(gl_FragCoord.xy), colorOut); }\n"
