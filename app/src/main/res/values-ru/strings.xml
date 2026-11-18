@@ -2267,4 +2267,14 @@
 <string name="pref_glass_rim_width_summary">Толщина светящейся кромки в dp</string>
 <string name="pref_glass_rim_softness">Мягкость кромки</string>
 <string name="pref_glass_rim_softness_summary">Насколько плавно угасает свет кромки</string>
+  <string name="player_sheets_sub_primary">Основные</string>
+  <string name="player_sheets_sub_secondary">Дополнительные</string>
+  <string name="player_move_primary_subtitles_hint">Проведите вверх или вниз, чтобы переместить основные субтитры</string>
+  <string name="player_move_secondary_subtitles_hint">Проведите вверх или вниз, чтобы переместить дополнительные субтитры</string>
+  <string name="video_mark_as_action">Пометить как</string>
+  <string name="video_mark_as_title">Пометить «%1$s» как</string>
+  <string name="video_mark_as_new">Новое</string>
+  <string name="video_mark_as_last_played">Последнее воспроизведение</string>
+  <string name="video_mark_as_finished">Завершено</string>
+  <string name="video_mark_as_none">Нет</string>
 </resources>

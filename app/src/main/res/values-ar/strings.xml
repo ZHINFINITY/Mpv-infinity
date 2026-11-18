@@ -2267,4 +2267,14 @@
 <string name="pref_glass_rim_width_summary">سُمك الحافة المضيئة بوحدة dp</string>
 <string name="pref_glass_rim_softness">نعومة الحافة</string>
 <string name="pref_glass_rim_softness_summary">مدى نعومة تلاشي ضوء الحافة</string>
+  <string name="player_sheets_sub_primary">أساسي</string>
+  <string name="player_sheets_sub_secondary">ثانوي</string>
+  <string name="player_move_primary_subtitles_hint">اسحب لأعلى/لأسفل لتحريك الترجمة الأساسية</string>
+  <string name="player_move_secondary_subtitles_hint">اسحب لأعلى/لأسفل لتحريك الترجمة الثانوية</string>
+  <string name="video_mark_as_action">تحديد كـ</string>
+  <string name="video_mark_as_title">تحديد “%1$s” كـ</string>
+  <string name="video_mark_as_new">جديد</string>
+  <string name="video_mark_as_last_played">آخر تشغيل</string>
+  <string name="video_mark_as_finished">مكتمل</string>
+  <string name="video_mark_as_none">بلا علامة</string>
 </resources>

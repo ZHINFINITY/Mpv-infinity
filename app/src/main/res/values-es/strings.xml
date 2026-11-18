@@ -2267,4 +2267,14 @@ Reinicia la aplicación para que se apliquen todos los cambios.</string>
 <string name="pref_glass_rim_width_summary">Grosor del borde iluminado en dp</string>
 <string name="pref_glass_rim_softness">Suavidad del borde</string>
 <string name="pref_glass_rim_softness_summary">Con qué suavidad se desvanece la luz del borde</string>
+  <string name="player_sheets_sub_primary">Principal</string>
+  <string name="player_sheets_sub_secondary">Secundario</string>
+  <string name="player_move_primary_subtitles_hint">Arrastra hacia arriba/abajo para mover los subtítulos principales</string>
+  <string name="player_move_secondary_subtitles_hint">Arrastra hacia arriba/abajo para mover los subtítulos secundarios</string>
+  <string name="video_mark_as_action">Marcar como</string>
+  <string name="video_mark_as_title">Marcar «%1$s» como</string>
+  <string name="video_mark_as_new">Nuevo</string>
+  <string name="video_mark_as_last_played">Reproducido recientemente</string>
+  <string name="video_mark_as_finished">Finalizado</string>
+  <string name="video_mark_as_none">Ninguno</string>
 </resources>
