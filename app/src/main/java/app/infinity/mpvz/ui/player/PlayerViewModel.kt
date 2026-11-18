@@ -6586,7 +6586,22 @@ class PlayerViewModel(
 
   // ==================== Mirroring ====================
 
+  private fun blockFlipForHwPlus(): Boolean {
+    val activeEngine = if (host.isNativeEngineActive()) PlaybackEngineMode.NATIVE else PlaybackEngineMode.MPV
+    val activeDecoder =
+      if (activeEngine == PlaybackEngineMode.MPV) {
+        runCatching { PlaybackSession.getPropertyString("hwdec-current") }.getOrNull()
+      } else {
+        null
+      }
+    if (!VideoFlipDecoderPolicy.requiresHwOrSwDecoder(activeEngine, activeDecoder)) return false
+
+    playerUpdate.value = PlayerUpdates.ShowText(appContext.getString(R.string.player_flip_requires_hw_or_sw))
+    return true
+  }
+
   fun toggleMirroring() {
+    if (blockFlipForHwPlus()) return
     val newMirrorState = !_transformState.value.isMirrored
     _transformState.update { it.copy(isMirrored = newMirrorState) }
 
@@ -6606,6 +6621,7 @@ class PlayerViewModel(
   }
 
   fun toggleVerticalFlip() {
+    if (blockFlipForHwPlus()) return
     val newState = !_transformState.value.isVerticalFlipped
     _transformState.update { it.copy(isVerticalFlipped = newState) }
 

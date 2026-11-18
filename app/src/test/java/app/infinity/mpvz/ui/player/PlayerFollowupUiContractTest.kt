@@ -771,6 +771,18 @@ class PlayerFollowupUiContractTest {
   }
 
   @Test
+  fun hwPlusFlipRequestsShowWarningBeforeMutatingEitherTransform() {
+    val viewModel = read("app/src/main/java/app/infinity/mpvz/ui/player/PlayerViewModel.kt")
+    val horizontal = viewModel.substringAfter("fun toggleMirroring()").substringBefore("fun toggleVerticalFlip()")
+    val vertical = viewModel.substringAfter("fun toggleVerticalFlip()").substringBefore("fun toggleHdrScreenOutput()")
+
+    assertTrue(horizontal.indexOf("if (blockFlipForHwPlus()) return") in 0 until horizontal.indexOf("_transformState.update"))
+    assertTrue(vertical.indexOf("if (blockFlipForHwPlus()) return") in 0 until vertical.indexOf("_transformState.update"))
+    assertTrue(viewModel.contains("PlaybackSession.getPropertyString(\"hwdec-current\")"))
+    assertTrue(viewModel.contains("R.string.player_flip_requires_hw_or_sw"))
+  }
+
+  @Test
   fun playbackSaveEventsRefreshTheFolderNewBadgeWithoutChangingItsThreshold() {
     val videoList = read("app/src/main/java/app/infinity/mpvz/ui/browser/videolist/VideoListViewModel.kt")
     val activity = read("app/src/main/java/app/infinity/mpvz/ui/player/PlayerActivity.kt")
