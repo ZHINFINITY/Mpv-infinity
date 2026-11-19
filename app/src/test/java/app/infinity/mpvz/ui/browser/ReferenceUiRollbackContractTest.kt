@@ -54,7 +54,7 @@ class ReferenceUiRollbackContractTest {
     assertTrue(current.contains("val snapshot = immutableGlassSnapshot(bitmap)"))
     assertTrue(current.contains("bitmap.copy(Bitmap.Config.ARGB_8888, false)"))
     assertTrue(current.contains("pendingRetirements > MaxRetiredBitmapCount"))
-    assertTrue(current.contains("if (largeSurfaceVisible) maxOf(tuning.frost, GlassSurfacePolicy.RegularMinimumFrostDp) else tuning.frost"))
+    assertTrue(current.contains("GlassCustomizationPolicy.sampledFrostStrength(tuning.frost, largeSurfaceVisible)"))
     assertTrue(current.contains("val currentFrost by rememberUpdatedState(sampledFrost)"))
     assertTrue(current.contains("val frostStrength = currentFrost"))
     assertTrue(current.contains("frostGlassFrame(\n                  copiedBitmap,\n                  frostStrength,"))

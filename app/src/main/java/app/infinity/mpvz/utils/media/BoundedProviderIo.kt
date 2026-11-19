@@ -6,6 +6,7 @@
  */
 package app.infinity.mpvz.utils.media
 
+import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.FutureTask
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.SynchronousQueue
@@ -23,13 +24,13 @@ internal object BoundedProviderIo {
   private val providerReads = BoundedLane("mpv-provider-read")
   private val cleanupExecutor =
     ThreadPoolExecutor(
-      0,
+      1,
       1,
       30L,
       TimeUnit.SECONDS,
-      SynchronousQueue(),
+      ArrayBlockingQueue<Runnable>(64),
       ThreadFactory { runnable -> Thread(runnable, "mpv-provider-cleanup").apply { isDaemon = true } },
-    )
+    ).apply { allowCoreThreadTimeOut(true) }
 
   fun cleanupAsync(operation: () -> Unit) {
     runCatching { cleanupExecutor.execute { runCatching(operation) } }
