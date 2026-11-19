@@ -330,6 +330,24 @@ object PlaybackSession : MPVLib.EventObserver {
   val propString = PlaybackProperty(MPVLib.MpvFormat.MPV_FORMAT_STRING, ::getPropertyString)
   val propNode = PlaybackProperty(MPVLib.MpvFormat.MPV_FORMAT_NODE, ::getPropertyNode)
 
+  data class BackgroundVideoTrackSelection(val mediaId: String, val trackId: Int)
+
+  /** Capture a track only when MPV's loaded path still belongs to the selected queue item. */
+  fun captureBackgroundVideoTrackSelection(): BackgroundVideoTrackSelection? =
+    nativeLock.withLock {
+      if (!initialized || retiringCore) return null
+      val item = queue.value.currentItem ?: return null
+      val loadedPath = runCatching { MPVLib.getPropertyString("path") }.getOrNull()?.takeIf { it.isNotBlank() }
+        ?: return null
+      fun normalized(source: String) = source.trim().removePrefix("file://").removePrefix("file:").trimEnd('/')
+      val matchesLoadedItem =
+        listOfNotNull(item.originalUri, item.playableUri)
+          .any { source -> source == loadedPath || normalized(source) == normalized(loadedPath) }
+      if (!matchesLoadedItem) return null
+      val trackId = runCatching { MPVLib.getPropertyInt("vid") }.getOrNull()?.takeIf { it > 0 } ?: return null
+      BackgroundVideoTrackSelection(item.stableId, trackId)
+    }
+
   /** Returns true when this call created the core, false when it was already alive. */
   /** Native lifecycle entry point. Callers must dispatch this function off Main. */
   fun initialize(
@@ -1460,7 +1478,7 @@ object PlaybackSession : MPVLib.EventObserver {
   private inline fun deliverNativeCallback(block: () -> Unit) {
     if (!nativeCallbackGate.tryEnter()) return
     try {
-      if (retiringCore || !initialized) return
+      if (retiringCore || !nativeCoreReady) return
       block()
     } finally {
       nativeCallbackGate.leave()

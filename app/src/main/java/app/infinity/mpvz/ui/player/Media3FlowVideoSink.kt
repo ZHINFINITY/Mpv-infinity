@@ -2245,9 +2245,27 @@ class Media3FlowVideoSink(
     try {
       check(ensureEgl() && makePbufferCurrent()) { "Media3 Flow producer EGL context is unavailable" }
       sharedTarget = ensurePresentationSlotTarget(slot, frameWidth, frameHeight, preferSharedOutput = true)
-      val outputTargetHandle = if (sharedTarget) slot.nativeImageHandle else outputImageHandle
-      dispatchSynthesis(a, b, pair, targetPtsUs, outputTargetHandle)
-      checkGlError("frame synthesis")
+      if (sharedTarget) {
+        try {
+          dispatchSynthesis(a, b, pair, targetPtsUs, slot.nativeImageHandle)
+          checkGlError("frame synthesis")
+        } catch (sharedFailure: Exception) {
+          // A slot-specific Vulkan/GLES interop failure must not disable a motion pair
+          // that can still synthesize into the producer's scratch output image.
+          destroyPresentationSlotTarget(slot)
+          sharedTarget = false
+          try {
+            dispatchSynthesis(a, b, pair, targetPtsUs, outputImageHandle)
+            checkGlError("scratch frame synthesis")
+          } catch (scratchFailure: Exception) {
+            scratchFailure.addSuppressed(sharedFailure)
+            throw scratchFailure
+          }
+        }
+      } else {
+        dispatchSynthesis(a, b, pair, targetPtsUs, outputImageHandle)
+        checkGlError("frame synthesis")
+      }
       return drawTexture(
         if (sharedTarget) slot.textureId else outputTexture,
         presentationTimeNs,

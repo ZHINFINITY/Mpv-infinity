@@ -88,6 +88,7 @@ for marker in (
     "features.get('libplacebo', false)",
     "pl_shader_custom",
     "pl_shader_is_compute",
+    "cc.has_header_symbol('libplacebo/shaders.h', 'pl_shader_is_compute')",
 ):
     assert marker in prepare_source, f"MPV Meson renderer hook must be capability-gated: missing {marker!r}"
 

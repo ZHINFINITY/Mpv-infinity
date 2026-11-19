@@ -1599,7 +1599,7 @@ class PlayerActivity :
     // Read from the actual launch intent now that it's safe to (see isSecureFolderLaunch kdoc).
     isSecureFolderLaunch = intent.getStringExtra("launch_source") == "secure_folder"
     isStreamTabPlayback = intent.getBooleanExtra("stream_tab_playback", false)
-    if (shouldPreflightExternalM3u()) {
+    if (shouldAttemptExternalM3uPreflight()) {
       val launchIntent = intent
       val preflightGeneration = ++m3uPreflightGeneration
       m3uPreflightJob = lifecycleScope.launch {
@@ -1611,7 +1611,7 @@ class PlayerActivity :
     continuePlayerInitialization()
   }
 
-  private fun shouldPreflightExternalM3u(sourceIntent: Intent = intent): Boolean {
+  private fun shouldAttemptExternalM3uPreflight(sourceIntent: Intent = intent): Boolean {
     if (!playerPreferences.openRadioM3uInMusic.get()) return false
     if (sourceIntent.getStringExtra("launch_source") == "music_m3u_playlist" ||
       sourceIntent.getBooleanExtra("radio_music_preclassified", false)) return false
@@ -1627,22 +1627,71 @@ class PlayerActivity :
       }
     if (playlistCount > 0) return false
     val playableUri = getPlayableUri(sourceIntent) ?: return false
+    isExternalM3uPreflightCandidate(playableUri)
+  }
+
+  private fun isExternalM3uPreflightCandidate(playableUri: String): Boolean =
+    playableUri.startsWith("http://", ignoreCase = true) || playableUri.startsWith("https://", ignoreCase = true) ||
+      playableUri.startsWith("content://", ignoreCase = true) || playableUri.startsWith("file://", ignoreCase = true) ||
+      Uri.parse(playableUri).scheme.isNullOrBlank()
+
+  private suspend fun resolveExternalM3uFileName(
+    sourceIntent: Intent,
+    playableUri: String,
+    fallback: String = "",
+  ): String {
+    val uri = runCatching { Uri.parse(playableUri) }.getOrNull()
+    val providerName =
+      uri?.takeIf { it.scheme.equals("content", ignoreCase = true) }?.let { contentUri ->
+        withContext(Dispatchers.IO) { getDisplayNameFromUri(contentUri) }
+      }
+    return providerName?.takeIf { it.isNotBlank() }
+      ?: fallback.takeIf { it.isNotBlank() }
+      ?: sourceIntent.getStringExtra("filename")?.takeIf { it.isNotBlank() }
+      ?: uri?.let(::extractFileNameFromUri).orEmpty()
+  }
+
+  private suspend fun shouldExpandExternalM3u(
+    sourceIntent: Intent,
+    playableUri: String,
+    fileName: String,
+  ): Boolean {
+    if (!playerPreferences.openRadioM3uInMusic.get()) return false
+    if (sourceIntent.getStringExtra("launch_source") == "music_m3u_playlist" ||
+      sourceIntent.getBooleanExtra("radio_music_preclassified", false)) return false
+    if (sourceIntent.action == MediaPlaybackService.ACTION_OPEN_PLAYER) return false
+    if (sourceIntent.getBooleanExtra(EXTRA_PREPARED_PLAYBACK_QUEUE, false)) return false
+    if (sourceIntent.getIntExtra("playlist_id", -1) != -1) return false
+    val playlistCount =
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        sourceIntent.getParcelableArrayListExtra("playlist", Uri::class.java)?.size ?: 0
+      } else {
+        @Suppress("DEPRECATION")
+        sourceIntent.getParcelableArrayListExtra<Uri>("playlist")?.size ?: 0
+      }
+    if (playlistCount > 0) return false
     val originalUri = extractUriFromIntent(sourceIntent)?.toString()
     val mimeType = resolvePlaybackMimeType(sourceIntent.type, sourceIntent.getStringExtra("mime_type"))
-    return M3uPlaybackPolicy.shouldExpandInApp(
+    val policyAllowsExpansion = M3uPlaybackPolicy.shouldExpandInApp(
       playableUri = playableUri,
       originalUri = originalUri,
-      fileName = getFileName(sourceIntent),
+      fileName = fileName,
       mimeType = mimeType,
       hasExistingPlaylist = false,
       hasPlaylistId = false,
-    ) && (playableUri.startsWith("http://") || playableUri.startsWith("https://") ||
-      playableUri.startsWith("content://") || playableUri.startsWith("file://") ||
-      File(playableUri).isFile)
+    )
+    val hasSupportedScheme = listOf("http://", "https://", "content://", "file://")
+      .any { playableUri.startsWith(it, ignoreCase = true) }
+    val isLocalFile =
+      !hasSupportedScheme && Uri.parse(playableUri).scheme.isNullOrBlank() &&
+        withContext(Dispatchers.IO) { File(playableUri).isFile }
+    return policyAllowsExpansion && (hasSupportedScheme || isLocalFile)
   }
 
   private suspend fun preflightExternalM3u(sourceIntent: Intent, generation: Long) {
     val playableUri = getPlayableUri(sourceIntent) ?: return
+    val resolvedFileName = resolveExternalM3uFileName(sourceIntent, playableUri)
+    if (!shouldExpandExternalM3u(sourceIntent, playableUri, resolvedFileName)) return
     val result: M3UParseResult = try {
       withContext(Dispatchers.IO) {
         withTimeoutOrNull(M3U_PREFLIGHT_TIMEOUT_MS) { parseM3uSource(playableUri, sourceIntent) }
@@ -5471,7 +5520,7 @@ class PlayerActivity :
   private fun rebuildRendererAfterLongBackground() {
     if (pendingInitialMediaLoad != null) {
       dispatchPendingInitialMediaLoadIfReady()
-      if (pendingInitialMediaLoad != null) return
+      return
     }
     if (pendingInitialM3uExpansion && mediaLoadJob?.isActive == true) return
     val playable = currentPlayableUri?.takeIf { it.isNotBlank() } ?: intent?.dataString?.takeIf { it.isNotBlank() }
@@ -8060,14 +8109,22 @@ class PlayerActivity :
             return@launch
           }
 
+          val loadFileName =
+            if (expandM3u || shouldAttemptExternalM3uPreflight(sourceIntent)) {
+              resolveExternalM3uFileName(sourceIntent, playableUri, requestedFileName)
+            } else {
+              requestedFileName
+            }
+          val expandM3uForRequest =
+            expandM3u || shouldExpandExternalM3u(sourceIntent, playableUri, loadFileName)
           val expandedDynamicM3u =
-            expandM3u &&
+            expandM3uForRequest &&
               loadDynamicM3uPlaylist(
                 uriString = originalUri ?: playableUri,
                 sourceIntent = sourceIntent,
                 requestGeneration = requestGeneration,
               )
-          if (expandM3u && requestGeneration == mediaRequestGeneration) {
+          if (expandM3uForRequest && requestGeneration == mediaRequestGeneration) {
             pendingInitialM3uExpansion = false
           }
           if (expandedDynamicM3u) {
@@ -8082,7 +8139,7 @@ class PlayerActivity :
 
           var resolvedPlayableUri = playableUri
           var resolvedOriginalUri = requestedSource
-          var resolvedFileName = requestedFileName
+          var resolvedFileName = loadFileName
           var resolvedMediaIdentifier = requestedMediaIdentifier
           var resolvedMimeType = sourceMimeType ?: "audio/*".takeIf { isKnownAudioLaunch(sourceIntent) }
           var torrentResult: TorrentStreamResult? = null
@@ -11092,10 +11149,10 @@ class PlayerActivity :
     if (fileName.isBlank() || (!isReady && nativeEngineOrNull()?.snapshot?.value?.isReady != true && !mpvInitialized)) return
     if (isMiniPlayerEnabled()) return
 
-    val currentVid = PlaybackSession.getPropertyInt("vid") ?: -1
-    if (currentVid > 0) {
-      lastVid = currentVid
-      lastVidMediaId = PlaybackSession.state.value.currentItem?.stableId
+    val trackSelection = PlaybackSession.captureBackgroundVideoTrackSelection() ?: return
+    if (trackSelection.trackId > 0) {
+      lastVid = trackSelection.trackId
+      lastVidMediaId = trackSelection.mediaId
       PlaybackSession.setPropertyString("vid", "no")
       isInBackgroundPlayback = true
       Log.d(TAG, "Video disabled for background playback (saved vid: $lastVid)")

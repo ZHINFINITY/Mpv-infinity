@@ -637,5 +637,46 @@ class PlayerFollowupUiContractTest {
     assertTrue(decoder.contains("preferences.anime4kQuality.set(it)"))
   }
 
+  @Test
+  fun reviewedAsyncPlaybackPathsKeepTheirIdentityAndReadinessGuards() {
+    val activity = read("app/src/main/java/app/infinity/mpvz/ui/player/PlayerActivity.kt")
+    val fileNameResolver = activity.substringAfter("private suspend fun resolveExternalM3uFileName")
+      .substringBefore("private suspend fun shouldExpandExternalM3u")
+    val preflight = activity.substringAfter("private suspend fun preflightExternalM3u(")
+      .substringBefore("private fun shouldRetryM3uPreflightFailure")
+    assertTrue(fileNameResolver.contains("withContext(Dispatchers.IO) { getDisplayNameFromUri(contentUri) }"))
+    assertTrue(activity.contains("withContext(Dispatchers.IO) { File(playableUri).isFile }"))
+    assertTrue(preflight.contains("val resolvedFileName = resolveExternalM3uFileName"))
+    assertTrue(preflight.contains("shouldExpandExternalM3u(sourceIntent, playableUri, resolvedFileName)"))
+    assertTrue(activity.contains("val loadFileName ="))
+    assertTrue(activity.contains("shouldExpandExternalM3u(sourceIntent, playableUri, loadFileName)"))
+    assertTrue(activity.contains("expandM3uForRequest &&"))
+
+    val viewModel = read("app/src/main/java/app/infinity/mpvz/ui/player/PlayerViewModel.kt")
+    assertTrue(viewModel.contains("PlaybackSession.getPropertyString(target.versionProperty) == expectedVersion"))
+    assertTrue(viewModel.contains("if (!areCustomButtonHandlersReady()) return"))
+    assertTrue(viewModel.contains("fun callCustomButtonLongPress(id: String) {\n    if (!areCustomButtonHandlersReady()) return"))
+    assertTrue(viewModel.contains("customButtonsScriptVersions[language] ?: continue"))
+
+    val sink = read("app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowVideoSink.kt")
+    assertTrue(sink.contains("destroyPresentationSlotTarget(slot)"))
+    assertTrue(sink.contains("scratch frame synthesis"))
+    assertTrue(sink.contains("dispatchSynthesis(a, b, pair, targetPtsUs, outputImageHandle)"))
+
+    val session = read("app/src/main/java/app/infinity/mpvz/ui/player/PlaybackSession.kt")
+    val initStart = session.indexOf("fun initialize(")
+    val initializedIndex = session.indexOf("initialized = true", initStart)
+    val observerIndex = session.indexOf("MPVLib.addObserver(this)", initStart)
+    assertTrue("Observer setup must happen before core initialization is published", initStart >= 0 && observerIndex > initStart && initializedIndex > observerIndex)
+    val callback = session.substringAfter("private inline fun deliverNativeCallback").substringBefore("override fun eventProperty")
+    assertTrue(callback.contains("!nativeCoreReady"))
+    val capture = session.substringAfter("fun captureBackgroundVideoTrackSelection()")
+      .substringBefore("/** Returns true when this call created the core")
+    assertTrue(capture.contains("queue.value.currentItem"))
+    assertTrue(capture.contains("getPropertyString"))
+    assertTrue(capture.contains("normalized(source) == normalized(loadedPath)"))
+    assertTrue(activity.contains("PlaybackSession.captureBackgroundVideoTrackSelection()"))
+  }
+
   private fun read(path: String): String = File(root, path).readText()
 }

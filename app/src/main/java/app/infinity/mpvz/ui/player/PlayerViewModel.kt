@@ -1804,6 +1804,8 @@ class PlayerViewModel(
 
   @Volatile
   private var customButtonsScriptPaths: Map<CustomButtonScriptLanguage, String> = emptyMap()
+  @Volatile
+  private var customButtonsScriptVersions: Map<CustomButtonScriptLanguage, String> = emptyMap()
   private val legacyCustomButtonsLoadedFlagProperty = "user-data/Mpv∞/custombuttons_loaded"
   private val legacyCustomButtonsVersionProperty = "user-data/Mpv∞/custombuttons_version"
   private val customButtonScriptTargets =
@@ -2195,12 +2197,16 @@ class PlayerViewModel(
             val currentItem = sessionState.currentItem ?: PlaybackSession.queue.value.currentItem
             val queueIsM3u = PlaybackSession.queue.value.isM3u
             val cachedDuration = MediaPlaybackService.durationSecondsForItem(currentItem)
+            val fallbackDuration =
+              cachedDuration?.takeIf { it > 0.0 }?.toFloat()
+                ?: currentItem?.durationSeconds?.takeIf { it > 0.0 }?.toFloat()
+                ?: 0f
             if (sessionState.phase == PlaybackPhase.LOADING) {
-              _preciseDuration.value = cachedDuration?.toFloat() ?: 0f
+              _preciseDuration.value = fallbackDuration
               return@collect
             }
             if (observedDuration == null || observedDuration <= 0) {
-              _preciseDuration.value = cachedDuration?.toFloat() ?: 0f
+              _preciseDuration.value = fallbackDuration
               return@collect
             }
             val durationFromMpv = PlaybackSession.getPropertyDouble("duration") ?: observedDuration.toDouble()
@@ -2222,7 +2228,7 @@ class PlayerViewModel(
             // the active item's duration becomes available.
             refreshChapterDerivedSegments(chapters.value)
             checkPendingIntroLookup()
-            syncplayManager.updateFileInfo(currentSyncplayFileInfo())
+            if (!hostedInBrowser) syncplayManager.updateFileInfo(currentSyncplayFileInfo())
 
             if (_isAmbientEnabled.value) {
               lastAmbientScaleX = -1.0
@@ -2409,6 +2415,7 @@ class PlayerViewModel(
 
   private fun setupCustomButtons() {
     customButtonsSetupJob?.cancel()
+    customButtonsScriptVersions = emptyMap()
     val jsonString = playerPreferences.customButtons.get()
     _customButtons.value = parseCustomButtonUiStates(jsonString)
     customButtonsSetupJob =
@@ -2468,6 +2475,7 @@ class PlayerViewModel(
           }
 
           val generatedPaths = mutableMapOf<CustomButtonScriptLanguage, String>()
+          val generatedVersions = mutableMapOf<CustomButtonScriptLanguage, String>()
           val scriptsDir = File(appContext.filesDir, "scripts")
           if (!scriptsDir.exists()) scriptsDir.mkdirs()
 
@@ -2482,8 +2490,10 @@ class PlayerViewModel(
             val file = File(scriptsDir, target.fileName)
             file.writeText(scriptContent)
             generatedPaths[language] = file.absolutePath
+            generatedVersions[language] = scriptVersion
           }
 
+          customButtonsScriptVersions = generatedVersions.toMap()
           customButtonsScriptPaths = generatedPaths.toMap()
           deleteCustomButtonsScriptFiles(activePaths = generatedPaths.values.toSet())
           withContext(Dispatchers.Main) {
@@ -2513,6 +2523,7 @@ class PlayerViewModel(
               android.util.Log.d("PlayerViewModel", "Deferring custom button scripts until MPV is ready")
             }
           } else {
+            customButtonsScriptVersions = emptyMap()
             customButtonsScriptPaths = emptyMap()
             deleteCustomButtonsScriptFiles()
             withContext(Dispatchers.Main) {
@@ -2541,9 +2552,10 @@ class PlayerViewModel(
 
         for ((language, scriptPath) in scriptPaths) {
           val target = customButtonScriptTargetsByLanguage[language] ?: continue
+          val expectedVersion = customButtonsScriptVersions[language] ?: continue
           val isLoaded =
             withContext(Dispatchers.Main) {
-              isCustomButtonsScriptLoaded(target)
+              isCustomButtonsScriptLoaded(target, expectedVersion)
             }
           if (isLoaded) continue
 
@@ -2569,9 +2581,24 @@ class PlayerViewModel(
     }
   }
 
-  private fun isCustomButtonsScriptLoaded(target: CustomButtonScriptTarget): Boolean =
-    runCatching { PlaybackSession.getPropertyString(target.loadedFlagProperty) == "1" }
-      .getOrDefault(false)
+  private fun isCustomButtonsScriptLoaded(
+    target: CustomButtonScriptTarget,
+    expectedVersion: String,
+  ): Boolean =
+    runCatching {
+      PlaybackSession.getPropertyString(target.loadedFlagProperty) == "1" &&
+        PlaybackSession.getPropertyString(target.versionProperty) == expectedVersion
+    }.getOrDefault(false)
+
+  private fun areCustomButtonHandlersReady(): Boolean {
+    val scriptPaths = customButtonsScriptPaths
+    if (scriptPaths.isEmpty()) return true
+    return scriptPaths.keys.all { language ->
+      val target = customButtonScriptTargetsByLanguage[language] ?: return@all false
+      val expectedVersion = customButtonsScriptVersions[language] ?: return@all false
+      isCustomButtonsScriptLoaded(target, expectedVersion)
+    }
+  }
 
   private fun loadCustomButtonsScript(
     file: File,
@@ -2660,11 +2687,13 @@ class PlayerViewModel(
     }
 
   fun callCustomButton(id: String) {
+    if (!areCustomButtonHandlersReady()) return
     val safeId = id.replace("-", "_")
     PlaybackSession.command("script-message", "call_button_$safeId")
   }
 
   fun callCustomButtonLongPress(id: String) {
+    if (!areCustomButtonHandlersReady()) return
     val safeId = id.replace("-", "_")
     PlaybackSession.command("script-message", "call_button_long_$safeId")
   }

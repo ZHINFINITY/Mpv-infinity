@@ -162,4 +162,21 @@ class PlayerControlVisibilityPolicyTest {
       ),
     )
   }
+
+  @Test
+  fun nativeFailureDoesNotLeaveAnIdleBufferingSpinnerVisible() {
+    assertFalse(
+      PlayerControlVisibilityPolicy.shouldShowBufferingIndicator(
+        nativeEngineActive = true,
+        nativeReady = false,
+        nativeBuffering = false,
+        nativeEnded = false,
+        mpvLoading = false,
+        mpvBuffering = false,
+        torrentConnecting = false,
+        isSeeking = false,
+        nativeFailed = true,
+      ),
+    )
+  }
 }
