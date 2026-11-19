@@ -223,7 +223,7 @@ class VideoBackgroundResumeWiringTest {
       "mediaLoadInProgress = mediaLoadJob?.isActive == true",
       "val hasPlayableSource = !currentPlayableUri.isNullOrBlank() || !intent?.dataString.isNullOrBlank()",
       "if (shouldRecoverNative && hasPlayableSource)",
-      "rebuildRendererAfterLongBackground()",
+      "requestRendererRebuildAfterBackground()",
       "return true",
     )
   }
