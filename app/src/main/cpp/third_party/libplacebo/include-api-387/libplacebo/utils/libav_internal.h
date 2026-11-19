@@ -1606,7 +1606,7 @@ PL_LIBAV_API bool pl_map_avframe_ex(pl_gpu gpu, struct pl_frame *out,
 
     struct pl_avframe_priv *priv = malloc(sizeof(*priv));
     if (!priv)
-        goto error;
+        return false;
 
     pl_frame_from_avframe(out, frame);
     priv->avframe = av_frame_clone(frame);
@@ -1863,12 +1863,17 @@ PL_LIBAV_API int pl_get_buffer2(AVCodecContext *avctx, AVFrame *pic, int flags)
         planesize[p] = (uintptr_t) ptrs[p] - (uintptr_t) base;
 #endif
 
+    // Decide whether the default allocator is required before installing any
+    // GPU-backed planes; a partial GPU allocation cannot be handed to FFmpeg's
+    // fallback allocator as a fresh frame.
     for (int p = 0; p < planes; p++) {
         const size_t buf_size = planesize[p] + alignment[p];
-        if (buf_size > gpu->limits.max_mapped_size) {
+        if (buf_size > gpu->limits.max_mapped_size)
             goto fallback;
-        }
+    }
 
+    for (int p = 0; p < planes; p++) {
+        const size_t buf_size = planesize[p] + alignment[p];
         alloc = malloc(sizeof(*alloc));
         if (!alloc) {
             av_frame_unref(pic);
