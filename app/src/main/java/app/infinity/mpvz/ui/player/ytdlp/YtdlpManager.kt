@@ -443,7 +443,6 @@ object YtdlpManager {
   ): String? =
     withContext(Dispatchers.IO) {
       if (!requiresYtdlp(source) || !isPlaybackRuntimeReady(context)) return@withContext source
-      unwrapProviderMediaUrl(source, onLog)?.let { return@withContext it }
       val startedAtMs = android.os.SystemClock.elapsedRealtime()
       val output = StringBuilder()
       val ytdlFile = File(getYtdlDir(context), "yt-dlp")
