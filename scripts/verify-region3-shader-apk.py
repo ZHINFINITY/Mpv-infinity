@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail closed unless the APK embeds this exact experimental shader for both players."""
+"""Fail closed unless the APK embeds this exact experimental shader in Media3 Flow."""
 import ast
 import hashlib
 import json
@@ -14,7 +14,7 @@ source = (root/'app/src/main/cpp/mpvflow/mpvflow_gpu.c').read_text()
 match = re.search(r'static const char shader_synthesize\[\] =\n(.*?);\n', source, re.S)
 shader = ''.join(ast.literal_eval(s) for s in re.findall(r'"(?:\\.|[^"\\])*"', match[1])).encode()
 assert b'if(!softBlend) boundaryTrust*=region3LocalTrust*region3TransitionTrust' in shader
-libraries = ['lib/arm64-v8a/libmpv.so','lib/arm64-v8a/libmedia3flow_vulkan.so']
+libraries = ['lib/arm64-v8a/libmedia3flow_vulkan.so']
 with zipfile.ZipFile(apk) as archive:
     for name in libraries:
         data = archive.read(name)

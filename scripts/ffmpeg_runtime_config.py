@@ -12,9 +12,9 @@ _SWITCH = re.compile(
 _FFMPEG_VERSION_MARKER = re.compile(r"(?m)^FFmpeg version (?P<version>\S+)$")
 _FFMPEG_N90_VERSION = re.compile(r"n9\.0(?:\.\d+)?(?:[-+][A-Za-z0-9._-]+)?\Z")
 _FONGMI_FFMPEG_REVISION = "f2c5162b7c4b3e8835de270ff78cecc524decad1"
-_FONGMI_FFMPEG_BASE_VERSION = "git-2026-11-10-f2c5162"
+_FONGMI_FFMPEG_DATE_PREFIX = "git-2026-11-10-"
 _FONGMI_FFMPEG_VERSION_SUFFIX = f"mpvflow-fongmi-{_FONGMI_FFMPEG_REVISION}"
-_FONGMI_FFMPEG_VERSION = f"{_FONGMI_FFMPEG_BASE_VERSION}-{_FONGMI_FFMPEG_VERSION_SUFFIX}"
+_FONGMI_FFMPEG_VERSION = f"{_FONGMI_FFMPEG_DATE_PREFIX}{_FONGMI_FFMPEG_REVISION[:7]}-{_FONGMI_FFMPEG_VERSION_SUFFIX}"
 
 
 class RuntimeEvidenceError(ValueError):
@@ -58,9 +58,16 @@ def ffmpeg_runtime_version(text: str) -> str:
         version = next(iter(versions))
         if _FFMPEG_N90_VERSION.fullmatch(version):
             return version
-        if version.startswith(_FONGMI_FFMPEG_BASE_VERSION + "-"):
-            suffix = version.rsplit("-", 1)[-1]
-            if _FONGMI_FFMPEG_REVISION.startswith(suffix):
+        if version.startswith(_FONGMI_FFMPEG_DATE_PREFIX):
+            remainder = version[len(_FONGMI_FFMPEG_DATE_PREFIX):]
+            stamp = f"-{_FONGMI_FFMPEG_VERSION_SUFFIX}"
+            abbreviation, separator, trailing = remainder.partition(stamp)
+            if (
+                separator
+                and trailing == ""
+                and 7 <= len(abbreviation) <= len(_FONGMI_FFMPEG_REVISION)
+                and _FONGMI_FFMPEG_REVISION.startswith(abbreviation)
+            ):
                 return f"n9.1-FongMi-{_FONGMI_FFMPEG_REVISION[:8]}"
     found = ", ".join(sorted(versions)) if versions else "none"
     raise RuntimeEvidenceError(
