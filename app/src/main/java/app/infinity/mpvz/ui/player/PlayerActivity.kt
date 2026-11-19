@@ -175,6 +175,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.abs
 import kotlin.math.pow
 import kotlin.math.roundToInt
+import app.infinity.mpvz.utils.media.BoundedProviderIo
 
 private enum class BackgroundPlaybackStartResult {
   Started,
@@ -349,6 +350,29 @@ class PlayerActivity :
   private val playerObserver by lazy { PlayerObserver(this) }
   // Main-thread binding epoch fences callbacks already queued by a retired MPV core.
   @Volatile private var playerObserverBindingEpoch = 0L
+
+  private fun isCurrentEngineHandoffRequest(
+    requestGeneration: Long,
+    mediaIdentifierSnapshot: String,
+    playableUriSnapshot: String?,
+    queueStableIdSnapshot: String?,
+    queueOriginalUriSnapshot: String?,
+  ): Boolean {
+    val currentQueueItem = PlaybackSession.queue.value.currentItem
+    return !isFinishing && !isDestroyed && ownsPlaybackSession() &&
+      PlaybackEngineHandoffPolicy.isCurrent(
+        expectedGeneration = requestGeneration,
+        currentGeneration = mediaRequestGeneration,
+        expectedMediaIdentifier = mediaIdentifierSnapshot,
+        currentMediaIdentifier = activeSaveMediaIdentifier.ifBlank { mediaIdentifier },
+        expectedPlayableUri = playableUriSnapshot,
+        currentPlayableUri = currentPlayableUri?.takeIf { it.isNotBlank() },
+        expectedQueueStableId = queueStableIdSnapshot,
+        currentQueueStableId = currentQueueItem?.stableId,
+        expectedQueueOriginalUri = queueOriginalUriSnapshot,
+        currentQueueOriginalUri = currentQueueItem?.originalUri,
+      )
+  }
 
   internal fun capturePlayerObserverCallbackToken(): PlayerObserverCallbackToken =
     PlayerObserverCallbackToken(playerObserverBindingEpoch, PlaybackSession.state.value.generation)
@@ -1643,7 +1667,10 @@ class PlayerActivity :
     val uri = runCatching { Uri.parse(playableUri) }.getOrNull()
     val providerName =
       uri?.takeIf { it.scheme.equals("content", ignoreCase = true) }?.let { contentUri ->
-        withContext(Dispatchers.IO) { getDisplayNameFromUri(contentUri) }
+        BoundedProviderIo.query(
+          timeoutMs = M3UParser.PROVIDER_QUERY_TIMEOUT_MS,
+          fallback = null,
+        ) { getDisplayNameFromUri(contentUri) }
       }
     return providerName?.takeIf { it.isNotBlank() }
       ?: fallback.takeIf { it.isNotBlank() }
@@ -1690,30 +1717,32 @@ class PlayerActivity :
 
   private suspend fun preflightExternalM3u(sourceIntent: Intent, generation: Long) {
     val playableUri = getPlayableUri(sourceIntent) ?: return
-    val resolvedFileName = resolveExternalM3uFileName(sourceIntent, playableUri)
-    if (!shouldExpandExternalM3u(sourceIntent, playableUri, resolvedFileName)) return
-    val result: M3UParseResult = try {
-      withContext(Dispatchers.IO) {
-        withTimeoutOrNull(M3U_PREFLIGHT_TIMEOUT_MS) { parseM3uSource(playableUri, sourceIntent) }
-      } ?: M3UParseResult.Error("M3U preflight timed out")
+    var classificationAttempted = false
+    val parsed = try {
+      withTimeoutOrNull(M3U_PREFLIGHT_TIMEOUT_MS) {
+        val resolvedFileName = resolveExternalM3uFileName(sourceIntent, playableUri)
+        if (!shouldExpandExternalM3u(sourceIntent, playableUri, resolvedFileName)) return@withTimeoutOrNull null
+        classificationAttempted = true
+        parseM3uSource(playableUri, sourceIntent)
+      }
     } catch (cancelled: CancellationException) {
       throw cancelled
     } catch (error: Exception) {
       Log.w(TAG, "M3U preflight unavailable; retaining the existing player route", error)
       M3UParseResult.Error(error.message ?: "M3U preflight failed", error)
     }
+    if (!classificationAttempted) return
+    val result = parsed ?: M3UParseResult.Error("M3U preflight timed out")
     if (generation != m3uPreflightGeneration) return
     preflightM3uParse = ExternalM3uPreflight(generation, playableUri, result)
     if (result is M3UParseResult.Success && result.items.isNotEmpty() &&
       M3URoutingPolicy.route(result) == M3URoute.MUSIC &&
       !M3UParser.shouldPlayHlsDirectly(result)
     ) {
-      // Preserve secure-folder/network source identity; this separate marker only selects the UI.
       sourceIntent.putExtra("radio_music_preclassified", true)
       sourceIntent.putExtra("is_audio", true)
       sourceIntent.putExtra("media_library_audio", true)
       sourceIntent.putExtra("radio_stream", true)
-      // Keep the marker MIME recognized by M3uPlaybackPolicy so expansion still occurs.
       sourceIntent.putExtra("mime_type", "audio/x-mpegurl")
     }
   }
@@ -1791,6 +1820,23 @@ class PlayerActivity :
           engineSelectionRequests,
         ).collect { engine ->
           val currentQueueItem = PlaybackSession.queue.value.currentItem
+          val outgoingEngine = activeEngineMode
+          val handoffRequestGeneration = mediaRequestGeneration
+          val handoffMediaIdentifier = activeSaveMediaIdentifier.ifBlank { mediaIdentifier }
+          val handoffPlayableUri = currentPlayableUri?.takeIf { it.isNotBlank() }
+          val handoffQueueStableId = currentQueueItem?.stableId
+          val handoffQueueOriginalUri = currentQueueItem?.originalUri
+          val handoffQueueIndex = PlaybackSession.queue.value.currentIndex
+          val isCurrentHandoffRequest = {
+            activeEngineMode == outgoingEngine &&
+              isCurrentEngineHandoffRequest(
+                handoffRequestGeneration,
+                handoffMediaIdentifier,
+                handoffPlayableUri,
+                handoffQueueStableId,
+                handoffQueueOriginalUri,
+              )
+          }
           val currentNativeVideoHint = currentQueueItem?.stableId == nativeVideoHintMediaId
           val effectiveEngine =
             when {
@@ -1811,11 +1857,12 @@ class PlayerActivity :
           // the handoff path and can stop an active torrent proxy.
           if (effectiveEngine == activeEngineMode) return@collect
           // Finish the one authorized reconfiguration before an unrelated engine handoff.
+          if (!isCurrentHandoffRequest()) return@collect
           mpvInterpolationRestartJob?.join()
+          if (!isCurrentHandoffRequest()) return@collect
           nativeInterpolationRestartJob?.join()
-          if (!ownsPlaybackSession() || isFinishing || isDestroyed) return@collect
+          if (!isCurrentHandoffRequest()) return@collect
           engineHandoffJob?.cancel()
-          val outgoingEngine = activeEngineMode
           val pendingNativeRestart = pendingNativeInterpolationFallbackState?.takeIf { state ->
             outgoingEngine == PlaybackEngineMode.NATIVE &&
               NativeInterpolationRestartPolicy.stillOwns(
@@ -1845,6 +1892,7 @@ class PlayerActivity :
 
           // Freeze the outgoing renderer before changing surfaces. This prevents both engines from
           // decoding the same item during the handoff and makes the captured state authoritative.
+          if (!isCurrentHandoffRequest()) return@collect
           if (outgoingEngine == PlaybackEngineMode.NATIVE) {
             nativeEngineOrNull()?.setPlaying(false)
           } else if (mpvInitialized) {
@@ -1857,6 +1905,7 @@ class PlayerActivity :
                   break
                 }
                 delay(25L)
+                if (!isCurrentHandoffRequest()) return@collect
               }
             }
             if (!pauseConfirmed) {
@@ -1869,13 +1918,15 @@ class PlayerActivity :
 
           // Commit the outgoing renderer's complete state before changing ownership. Both
           // engines restore the same stable media record, not the frozen MPV properties.
-          val handoffRequestGeneration = mediaRequestGeneration
+          if (!isCurrentHandoffRequest()) return@collect
           saveVideoPlaybackState(fileName, immediate = true)?.join()
+          if (!isCurrentHandoffRequest()) return@collect
           val handoffState = withContext(Dispatchers.IO) {
-            playbackStateRepository.getVideoDataByTitle(activeSaveMediaIdentifier.ifBlank { mediaIdentifier })
+            playbackStateRepository.getVideoDataByTitle(handoffMediaIdentifier)
           }
+          if (!isCurrentHandoffRequest()) return@collect
           val useNative = effectiveEngine == PlaybackEngineMode.NATIVE
-          val currentUri = currentPlayableUri?.takeIf { it.isNotBlank() }
+          val currentUri = handoffPlayableUri
           val sessionReady = PlaybackSession.state.value.phase == PlaybackPhase.READY ||
             PlaybackSession.state.value.phase == PlaybackPhase.BACKGROUND
           if (currentUri != null && (isReady || sessionReady || outgoingEngine == PlaybackEngineMode.NATIVE)) {
@@ -1887,7 +1938,7 @@ class PlayerActivity :
               if (outgoingEngine == PlaybackEngineMode.MPV) {
                 PlaybackSession.setPropertyBoolean("mute", true)
               }
-              val queuedItem = PlaybackSession.queue.value.currentItem
+              val queuedItem = currentQueueItem
               val currentItem =
                 queuedItem?.takeUnless { it.requiresTorrentResolution() }
                   ?: queuedItem?.copy(playableUri = currentUri)
@@ -1910,7 +1961,7 @@ class PlayerActivity :
                 headers = currentItem?.headers.orEmpty(),
                 mimeType = currentItem?.mimeType,
                 sourceUri = currentItem?.originalUri?.toUri(),
-                mediaId = currentItem?.stableId ?: mediaIdentifier,
+                mediaId = currentItem?.stableId ?: handoffMediaIdentifier,
               )
               applyNativePlaybackState(handoffState, handoffRequestGeneration)
               engineHandoffJob = lifecycleScope.launch {
@@ -1923,9 +1974,12 @@ class PlayerActivity :
                   nativeFirstFrame.first { it }
                   true
                 } == true
-                if (!rendered || !ownsPlaybackSession()) {
+                if (!isCurrentHandoffRequest() || activeEngineMode != PlaybackEngineMode.NATIVE) {
+                  return@launch
+                }
+                if (!rendered) {
                   nativeEngineOrNull()?.stop()
-                  if (ownsPlaybackSession()) {
+                  if (isCurrentHandoffRequest()) {
                     activeEngineMode = PlaybackEngineMode.MPV
                     viewModel.setNativeEngineActive(false)
                     PlaybackSession.setPropertyBoolean("mute", false)
@@ -1962,9 +2016,9 @@ class PlayerActivity :
               nativeEngineOrNull()?.stop()
               // This is a renderer handoff, not a user-selected queue change. Avoid the normal
               // loader's outgoing-item stop/report path, which can race the new MPV load.
-              val queueItem = PlaybackSession.queue.value.currentItem
+              val queueItem = currentQueueItem
               queueItem?.torrentFileIndex?.let { intent.putExtra("torrent_file_index", it) }
-              val handoffIndex = PlaybackSession.queue.value.currentIndex
+              val handoffIndex = handoffQueueIndex
                 .takeIf { it in playlist.indices }
               val isTorrentHandoff =
                 activeTorrentSourceUri != null ||
@@ -2171,7 +2225,7 @@ class PlayerActivity :
     playerInitializationComplete = true
     deferInitialMediaLoadUntilForeground =
       stoppedBeforePlayerReady &&
-        !isBackgroundPlaybackEnabled() &&
+        !isBackgroundPlaybackEnabledForInitialMedia() &&
         (!lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) || isDeviceScreenOffOrLocked())
     if (deferInitialMediaLoadUntilForeground) {
       pendingBackgroundPlaybackStart = true
@@ -5742,7 +5796,7 @@ class PlayerActivity :
       ?.takeIf { path -> File(path).canRead() }
       ?: when (intent.action) {
         // A value returned here is retained in PlaybackItem. Never detach an fd at this stage:
-        // fd:// handles are consumed by their first mpv load and cannot survive replay/reopen.
+        // fdclose:// handles are closed by mpv after a load and cannot survive replay/reopen.
         // PlaybackSession opens one fresh descriptor immediately before every actual load.
         Intent.ACTION_VIEW -> intent.data?.resolveUri(this, allowFdFallback = false)
         Intent.ACTION_SEND -> parsePathFromSendIntent(intent)
@@ -7301,6 +7355,7 @@ class PlayerActivity :
     identifier: String,
     legacyIdentifier: String?,
     legacyContentUri: String? = null,
+    legacyDataPathCache: MutableMap<String, String?>? = null,
   ): PlaybackStateEntity? {
     playbackStateRepository.getVideoDataByTitle(identifier)?.let { return it }
 
@@ -7324,13 +7379,20 @@ class PlayerActivity :
       ?.takeIf { it.startsWith("content://", ignoreCase = true) }
       ?: legacyIdentifier?.takeIf { it.startsWith("content://", ignoreCase = true) }
     val providerBackingKey = providerUri?.let { original ->
-      withContext(Dispatchers.IO) {
-        runCatching {
-          contentResolver.query(Uri.parse(original), arrayOf(MediaStore.MediaColumns.DATA), null, null, null)?.use { c ->
-            if (c.moveToFirst()) c.getString(c.getColumnIndexOrThrow(MediaStore.MediaColumns.DATA)) else null
-          }
-        }.getOrNull()
-      }
+      val backingPath =
+        if (legacyDataPathCache?.containsKey(original) == true) {
+          legacyDataPathCache[original]
+        } else {
+          BoundedProviderIo.legacyDataQuery(
+            timeoutMs = M3UParser.PROVIDER_QUERY_TIMEOUT_MS,
+            fallback = null,
+          ) {
+            contentResolver.query(Uri.parse(original), arrayOf(MediaStore.MediaColumns.DATA), null, null, null)?.use { c ->
+              if (c.moveToFirst()) c.getString(c.getColumnIndexOrThrow(MediaStore.MediaColumns.DATA)) else null
+            }
+          }.also { resolved -> legacyDataPathCache?.put(original, resolved) }
+        }
+      backingPath
     }?.takeIf { !it.isNullOrBlank() }?.let(PlaybackIdentity::forLocalPath)
       ?.takeIf { it != identifier && isCollisionResistant(it) }
     val providerState = providerBackingKey?.let { playbackStateRepository.getVideoDataByTitle(it) }
@@ -7701,6 +7763,10 @@ class PlayerActivity :
       }
       setIntent(intent)
       pendingSavedPlaylistSelection = null
+      if (intent.action != MediaPlaybackService.ACTION_OPEN_PLAYER && !hasAttachableAudioSession(intent)) {
+        restoredAudioPlaybackSnapshot = null
+        audioPlaybackSessionAttachableAtLaunch = false
+      }
       isSecureFolderLaunch = intent.getStringExtra("launch_source") == "secure_folder"
       isStreamTabPlayback = intent.getBooleanExtra("stream_tab_playback", false)
       if (shouldAttemptExternalM3uPreflight(intent)) {
@@ -8362,11 +8428,12 @@ class PlayerActivity :
       coroutineScope {
         val savedPlaybackStateJob =
           async(Dispatchers.IO) {
+            val legacyDataPathCache = mutableMapOf<String, String?>()
             immediatePlaybackStateSaveJob?.join()
             val legacyContentUri = listOfNotNull(item.originalUri, item.playableUri)
               .firstOrNull { source -> Uri.parse(source).scheme.equals("content", ignoreCase = true) }
-            resolvePlaybackState(item.stableId, legacyMediaIdentifier, legacyContentUri)
-              ?: resolvePlaybackState(mediaIdentifier, legacyMediaIdentifier, legacyContentUri)
+            resolvePlaybackState(item.stableId, legacyMediaIdentifier, legacyContentUri, legacyDataPathCache)
+              ?: resolvePlaybackState(mediaIdentifier, legacyMediaIdentifier, legacyContentUri, legacyDataPathCache)
               ?: playbackStateRepository.getVideoDataByTitle(PlaybackIdentity.forUri(item.playableUri))
               ?: playbackStateRepository.getVideoDataByTitle(PlaybackIdentity.forLocalPath(item.playableUri))
           }
@@ -11055,14 +11122,14 @@ class PlayerActivity :
       )
     val userAgent = PlaybackHttpHeaders.userAgent(requestHeaders)
     return when {
-      uriString.startsWith("http://") || uriString.startsWith("https://") ->
+      uriString.startsWith("http://", ignoreCase = true) || uriString.startsWith("https://", ignoreCase = true) ->
         M3UParser.parseFromUrl(
           url = uriString,
           userAgent = userAgent,
           headers = requestHeaders,
           httpClient = networkHttpClient,
         )
-      uriString.startsWith("content://") || uriString.startsWith("file://") ->
+      uriString.startsWith("content://", ignoreCase = true) || uriString.startsWith("file://", ignoreCase = true) ->
         M3UParser.parseFromUri(this, Uri.parse(uriString))
       else -> {
         val file = File(uriString)
@@ -11364,4 +11431,19 @@ private fun persistStreamHistoryProgress(
     )
     .putInt("schema_version", 3)
     .apply()
+
+  private fun isBackgroundPlaybackEnabledForInitialMedia(): Boolean {
+    val reattachingExistingSession =
+      reusingPlaybackSessionOnLaunch ||
+        intent.action == MediaPlaybackService.ACTION_OPEN_PLAYER ||
+        hasAttachableAudioSession(intent)
+    if (reattachingExistingSession) return isBackgroundPlaybackEnabled()
+
+    val initialMediaIsAudio = restoredAudioPlaybackSnapshot != null || isKnownAudioLaunch(intent)
+    return if (initialMediaIsAudio) {
+      audioPreferences.audioBackgroundPlayback.get()
+    } else {
+      audioPreferences.backgroundPlayback.get()
+    }
+  }
 }

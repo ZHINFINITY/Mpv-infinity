@@ -504,6 +504,7 @@ class MediaPlaybackService :
             service.mediaDurationIdentity != identity) return@launch
           service.mediaDurationSeconds = durationSeconds
           service.updateMediaSessionMetadata()
+          service.updateMediaSessionPlaybackState()
           service.updateNotification()
         }
       }

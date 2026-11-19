@@ -117,6 +117,37 @@ private data class FlowFrameRateSurfacePolicy(
   val strategyLabel: String,
 )
 
+internal class Media3FlowSharedWriteFailurePolicy(private val failureLimit: Int = 3) {
+  private var context = Long.MIN_VALUE
+  private var width = 0
+  private var height = 0
+  private var attempts = 0
+
+  private fun selectKey(context: Long, width: Int, height: Int) {
+    if (this.context != context || this.width != width || this.height != height) {
+      this.context = context
+      this.width = width
+      this.height = height
+      attempts = 0
+    }
+  }
+
+  fun shouldUseStaging(context: Long, width: Int, height: Int): Boolean {
+    selectKey(context, width, height)
+    return attempts >= failureLimit
+  }
+
+  fun recordFailure(context: Long, width: Int, height: Int) {
+    selectKey(context, width, height)
+    attempts++
+  }
+
+  fun recordSuccess(context: Long, width: Int, height: Int) {
+    selectKey(context, width, height)
+    attempts = 0
+  }
+}
+
 /**
  * A GPU-backed Media3 sink. Decoder frames arrive on a private SurfaceTexture; source images,
  * motion fields, and interpolated output remain GPU-resident. The bounded queue and cadence guard
@@ -738,6 +769,7 @@ class Media3FlowVideoSink(
     var completionReported = false
     var sharedImportFailureContext = 0L
     var sharedImportFailureAttempts = 0
+    val sharedWriteFailurePolicy = Media3FlowSharedWriteFailurePolicy()
   }
 
   private data class PresentationFrame(
@@ -2153,6 +2185,16 @@ class Media3FlowVideoSink(
   ): Boolean {
     if (width <= 0 || height <= 0) return false
     val dimensionsMatch = slot.width == width && slot.height == height && slot.textureId != 0
+    if (preferSharedOutput && slot.sharedWriteFailurePolicy.shouldUseStaging(flowVulkanContext, width, height)) {
+      if (slot.nativeImageHandle != 0L) destroyPresentationSlotTarget(slot)
+      if (slot.textureId == 0 || slot.width != width || slot.height != height) {
+        destroyPresentationSlotTarget(slot)
+        slot.textureId = createTexture(GLES20.GL_TEXTURE_2D, width, height, GLES30.GL_RGBA8)
+        slot.width = width
+        slot.height = height
+      }
+      return false
+    }
     if (dimensionsMatch && (!preferSharedOutput || slot.nativeImageHandle != 0L)) {
       return slot.nativeImageHandle != 0L
     }
@@ -2249,7 +2291,9 @@ class Media3FlowVideoSink(
         try {
           dispatchSynthesis(a, b, pair, targetPtsUs, slot.nativeImageHandle)
           checkGlError("frame synthesis")
+          slot.sharedWriteFailurePolicy.recordSuccess(flowVulkanContext, frameWidth, frameHeight)
         } catch (sharedFailure: Exception) {
+          slot.sharedWriteFailurePolicy.recordFailure(flowVulkanContext, frameWidth, frameHeight)
           // A slot-specific Vulkan/GLES interop failure must not disable a motion pair
           // that can still synthesize into the producer's scratch output image.
           destroyPresentationSlotTarget(slot)

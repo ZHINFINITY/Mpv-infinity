@@ -13,6 +13,18 @@ internal object PlaybackDurationPolicy {
   fun initialDurationSeconds(itemDurationSeconds: Int?): Double =
     itemDurationSeconds?.takeIf { it > 0 }?.toDouble() ?: 0.0
 
+  fun isCurrentSample(
+    sampleGeneration: Long,
+    sampleStableId: String,
+    sampleOriginalUri: String,
+    currentGeneration: Long,
+    currentStableId: String?,
+    currentOriginalUri: String?,
+  ): Boolean =
+    sampleGeneration == currentGeneration &&
+      sampleStableId == currentStableId &&
+      sampleOriginalUri == currentOriginalUri
+
   fun resolve(
     previousDurationSeconds: Double,
     observedDurationSeconds: Double?,

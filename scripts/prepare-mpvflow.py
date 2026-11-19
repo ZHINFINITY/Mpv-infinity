@@ -991,7 +991,7 @@ def main() -> None:
     renderer_hook_probe = """
 # MPVFLOW_HAVE_RENDERER_HOOK
 if features.get('libplacebo', false) and cc.has_header_symbol('libplacebo/shaders/custom.h', 'pl_shader_custom') and cc.has_header_symbol('libplacebo/shaders.h', 'pl_shader_is_compute')
-    c_args += ['-DMPVFLOW_HAVE_RENDERER_HOOK=1']
+    add_project_arguments('-DMPVFLOW_HAVE_RENDERER_HOOK=1', language: 'c')
 endif
 """
     if '# MPVFLOW_HAVE_RENDERER_HOOK' not in meson:

@@ -141,8 +141,7 @@ fun LiquidGlassBackdropHost(
   val allowed = eligible && visible
   GlassStartupWatch(active = allowed)
   val tuning = LocalGlassCustomization.current
-  val sampledFrost =
-    if (largeSurfaceVisible) maxOf(tuning.frost, GlassSurfacePolicy.RegularMinimumFrostDp) else tuning.frost
+  val sampledFrost = GlassCustomizationPolicy.sampledFrostStrength(tuning.frost, largeSurfaceVisible)
   val frostPasses = GlassCustomizationPolicy.frostPasses(sampledFrost)
   val frame = remember { mutableStateOf<LiquidGlassFrame?>(null) }
   val captureBuffers = remember { GlassCaptureBuffers() }

@@ -91,6 +91,12 @@ for marker in (
     "cc.has_header_symbol('libplacebo/shaders.h', 'pl_shader_is_compute')",
 ):
     assert marker in prepare_source, f"MPV Meson renderer hook must be capability-gated: missing {marker!r}"
+assert "add_project_arguments('-DMPVFLOW_HAVE_RENDERER_HOOK=1', language: 'c')" in prepare_source, (
+    "MPV Meson renderer hook must use the C project-arguments API"
+)
+assert "c_args += ['-DMPVFLOW_HAVE_RENDERER_HOOK=1']" not in prepare_source, (
+    "renderer hook must not use an undefined Meson c_args variable"
+)
 
 cmake_config = (ROOT / "app/src/main/cpp/CMakeLists.txt").read_text(encoding="utf-8")
 for marker in (
@@ -122,6 +128,11 @@ prepare = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(prepare)
 gpu_source = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_gpu.c").read_text(encoding="utf-8")
 gpu_header = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_gpu.h").read_text(encoding="utf-8")
+assert "const int output_w = (int) state->source0->params.w;" in gpu_source
+assert "const int output_h = (int) state->source0->params.h;" in gpu_source
+assert ".output_w = output_w," in gpu_source and ".output_h = output_h," in gpu_source
+assert "result.rect.x1 - result.rect.x0 != output_w" in gpu_source
+assert "result.rect.y1 - result.rect.y0 != output_h" in gpu_source
 for marker in (
     "MPVFLOW_GPU_PASS_PAIR_GATE_FIRST = 1u << 7",
     "MPVFLOW_GPU_PASS_PAIR_GATE_REDUCE = 1u << 8",

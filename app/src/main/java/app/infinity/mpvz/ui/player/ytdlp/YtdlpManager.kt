@@ -37,6 +37,10 @@ import org.json.JSONObject
 import java.io.*
 import java.util.concurrent.TimeUnit
 import java.util.zip.ZipFile
+import kotlinx.coroutines.InternalCoroutinesApi
+import kotlinx.coroutines.suspendCancellableCoroutine
+import okhttp3.Callback
+import okhttp3.Response
 
 data class YtdlpPlaylistEntry(
   val id: String?,
@@ -52,6 +56,17 @@ data class YtdlpPlaylistMetadata(
   val title: String,
   val entries: List<YtdlpPlaylistEntry>,
 )
+
+internal class YtdlpPageResolveBudget(private val maximumRequests: Int) {
+  private var requests = 0
+
+  @Synchronized
+  fun reserveRequest(): Boolean {
+    if (requests >= maximumRequests) return false
+    requests++
+    return true
+  }
+}
 
 object YtdlpManager {
   private const val TAG = "YtdlpManager"
@@ -69,6 +84,9 @@ object YtdlpManager {
   private const val PLAYBACK_DIRECT_URL_RESOLVE_TIMEOUT_MS = 8_000L
   private const val PLAYBACK_RUNTIME_INSTALL_TIMEOUT_MS = 90_000L
   private const val MAX_PAGE_RESOLVE_DEPTH = 5
+  private const val MAX_PAGE_RESOLVE_REQUESTS = 12
+  private const val MAX_PAGE_RESOLVE_TIMEOUT_MS = 15_000L
+  private const val MAX_PAGE_BODY_BYTES = 1_000_000
   private const val MAX_PAGE_BODY_CHARS = 4 * 1024 * 1024
   private val installMutex = Mutex()
   private val pageResolverClient =
@@ -425,7 +443,6 @@ object YtdlpManager {
   ): String? =
     withContext(Dispatchers.IO) {
       if (!requiresYtdlp(source) || !isPlaybackRuntimeReady(context)) return@withContext source
-      unwrapProviderMediaUrl(source, onLog)?.let { return@withContext it }
       val startedAtMs = android.os.SystemClock.elapsedRealtime()
       val output = StringBuilder()
       val ytdlFile = File(getYtdlDir(context), "yt-dlp")
@@ -499,30 +516,65 @@ object YtdlpManager {
    * known page-style hosts without handing HTML to MPV. This is intentionally bounded: it follows
    * only a few redirects/pages and accepts only a response that identifies itself as media.
    */
-  private fun resolveKnownPageMediaUrl(source: String, onLog: (String) -> Unit): String? {
-    val host = Uri.parse(source).host?.lowercase().orEmpty()
-    if (host != "gdflix.dev" && !host.endsWith(".gdflix.dev") && host != "gdflix.io" && !host.endsWith(".gdflix.io")) return null
-    val resolved = resolvePageUrl(source, source, 0, linkedSetOf())
-    if (resolved != null) onLog("Resolved GDFlix page to direct media URL")
-    else onLog("GDFlix page did not expose a playable media URL")
-    return resolved
-  }
+  private suspend fun resolveKnownPageMediaUrl(source: String, onLog: (String) -> Unit): String? =
+    withTimeoutOrNull(MAX_PAGE_RESOLVE_TIMEOUT_MS) {
+      val host = Uri.parse(source).host?.lowercase().orEmpty()
+      if (host != "gdflix.dev" && !host.endsWith(".gdflix.dev") && host != "gdflix.io" && !host.endsWith(".gdflix.io")) {
+        return@withTimeoutOrNull null
+      }
+      val resolved = resolvePageUrl(source, source, 0, linkedSetOf(), YtdlpPageResolveBudget(MAX_PAGE_RESOLVE_REQUESTS))
+      if (resolved != null) onLog("Resolved GDFlix page to direct media URL")
+      else onLog("GDFlix page did not expose a playable media URL")
+      resolved
+    }
 
-  private fun resolvePageUrl(
+  @OptIn(InternalCoroutinesApi::class)
+  private suspend fun executePageRequest(request: Request): Response =
+    suspendCancellableCoroutine { continuation ->
+      val call = pageResolverClient.newCall(request)
+      continuation.invokeOnCancellation { call.cancel() }
+      if (!continuation.isActive) {
+        call.cancel()
+        return@suspendCancellableCoroutine
+      }
+      try {
+        call.enqueue(
+          object : Callback {
+            override fun onFailure(call: okhttp3.Call, error: java.io.IOException) {
+              continuation.tryResumeWithException(error)?.let(continuation::completeResume)
+            }
+
+            override fun onResponse(call: okhttp3.Call, response: Response) {
+              continuation.tryResume(response)?.let(continuation::completeResume) ?: response.close()
+            }
+          },
+        )
+      } catch (error: Exception) {
+        continuation.tryResumeWithException(error)?.let(continuation::completeResume)
+      }
+    }
+
+  private suspend fun resolvePageUrl(
     source: String,
     referer: String,
     depth: Int,
     visited: MutableSet<String>,
+    budget: YtdlpPageResolveBudget,
   ): String? {
+    currentCoroutineContext().ensureActive()
     if (depth > MAX_PAGE_RESOLVE_DEPTH) return null
     val url = decodeHtmlEntities(source).trim()
     if (!url.startsWith("http://") && !url.startsWith("https://")) return null
     if (!visited.add(url)) return null
 
-    Uri.parse(url).getQueryParameter("url")?.takeIf { it.startsWith("http://") || it.startsWith("https://") }?.let { nested ->
-      resolvePageUrl(nested, url, depth + 1, visited)?.let { return it }
-    }
+    Uri.parse(url).getQueryParameter("url")
+      ?.takeIf { it.startsWith("http://") || it.startsWith("https://") }
+      ?.let { nested ->
+        resolvePageUrl(nested, url, depth + 1, visited, budget)?.let { return it }
+      }
 
+    if (!budget.reserveRequest()) return null
+    currentCoroutineContext().ensureActive()
     val request =
       Request.Builder()
         .url(url)
@@ -530,12 +582,19 @@ object YtdlpManager {
         .header("Referer", referer)
         .get()
         .build()
-    val response = runCatching { pageResolverClient.newCall(request).execute() }.getOrNull() ?: return null
+    val response = try {
+      executePageRequest(request)
+    } catch (cancelled: CancellationException) {
+      throw cancelled
+    } catch (_: Exception) {
+      return null
+    }
     response.use { current ->
+      currentCoroutineContext().ensureActive()
       if (current.code in 300..399) {
         val location = current.header("Location") ?: return null
         val next = current.request.url.resolve(location)?.toString() ?: return null
-        return resolvePageUrl(next, url, depth + 1, visited)
+        return resolvePageUrl(next, url, depth + 1, visited, budget)
       }
       if (!current.isSuccessful) return null
 
@@ -544,11 +603,21 @@ object YtdlpManager {
       if (isMediaContentType(contentType) || HttpUtils.isDirectMediaUrl(Uri.parse(finalUrl))) return finalUrl
       if (contentType.isNotBlank() && !contentType.contains("html") && !contentType.contains("text")) return null
 
-      val body = current.body.string().take(MAX_PAGE_BODY_CHARS)
-      val candidates = extractPageCandidates(body, finalUrl)
-        .sortedByDescending(::pageCandidateScore)
+      val body = current.body.source().let { sourceStream ->
+        val buffer = okio.Buffer()
+        var remaining = MAX_PAGE_BODY_BYTES.toLong()
+        while (remaining > 0L) {
+          currentCoroutineContext().ensureActive()
+          val read = sourceStream.read(buffer, minOf(8_192L, remaining))
+          if (read < 0L) break
+          remaining -= read
+        }
+        buffer.readUtf8()
+      }
+      val candidates = extractPageCandidates(body, finalUrl).sortedByDescending(::pageCandidateScore)
       for (candidate in candidates) {
-        resolvePageUrl(candidate, finalUrl, depth + 1, visited)?.let { return it }
+        currentCoroutineContext().ensureActive()
+        resolvePageUrl(candidate, finalUrl, depth + 1, visited, budget)?.let { return it }
       }
       return null
     }

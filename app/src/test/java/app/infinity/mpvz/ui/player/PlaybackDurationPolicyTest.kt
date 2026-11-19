@@ -10,6 +10,7 @@ import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.Assert.assertFalse
 
 class PlaybackDurationPolicyTest {
   @Test
@@ -84,5 +85,38 @@ class PlaybackDurationPolicyTest {
     assertTrue(readySync.contains("phase != PlaybackPhase.READY && phase != PlaybackPhase.BACKGROUND"))
     assertTrue(readySync.contains("PlaybackSession.state.value.generation == generation"))
     assertTrue(readySync.contains("syncMediaDurationForCurrentItem()"))
+  }
+  @Test
+  fun durationSamplesAreRejectedAfterGenerationOrItemChanges() {
+    assertTrue(
+      PlaybackDurationPolicy.isCurrentSample(
+        sampleGeneration = 8L,
+        sampleStableId = "stable-item",
+        sampleOriginalUri = "content://media/8",
+        currentGeneration = 8L,
+        currentStableId = "stable-item",
+        currentOriginalUri = "content://media/8",
+      ),
+    )
+    assertFalse(
+      PlaybackDurationPolicy.isCurrentSample(
+        sampleGeneration = 8L,
+        sampleStableId = "stable-item",
+        sampleOriginalUri = "content://media/8",
+        currentGeneration = 9L,
+        currentStableId = "next-item",
+        currentOriginalUri = "content://media/9",
+      ),
+    )
+    assertFalse(
+      PlaybackDurationPolicy.isCurrentSample(
+        sampleGeneration = 8L,
+        sampleStableId = "stable-item",
+        sampleOriginalUri = "content://media/8",
+        currentGeneration = 8L,
+        currentStableId = "stable-item",
+        currentOriginalUri = "content://media/other-uri",
+      ),
+    )
   }
 }

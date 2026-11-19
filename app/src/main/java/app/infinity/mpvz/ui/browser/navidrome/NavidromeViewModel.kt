@@ -256,6 +256,7 @@ class NavidromeViewModel(
                 val favoriteIds = starredSongs.mapTo(mutableSetOf()) { it.id }
                 val favorites = favoritesPlaylist(starredSongs)
                 state.copy(
+                  jumpBackIn = state.jumpBackIn.map { song -> song.copy(isFavorite = song.id in favoriteIds) },
                   tracks = state.tracks.map { song -> song.copy(isFavorite = song.id in favoriteIds) },
                   playlists = listOf(favorites) + state.playlists.filterNot {
                     it.id == FAVORITES_PLAYLIST_ID || it.id == "favorites" || it.name.equals("Favorites", ignoreCase = true)

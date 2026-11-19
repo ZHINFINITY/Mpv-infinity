@@ -61,4 +61,15 @@ class JellyfinPaginationPolicyTest {
     assertTrue(loadLibrary.contains("JellyfinPaginationPolicy.hasMore("))
     assertTrue(loadLibrary.contains("pageSize = 100"))
   }
+  @Test fun newerListOrSearchRequestRejectsStalePublication() {
+    val owner = JellyfinListRequestOwner()
+    val first = owner.begin()
+    val published = mutableListOf<String>()
+
+    assertTrue(owner.publishIfCurrent(first) { published += "first" })
+    val second = owner.begin()
+    assertFalse(owner.publishIfCurrent(first) { published += "stale" })
+    assertTrue(owner.publishIfCurrent(second) { published += "second" })
+    assertEquals(listOf("first", "second"), published)
+  }
 }

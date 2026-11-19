@@ -136,6 +136,8 @@ import kotlin.math.roundToInt
 import kotlin.properties.ReadOnlyProperty
 import kotlin.random.Random
 import kotlin.reflect.KProperty
+import java.util.UUID
+import kotlinx.coroutines.CancellationException
 
 enum class AutoCropState {
   IDLE,
@@ -1798,14 +1800,26 @@ class PlayerViewModel(
   val customButtons: StateFlow<List<CustomButtonState>> = _customButtons.asStateFlow()
   private var customButtonsSetupJob: Job? = null
   private val customButtonsLoadMutex = Mutex()
+  private val customButtonFilesMutex = Mutex()
+  private val customButtonScriptsLock = Any()
+  private val customButtonSetupGeneration = AtomicLong(0L)
+
+  private data class CustomButtonScriptsSnapshot(
+    val generation: Long,
+    val paths: Map<CustomButtonScriptLanguage, String>,
+    val versions: Map<CustomButtonScriptLanguage, String>,
+  )
+
+  @Volatile
+  private var customButtonScriptsSnapshot = CustomButtonScriptsSnapshot(0L, emptyMap(), emptyMap())
+
+  private val customButtonsScriptPaths: Map<CustomButtonScriptLanguage, String>
+    get() = customButtonScriptsSnapshot.paths
+  private val customButtonsScriptVersions: Map<CustomButtonScriptLanguage, String>
+    get() = customButtonScriptsSnapshot.versions
 
   @Volatile
   private var isMpvReadyForCustomButtons = false
-
-  @Volatile
-  private var customButtonsScriptPaths: Map<CustomButtonScriptLanguage, String> = emptyMap()
-  @Volatile
-  private var customButtonsScriptVersions: Map<CustomButtonScriptLanguage, String> = emptyMap()
   private val legacyCustomButtonsLoadedFlagProperty = "user-data/Mpv∞/custombuttons_loaded"
   private val legacyCustomButtonsVersionProperty = "user-data/Mpv∞/custombuttons_version"
   private val customButtonScriptTargets =
@@ -2189,12 +2203,23 @@ class PlayerViewModel(
       viewModelScope.launch(playbackStateDispatcher) {
         launch { PlaybackSession.propBoolean["pause"].collect { _paused.value = it } }
         launch { PlaybackSession.propInt["time-pos"].collect { _pos.value = it } }
-        launch { PlaybackSession.propInt["duration"].collect { _duration.value = it } }
         launch {
-          _duration.collect { observedDuration ->
-            if (!_isMpvCoreReady.value) return@collect
+          PlaybackSession.durationSamples.collect { sample ->
             val sessionState = PlaybackSession.state.value
             val currentItem = sessionState.currentItem ?: PlaybackSession.queue.value.currentItem
+            if (!PlaybackDurationPolicy.isCurrentSample(
+                sampleGeneration = sample.generation,
+                sampleStableId = sample.stableId,
+                sampleOriginalUri = sample.originalUri,
+                currentGeneration = sessionState.generation,
+                currentStableId = currentItem?.stableId,
+                currentOriginalUri = currentItem?.originalUri,
+              )
+            ) return@collect
+
+            val observedDuration = sample.durationSeconds?.takeIf { it.isFinite() && it > 0.0 }?.toInt()
+            _duration.value = observedDuration
+            if (!_isMpvCoreReady.value) return@collect
             val queueIsM3u = PlaybackSession.queue.value.isM3u
             val cachedDuration = MediaPlaybackService.durationSecondsForItem(currentItem)
             val fallbackDuration =
@@ -2205,11 +2230,11 @@ class PlayerViewModel(
               _preciseDuration.value = fallbackDuration
               return@collect
             }
-            if (observedDuration == null || observedDuration <= 0) {
+            if (observedDuration == null) {
               _preciseDuration.value = fallbackDuration
               return@collect
             }
-            val durationFromMpv = PlaybackSession.getPropertyDouble("duration") ?: observedDuration.toDouble()
+            val durationFromMpv = sample.durationSeconds ?: observedDuration.toDouble()
             val resolvedDuration =
               PlaybackDurationPolicy.resolve(
                 previousDurationSeconds = cachedDuration ?: 0.0,
@@ -2219,17 +2244,17 @@ class PlayerViewModel(
               )
             if (resolvedDuration <= 0.0) return@collect
             _preciseDuration.value = resolvedDuration.toFloat()
-            currentItem?.let { item ->
-              MediaPlaybackService.republishDurationForGeneration(
-                sessionState.generation, MediaSessionItemIdentity(item.stableId, item.originalUri), resolvedDuration)
-            }
+            MediaPlaybackService.republishDurationForGeneration(
+              sample.generation,
+              MediaSessionItemIdentity(sample.stableId, sample.originalUri),
+              resolvedDuration,
+            )
             // Chapter-list and duration are independent MPV properties. A chapter list can arrive
             // first (or be identical to the previous file), so derive its markers again whenever
             // the active item's duration becomes available.
             refreshChapterDerivedSegments(chapters.value)
             checkPendingIntroLookup()
             if (!hostedInBrowser) syncplayManager.updateFileInfo(currentSyncplayFileInfo())
-
             if (_isAmbientEnabled.value) {
               lastAmbientScaleX = -1.0
               scheduleAmbientUpdate(250)
@@ -2415,11 +2440,16 @@ class PlayerViewModel(
 
   private fun setupCustomButtons() {
     customButtonsSetupJob?.cancel()
-    customButtonsScriptVersions = emptyMap()
+    val generation = synchronized(customButtonScriptsLock) {
+      customButtonSetupGeneration.incrementAndGet().also { nextGeneration ->
+        customButtonScriptsSnapshot = CustomButtonScriptsSnapshot(nextGeneration, emptyMap(), emptyMap())
+      }
+    }
     val jsonString = playerPreferences.customButtons.get()
     _customButtons.value = parseCustomButtonUiStates(jsonString)
     customButtonsSetupJob =
       viewModelScope.launch(Dispatchers.IO) {
+        val generatedFiles = mutableListOf<File>()
         try {
           val buttons = mutableListOf<CustomButtonState>()
           val scriptBodies = linkedMapOf<CustomButtonScriptLanguage, StringBuilder>()
@@ -2477,65 +2507,112 @@ class PlayerViewModel(
           val generatedPaths = mutableMapOf<CustomButtonScriptLanguage, String>()
           val generatedVersions = mutableMapOf<CustomButtonScriptLanguage, String>()
           val scriptsDir = File(appContext.filesDir, "scripts")
-          if (!scriptsDir.exists()) scriptsDir.mkdirs()
 
-          scriptBodies.forEach { (language, bodyBuilder) ->
-            val rawScriptContent = bodyBuilder.toString()
-            if (rawScriptContent.isBlank()) return@forEach
+          customButtonFilesMutex.withLock {
+            if (!isCurrentCustomButtonSetup(generation)) throw CancellationException("Superseded custom-button setup")
+            if (!scriptsDir.exists()) scriptsDir.mkdirs()
 
-            val target = customButtonScriptTargetsByLanguage[language] ?: return@forEach
-            val scriptVersion = rawScriptContent.md5()
-            val scriptContent = buildCustomButtonsScript(rawScriptContent, scriptVersion, target)
+            scriptBodies.forEach { (language, bodyBuilder) ->
+              if (!isCurrentCustomButtonSetup(generation)) throw CancellationException("Superseded custom-button setup")
+              val rawScriptContent = bodyBuilder.toString()
+              if (rawScriptContent.isBlank()) return@forEach
+              val target = customButtonScriptTargetsByLanguage[language] ?: return@forEach
+              val scriptVersion = rawScriptContent.md5()
+              val scriptContent = buildCustomButtonsScript(rawScriptContent, scriptVersion, target)
+              val extension = target.fileName.substringAfterLast('.', "lua")
+              val uniqueId = UUID.randomUUID().toString()
+              val temporaryFile = File(scriptsDir, "custombuttons-${language.name.lowercase()}-$generation-$uniqueId.$extension.tmp")
+              generatedFiles += temporaryFile
+              temporaryFile.writeText(scriptContent)
+              if (!isCurrentCustomButtonSetup(generation)) throw CancellationException("Superseded custom-button setup")
+              val scriptFile = File(scriptsDir, "custombuttons-${language.name.lowercase()}-$generation-$uniqueId.$extension")
+              if (!temporaryFile.renameTo(scriptFile)) throw java.io.IOException("Could not publish generated ${target.fileName}")
+              generatedFiles.remove(temporaryFile)
+              generatedFiles += scriptFile
+              generatedPaths[language] = scriptFile.absolutePath
+              generatedVersions[language] = scriptVersion
+            }
 
-            val file = File(scriptsDir, target.fileName)
-            file.writeText(scriptContent)
-            generatedPaths[language] = file.absolutePath
-            generatedVersions[language] = scriptVersion
-          }
-
-          customButtonsScriptVersions = generatedVersions.toMap()
-          customButtonsScriptPaths = generatedPaths.toMap()
-          deleteCustomButtonsScriptFiles(activePaths = generatedPaths.values.toSet())
-          withContext(Dispatchers.Main) {
-            customButtonScriptTargets
-              .filter { it.language !in generatedPaths.keys }
-              .forEach(::deactivateCustomButtonsScript)
-          }
-
-          if (generatedPaths.isNotEmpty()) {
-            if (isMpvReadyForCustomButtons) {
-              customButtonsLoadMutex.withLock {
-                withContext(Dispatchers.Main) {
-                  deactivateLegacyCustomButtonsScript()
+            if (!isCurrentCustomButtonSetup(generation)) throw CancellationException("Superseded custom-button setup")
+            val publishedPaths = generatedPaths.toMap()
+            val publishedVersions = generatedVersions.toMap()
+            val published = synchronized(customButtonScriptsLock) {
+              if (!isCurrentCustomButtonSetup(generation)) {
+                false
+              } else {
+                customButtonScriptsSnapshot = CustomButtonScriptsSnapshot(generation, publishedPaths, publishedVersions)
+                true
+              }
+            }
+            if (!published) throw CancellationException("Superseded custom-button setup")
+            deleteCustomButtonsScriptFiles(activePaths = publishedPaths.values.toSet())
+            withContext(Dispatchers.Main) {
+              synchronized(customButtonScriptsLock) {
+                if (isCurrentCustomButtonSetup(generation)) {
+                  customButtonScriptTargets
+                    .filter { it.language !in publishedPaths.keys }
+                    .forEach(::deactivateCustomButtonsScript)
                 }
-                generatedPaths.forEach { (language, path) ->
-                  val target = customButtonScriptTargetsByLanguage[language] ?: return@forEach
-                  val loaded =
-                    withContext(Dispatchers.Main) {
-                      loadCustomButtonsScript(File(path), target)
+              }
+            }
+            if (!isCurrentCustomButtonSetup(generation)) throw CancellationException("Superseded custom-button setup")
+
+            if (publishedPaths.isNotEmpty()) {
+              if (isMpvReadyForCustomButtons) {
+                customButtonsLoadMutex.withLock {
+                  if (!isCurrentCustomButtonSetup(generation)) throw CancellationException("Superseded custom-button setup")
+                  withContext(Dispatchers.Main) {
+                    synchronized(customButtonScriptsLock) {
+                      if (isCurrentCustomButtonSetup(generation)) deactivateLegacyCustomButtonsScript()
                     }
-                  if (!loaded) {
-                    android.util.Log.w("PlayerViewModel", "Failed to load ${target.fileName}")
+                  }
+                  if (!isCurrentCustomButtonSetup(generation)) throw CancellationException("Superseded custom-button setup")
+                  publishedPaths.forEach { (language, scriptPath) ->
+                    if (!isCurrentCustomButtonSetup(generation)) throw CancellationException("Superseded custom-button setup")
+                    val target = customButtonScriptTargetsByLanguage[language] ?: return@forEach
+                    val loaded = withContext(Dispatchers.Main) {
+                      synchronized(customButtonScriptsLock) {
+                        if (isCurrentCustomButtonSetup(generation)) loadCustomButtonsScript(File(scriptPath), target) else false
+                      }
+                    }
+                    if (!loaded && isCurrentCustomButtonSetup(generation)) {
+                      android.util.Log.w("PlayerViewModel", "Failed to load ${target.fileName}")
+                    }
+                  }
+                }
+              } else {
+                android.util.Log.d("PlayerViewModel", "Deferring custom button scripts until MPV is ready")
+              }
+            } else {
+              deleteCustomButtonsScriptFiles()
+              withContext(Dispatchers.Main) {
+                synchronized(customButtonScriptsLock) {
+                  if (isCurrentCustomButtonSetup(generation)) {
+                    customButtonScriptTargets.forEach(::deactivateCustomButtonsScript)
+                    deactivateLegacyCustomButtonsScript()
                   }
                 }
               }
-            } else {
-              android.util.Log.d("PlayerViewModel", "Deferring custom button scripts until MPV is ready")
-            }
-          } else {
-            customButtonsScriptVersions = emptyMap()
-            customButtonsScriptPaths = emptyMap()
-            deleteCustomButtonsScriptFiles()
-            withContext(Dispatchers.Main) {
-              customButtonScriptTargets.forEach(::deactivateCustomButtonsScript)
-              deactivateLegacyCustomButtonsScript()
             }
           }
+        } catch (cancelled: CancellationException) {
+          throw cancelled
         } catch (e: Exception) {
-          android.util.Log.e("PlayerViewModel", "Error setting up custom buttons", e)
+          if (isCurrentCustomButtonSetup(generation)) {
+            android.util.Log.e("PlayerViewModel", "Error setting up custom buttons", e)
+          }
+        } finally {
+          generatedFiles.forEach { file ->
+            if (customButtonScriptsSnapshot.paths.values.none { it == file.absolutePath }) {
+              runCatching { file.delete() }
+            }
+          }
         }
       }
   }
+
+  private fun isCurrentCustomButtonSetup(generation: Long): Boolean =
+    customButtonSetupGeneration.get() == generation
 
   private fun reloadCustomButtonsScript(reason: String) {
     if (!isMpvReadyForCustomButtons) return
@@ -2543,20 +2620,29 @@ class PlayerViewModel(
     viewModelScope.launch(Dispatchers.IO) {
       var rebuildNeeded = false
       customButtonsLoadMutex.withLock {
-        val scriptPaths = customButtonsScriptPaths
-        if (scriptPaths.isEmpty()) return@withLock
+        val scriptsSnapshot = customButtonScriptsSnapshot
+        val scriptPaths = scriptsSnapshot.paths
+        if (scriptPaths.isEmpty() || !isCurrentCustomButtonSetup(scriptsSnapshot.generation)) return@withLock
 
         withContext(Dispatchers.Main) {
-          deactivateLegacyCustomButtonsScript()
+          synchronized(customButtonScriptsLock) {
+            if (isCurrentCustomButtonSetup(scriptsSnapshot.generation)) deactivateLegacyCustomButtonsScript()
+          }
         }
+        if (!isCurrentCustomButtonSetup(scriptsSnapshot.generation)) return@withLock
 
         for ((language, scriptPath) in scriptPaths) {
           val target = customButtonScriptTargetsByLanguage[language] ?: continue
-          val expectedVersion = customButtonsScriptVersions[language] ?: continue
+          if (!isCurrentCustomButtonSetup(scriptsSnapshot.generation)) return@withLock
+          val expectedVersion = scriptsSnapshot.versions[language] ?: continue
           val isLoaded =
             withContext(Dispatchers.Main) {
-              isCustomButtonsScriptLoaded(target, expectedVersion)
+              synchronized(customButtonScriptsLock) {
+                isCurrentCustomButtonSetup(scriptsSnapshot.generation) &&
+                  isCustomButtonsScriptLoaded(target, expectedVersion)
+              }
             }
+          if (!isCurrentCustomButtonSetup(scriptsSnapshot.generation)) return@withLock
           if (isLoaded) continue
 
           val file = File(scriptPath)
@@ -2568,7 +2654,9 @@ class PlayerViewModel(
 
           val loaded =
             withContext(Dispatchers.Main) {
-              loadCustomButtonsScript(file, target)
+              synchronized(customButtonScriptsLock) {
+                if (isCurrentCustomButtonSetup(scriptsSnapshot.generation)) loadCustomButtonsScript(file, target) else false
+              }
             }
           if (!loaded) {
             android.util.Log.w("PlayerViewModel", "${target.fileName} load failed during $reason")
@@ -2591,11 +2679,12 @@ class PlayerViewModel(
     }.getOrDefault(false)
 
   private fun areCustomButtonHandlersReady(): Boolean {
-    val scriptPaths = customButtonsScriptPaths
+    val scriptsSnapshot = customButtonScriptsSnapshot
+    val scriptPaths = scriptsSnapshot.paths
     if (scriptPaths.isEmpty()) return true
     return scriptPaths.keys.all { language ->
       val target = customButtonScriptTargetsByLanguage[language] ?: return@all false
-      val expectedVersion = customButtonsScriptVersions[language] ?: return@all false
+      val expectedVersion = scriptsSnapshot.versions[language] ?: return@all false
       isCustomButtonsScriptLoaded(target, expectedVersion)
     }
   }
@@ -2633,9 +2722,9 @@ class PlayerViewModel(
     runCatching {
       val activeNames = activePaths.map { File(it).name }.toSet()
       val scriptsDir = File(appContext.filesDir, "scripts")
-      customButtonScriptTargets.forEach { target ->
-        val file = File(scriptsDir, target.fileName)
-        if (file.exists() && file.name !in activeNames) {
+      val targetNames = customButtonScriptTargets.map { it.fileName }.toSet()
+      scriptsDir.listFiles()?.forEach { file ->
+        if ((file.name in targetNames || file.name.startsWith("custombuttons-")) && file.name !in activeNames) {
           file.delete()
         }
       }
@@ -2686,14 +2775,34 @@ class PlayerViewModel(
         }
     }
 
+  private fun isCustomButtonHandlerReady(id: String): Boolean {
+    val scriptsSnapshot = customButtonScriptsSnapshot
+    val jsonString = playerPreferences.customButtons.get()
+    val slots =
+      runCatching {
+        json.decodeFromString<app.infinity.mpvz.ui.preferences.CustomButtonSlots>(jsonString)
+      }.getOrNull()
+    val language =
+      slots?.slots?.firstOrNull { it?.id == id }?.scriptLanguage
+        ?: runCatching {
+          json.decodeFromString<List<app.infinity.mpvz.ui.preferences.CustomButton>>(jsonString)
+            .firstOrNull { it.id == id }?.scriptLanguage
+        }.getOrNull()
+        ?: return false
+    val target = customButtonScriptTargetsByLanguage[language] ?: return false
+    val expectedVersion = scriptsSnapshot.versions[language] ?: return false
+    if (scriptsSnapshot.paths[language].isNullOrBlank()) return false
+    return isCustomButtonsScriptLoaded(target, expectedVersion)
+  }
+
   fun callCustomButton(id: String) {
-    if (!areCustomButtonHandlersReady()) return
+    if (!isCustomButtonHandlerReady(id)) return
     val safeId = id.replace("-", "_")
     PlaybackSession.command("script-message", "call_button_$safeId")
   }
 
   fun callCustomButtonLongPress(id: String) {
-    if (!areCustomButtonHandlersReady()) return
+    if (!isCustomButtonHandlerReady(id)) return
     val safeId = id.replace("-", "_")
     PlaybackSession.command("script-message", "call_button_long_$safeId")
   }

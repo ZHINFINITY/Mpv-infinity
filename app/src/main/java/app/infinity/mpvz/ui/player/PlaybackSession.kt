@@ -39,6 +39,9 @@ import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 
 data class PlaybackSessionState(
   val phase: PlaybackPhase = PlaybackPhase.UNINITIALIZED,
@@ -329,6 +332,24 @@ object PlaybackSession : MPVLib.EventObserver {
   val propFloat = PlaybackProperty(MPVLib.MpvFormat.MPV_FORMAT_DOUBLE, ::getPropertyFloat)
   val propString = PlaybackProperty(MPVLib.MpvFormat.MPV_FORMAT_STRING, ::getPropertyString)
   val propNode = PlaybackProperty(MPVLib.MpvFormat.MPV_FORMAT_NODE, ::getPropertyNode)
+
+  data class DurationSample(
+    val generation: Long,
+    val stableId: String,
+    val originalUri: String,
+    val durationSeconds: Double?,
+  )
+
+  private val mutableDurationSamples = MutableSharedFlow<DurationSample>(replay = 1, extraBufferCapacity = 4)
+  val durationSamples: SharedFlow<DurationSample> = mutableDurationSamples.asSharedFlow()
+
+  private fun publishDurationSample(durationSeconds: Double?) {
+    val snapshot = _state.value
+    val item = snapshot.currentItem ?: queue.value.currentItem ?: return
+    mutableDurationSamples.tryEmit(
+      DurationSample(snapshot.generation, item.stableId, item.originalUri, durationSeconds),
+    )
+  }
 
   data class BackgroundVideoTrackSelection(val mediaId: String, val trackId: Int)
 
@@ -855,7 +876,7 @@ object PlaybackSession : MPVLib.EventObserver {
           nativeCommitInvoked = true
           val generation =
             load(
-              playableUri = resolved.uri,
+              playableUri = if (resolved.ownedFd != null) resolved.uri.replaceFirst("fd://", "fdclose://") else resolved.uri,
               item = item,
               restoreSavedPosition = restoreSavedPosition,
               positionRestoreOverride = positionRestoreOverride,
@@ -1487,6 +1508,7 @@ object PlaybackSession : MPVLib.EventObserver {
 
   override fun eventProperty(property: String) {
     deliverNativeCallback {
+      if (property == "duration") publishDurationSample(null)
       propBoolean.emit(property, null)
       propString.emit(property, null)
       propDouble.emit(property, null)
@@ -1504,10 +1526,12 @@ object PlaybackSession : MPVLib.EventObserver {
   ) {
     deliverNativeCallback {
       if (shouldSuppressTimelineUpdate(property)) {
+        if (property == "duration") publishDurationSample(null)
         propLong.emit(property, null)
         propInt.emit(property, null)
         return
       }
+      if (property == "duration") publishDurationSample(value.toDouble())
       propLong.emit(property, value)
       propInt.emit(property, value.toInt())
       observerSnapshot().forEach { observer -> runCatching { observer.eventProperty(property, value) } }
@@ -1543,10 +1567,12 @@ object PlaybackSession : MPVLib.EventObserver {
   ) {
     deliverNativeCallback {
       if (shouldSuppressTimelineUpdate(property)) {
+        if (property == "duration") publishDurationSample(null)
         propDouble.emit(property, null)
         propFloat.emit(property, null)
         return
       }
+      if (property == "duration") publishDurationSample(value)
       propDouble.emit(property, value)
       propFloat.emit(property, value.toFloat())
       observerSnapshot().forEach { observer -> runCatching { observer.eventProperty(property, value) } }
@@ -2078,7 +2104,7 @@ object PlaybackSession : MPVLib.EventObserver {
       return ResolvedPlayable(uri, NetworkStreamRegistration(hlsProxy = hlsProxy, streamId = streamId))
     }
 
-    // fd:// descriptors are single-use: mpv consumes and closes them on their first load. Replays
+    // fdclose:// descriptors are single-use: mpv closes them after their first load. Replays
     // of queue items or persisted sessions must re-open a fresh descriptor from the content URI.
     if (item.playableUri.startsWith("fd://") && item.originalUri.startsWith("content://")) {
       val context = applicationContext ?: error("Application context is unavailable for content URI playback")
@@ -2090,8 +2116,8 @@ object PlaybackSession : MPVLib.EventObserver {
     }
 
     // Resolve provider URIs off the Activity thread. A provider may expose a descriptor without a
-    // directly readable filesystem path; openContentFd returns a fresh fd:// in that case, which
-    // MPV consumes for this load while the queue retains its durable original content URI.
+    // directly readable filesystem path; openContentFd returns a fresh fd:// in that case. The
+    // load path converts owned descriptors to fdclose:// while the queue retains its durable URI.
     val context = applicationContext
     if (context != null) {
       val resolvedContentUri = sequenceOf(item.playableUri, item.originalUri)
