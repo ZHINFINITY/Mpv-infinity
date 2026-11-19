@@ -11397,6 +11397,21 @@ class PlayerActivity :
     private const val STATE_PLAYLIST_STABLE_ID = "player_state_playlist_stable_id"
     private const val STATE_PLAYLIST_ORIGINAL_URI = "player_state_playlist_original_uri"
   }
+
+  private fun isBackgroundPlaybackEnabledForInitialMedia(): Boolean {
+    val reattachingExistingSession =
+      reusingPlaybackSessionOnLaunch ||
+        intent.action == MediaPlaybackService.ACTION_OPEN_PLAYER ||
+        hasAttachableAudioSession(intent)
+    if (reattachingExistingSession) return isBackgroundPlaybackEnabled()
+
+    val initialMediaIsAudio = restoredAudioPlaybackSnapshot != null || isKnownAudioLaunch(intent)
+    return if (initialMediaIsAudio) {
+      audioPreferences.audioBackgroundPlayback.get()
+    } else {
+      audioPreferences.backgroundPlayback.get()
+    }
+  }
 }
 
 private fun persistStreamHistoryProgress(
@@ -11431,19 +11446,4 @@ private fun persistStreamHistoryProgress(
     )
     .putInt("schema_version", 3)
     .apply()
-
-  private fun isBackgroundPlaybackEnabledForInitialMedia(): Boolean {
-    val reattachingExistingSession =
-      reusingPlaybackSessionOnLaunch ||
-        intent.action == MediaPlaybackService.ACTION_OPEN_PLAYER ||
-        hasAttachableAudioSession(intent)
-    if (reattachingExistingSession) return isBackgroundPlaybackEnabled()
-
-    val initialMediaIsAudio = restoredAudioPlaybackSnapshot != null || isKnownAudioLaunch(intent)
-    return if (initialMediaIsAudio) {
-      audioPreferences.audioBackgroundPlayback.get()
-    } else {
-      audioPreferences.backgroundPlayback.get()
-    }
-  }
 }
