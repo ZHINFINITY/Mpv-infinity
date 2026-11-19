@@ -1627,7 +1627,7 @@ class PlayerActivity :
       }
     if (playlistCount > 0) return false
     val playableUri = getPlayableUri(sourceIntent) ?: return false
-    isExternalM3uPreflightCandidate(playableUri)
+    return isExternalM3uPreflightCandidate(playableUri)
   }
 
   private fun isExternalM3uPreflightCandidate(playableUri: String): Boolean =
@@ -7703,7 +7703,7 @@ class PlayerActivity :
       pendingSavedPlaylistSelection = null
       isSecureFolderLaunch = intent.getStringExtra("launch_source") == "secure_folder"
       isStreamTabPlayback = intent.getBooleanExtra("stream_tab_playback", false)
-      if (shouldPreflightExternalM3u(intent)) {
+      if (shouldAttemptExternalM3uPreflight(intent)) {
         val launchIntent = intent
         m3uPreflightJob = lifecycleScope.launch {
           preflightExternalM3u(launchIntent, preflightGeneration)
@@ -7711,7 +7711,7 @@ class PlayerActivity :
       }
       // Do not let playlist classification delay attaching the player surface.
       continuePlayerInitialization()
-    } else if (shouldPreflightExternalM3u(intent)) {
+    } else if (shouldAttemptExternalM3uPreflight(intent)) {
       m3uPreflightJob = lifecycleScope.launch {
         preflightExternalM3u(intent, preflightGeneration)
       }
