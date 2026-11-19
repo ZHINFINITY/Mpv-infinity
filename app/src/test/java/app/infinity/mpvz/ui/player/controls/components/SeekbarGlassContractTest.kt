@@ -40,9 +40,12 @@ class SeekbarGlassContractTest {
     val musicLibrary = source("ui/browser/music/MusicLibraryViewModel.kt")
     val playSong = musicLibrary.substringAfter("fun playSong(").substringBefore("fun playAllSongs(")
     val playAll = musicLibrary.substringAfter("fun playAllSongs(").substringBefore("fun createPlaylist(")
-    val duration = "durationSeconds = item.durationMs.takeIf { it > 0L }?.div(1000L)?.toInt()"
-    assertTrue(playSong.contains(duration))
-    assertTrue(playAll.contains(duration))
+    val duration = "durationSeconds = durationMs.takeIf { it > 0L }?.div(1000L)?.toInt()"
+    assertTrue(playSong.contains("MusicPlaybackLauncher.playSongs"))
+    assertTrue(playAll.contains("MusicPlaybackLauncher.playSongs"))
+    val musicLauncher = source("ui/browser/music/MusicPlaybackLauncher.kt")
+    assertTrue(musicLauncher.contains("items = songs.map { it.toMusicPlaybackItem() }"))
+    assertTrue(musicLauncher.contains(duration))
 
     val appearance = source("preferences/AppearancePreferences.kt")
     assertTrue(appearance.contains("getBoolean(\"show_seekbar_outer_container\", false)"))
