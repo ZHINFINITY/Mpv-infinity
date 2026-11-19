@@ -85,7 +85,7 @@ internal object PlaybackStatePersistence {
           duration = duration,
           watchedThreshold = watchedThreshold,
         )
-    val lastPosition = if (completedByProgress) 0 else candidateLastPosition
+    val lastPosition = if (completedByProgress && savePositionOnQuit) 0 else candidateLastPosition
     val timeRemaining =
       if (completedByProgress) 0
       else if (!snapshot.positionIsKnown && duration <= 0) oldState?.timeRemaining ?: 0
