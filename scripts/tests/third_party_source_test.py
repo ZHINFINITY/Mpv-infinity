@@ -9,6 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 DOCS = (ROOT / "THIRD_PARTY_SOURCE.md", ROOT / "app/src/main/assets/licenses/third-party-source.md")
 VULKAN_HEADERS_SHA = "a4f8ada9f4f97c45b8c89c57997be9cebaae65d2"
+PLACEBO_SHA = "b89c10e1bdd5d7742ca576ebad94a906ddca91e8"
 
 
 def test_manifests_match_and_cover_pins() -> None:
@@ -26,6 +27,12 @@ def test_manifests_match_and_cover_pins() -> None:
         "14b3999a1a3e322c217bc90ee4df5a8f1bc88f69",
         "b89c10e1bdd5d7742ca576ebad94a906ddca91e8",
         "FongMi/libplacebo",
+        "FongMi libplacebo API-387 header snapshot",
+        "include-api-387",
+        "pl_desc=40",
+        "pl_shader_desc=72",
+        "pl_vulkan_swapchain_set_diagnostics",
+        "pl_vulkan_swapchain_get_diagnostics",
         "FongMi/mpv",
         "FongMi/FFmpeg",
         "f2c5162b7c4b3e8835de270ff78cecc524decad1",
@@ -79,6 +86,10 @@ def test_source_links_are_location_independent() -> None:
         assert pinned_link or experimental_link, name
     assert any("/buildscripts/patches/mpv_video_shaders.patch" in target for target in targets)
     assert any("github.com/FongMi/FFmpeg/tree/f2c5162b7c4b3e8835de270ff78cecc524decad1" in target for target in targets)
+    assert any(
+        f"github.com/FongMi/libplacebo/tree/{PLACEBO_SHA}/src/include/libplacebo" in target
+        for target in targets
+    )
     assert any(f"github.com/KhronosGroup/Vulkan-Headers/tree/{VULKAN_HEADERS_SHA}" in target for target in targets)
     assert any(f"github.com/KhronosGroup/Vulkan-Headers/archive/{VULKAN_HEADERS_SHA}.tar.gz" in target for target in targets)
 

@@ -13,6 +13,7 @@ ANDROID_VULKAN_DEPENDENCY = "vulkan = dependency('vulkan', required: vulkan_opt)
 PLACEBO_SPIRV_LIBRARY_LOOKUP = "spirv = cxx.find_library('SPIRV', required: required, static: static, dirs: vulkan_lib_dirs)"
 PLACEBO_GLSLANG_LIBRARY_LOOKUP = "cxx.find_library('glslang', required: required, static: static)"
 ANDROID_PLACEBO_GLSLANG_LIBRARY_LOOKUP = "cxx.find_library('glslang', required: required, static: static, dirs: vulkan_lib_dirs)"
+PLACEBO_OPTIONS_HOOK_COUNT_MARKER = "/* MPVFLOW_OPTIONS_HOOK_COUNT */"
 MPV_CLONE_FEATURE = "features += {'clone': cc.has_header_symbol('sched.h', 'clone', args: '-D_GNU_SOURCE')}"
 MPV_ANDROID_CLONE_FEATURE = "features += {'clone': host_machine.system() != 'android' and cc.has_header_symbol('sched.h', 'clone', args: '-D_GNU_SOURCE')}"
 NV_OPTICAL_FORMAT_MARKER = "/* MPVFLOW_NV_OPTICAL_FLOW_SFIXED5_FORMAT */"
@@ -164,6 +165,49 @@ def enlarge_libplacebo_timer_ring(gpu_c: str) -> str:
     for old, new in zip(PLACEBO_TIMER_RING_OLD, PLACEBO_TIMER_RING_NEW, strict=True):
         gpu_c = gpu_c.replace(old, new, 1)
     return gpu_c
+
+
+def publish_libplacebo_hook_count(options_c: str) -> str:
+    """Patch the pinned FongMi helpers to publish params.num_hooks."""
+    marker_count = options_c.count(PLACEBO_OPTIONS_HOOK_COUNT_MARKER)
+    if marker_count == 3:
+        return options_c
+    if marker_count:
+        raise SystemExit("Pinned libplacebo hook-count patch is incomplete")
+    replacements = (
+        (
+            "    PL_ARRAY_APPEND(opts, p->hooks, hook);\n"
+            "    opts->params.hooks = p->hooks.elem;",
+            "    PL_ARRAY_APPEND(opts, p->hooks, hook);\n"
+            "    opts->params.hooks = p->hooks.elem;\n"
+            "    opts->params.num_hooks = p->hooks.num; "
+            + PLACEBO_OPTIONS_HOOK_COUNT_MARKER,
+        ),
+        (
+            "    PL_ARRAY_INSERT_AT(opts, p->hooks, idx, hook);\n"
+            "    opts->params.hooks = p->hooks.elem;",
+            "    PL_ARRAY_INSERT_AT(opts, p->hooks, idx, hook);\n"
+            "    opts->params.hooks = p->hooks.elem;\n"
+            "    opts->params.num_hooks = p->hooks.num; "
+            + PLACEBO_OPTIONS_HOOK_COUNT_MARKER,
+        ),
+        (
+            "    PL_ARRAY_REMOVE_AT(p->hooks, idx);\n"
+            "    opts->params.hooks = p->hooks.elem;",
+            "    PL_ARRAY_REMOVE_AT(p->hooks, idx);\n"
+            "    opts->params.hooks = p->hooks.elem;\n"
+            "    opts->params.num_hooks = p->hooks.num; "
+            + PLACEBO_OPTIONS_HOOK_COUNT_MARKER,
+        ),
+    )
+    for old, new in replacements:
+        if options_c.count(old) != 1:
+            raise SystemExit(
+                "Pinned libplacebo options.c hook helper changed; "
+                "refusing an unverified hook-count patch"
+            )
+        options_c = options_c.replace(old, new, 1)
+    return options_c
 
 
 def add_libplacebo_swapchain_diagnostics_api(vulkan_header: str) -> str:
@@ -524,8 +568,9 @@ static void flow_report_created_swapchain(struct priv *p)
     swapchain_c = replace_once(
         swapchain_c,
         "    VkResult res = vk->QueuePresentKHR(queue, &pinfo);\n",
+        "    pl_clock_t flow_present_start = flow_queue_lock_start ? pl_clock_now() : 0;\n"
         "    VkResult res = vk->QueuePresentKHR(queue, &pinfo);\n"
-        "    pl_clock_t flow_present_end = flow_queue_lock_start ? pl_clock_now() : 0;\n",
+        "    pl_clock_t flow_present_end = flow_present_start ? pl_clock_now() : 0;\n",
         "vkQueuePresentKHR call timing",
     )
     swapchain_c = replace_once(
@@ -842,6 +887,7 @@ def enable_mailbox_suboptimal_tolerance(vulkan_context: str) -> str:
     marker = "/* MPVFLOW_MAILBOX_SUBOPTIMAL_TOLERANCE */"
     policy = (
         "    pl_params.allow_suboptimal =\n"
+        "        pl_params.allow_suboptimal ||\n"
         "        pl_params.present_mode == VK_PRESENT_MODE_MAILBOX_KHR;\n"
     )
     required = (
@@ -890,12 +936,14 @@ def main() -> None:
     glslang_meson_path = libplacebo_dir / "src/glsl/meson.build"
     glslang_source_path = libplacebo_dir / "src/glsl/glslang.cc"
     gpu_timer_path = libplacebo_dir / "src/vulkan/gpu.c"
+    placebo_options_path = libplacebo_dir / "src/options.c"
     placebo_swapchain_path = libplacebo_dir / "src/vulkan/swapchain.c"
     placebo_vulkan_header_path = libplacebo_dir / "src/include/libplacebo/vulkan.h"
     placebo_stubs_path = libplacebo_dir / "src/vulkan/stubs.c"
     for path in (
         meson_path, stats_lua_path, command_path, vo_path, motion_path, hwdec_header_path,
-        vulkan_context_path, glslang_meson_path, glslang_source_path, gpu_timer_path,
+        vulkan_context_path, placebo_options_path, glslang_meson_path,
+        glslang_source_path, gpu_timer_path,
         placebo_swapchain_path, placebo_vulkan_header_path, placebo_stubs_path,
     ):
         if not path.is_file():
@@ -978,6 +1026,9 @@ def main() -> None:
         )
 
     gpu_timer = enlarge_libplacebo_timer_ring(gpu_timer_path.read_text(encoding="utf-8"))
+    placebo_options = publish_libplacebo_hook_count(
+        placebo_options_path.read_text(encoding="utf-8")
+    )
     placebo_swapchain_source = placebo_swapchain_path.read_text(encoding="utf-8")
     validate_libplacebo_suboptimal_recovery(placebo_swapchain_source)
     placebo_swapchain = instrument_libplacebo_swapchain(placebo_swapchain_source)
@@ -993,6 +1044,7 @@ def main() -> None:
     glslang_meson_path.write_text(glslang_meson, encoding="utf-8")
     glslang_source_path.write_text(glslang_source, encoding="utf-8")
     gpu_timer_path.write_text(gpu_timer, encoding="utf-8")
+    placebo_options_path.write_text(placebo_options, encoding="utf-8")
     placebo_swapchain_path.write_text(placebo_swapchain, encoding="utf-8")
     placebo_vulkan_header_path.write_text(placebo_vulkan_header, encoding="utf-8")
     placebo_stubs_path.write_text(placebo_stubs, encoding="utf-8")

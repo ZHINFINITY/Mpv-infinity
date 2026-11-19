@@ -360,6 +360,11 @@ struct pl_vulkan_swapchain_params {
     // the "suboptimal" status indefinitely.
     bool allow_suboptimal;
 
+    // Do not request VK_IMAGE_USAGE_STORAGE_BIT for swapchain images. This
+    // may allow the presentation engine to choose a more compositable image
+    // layout at the cost of preventing direct compute shader output.
+    bool disable_storage;
+
     // Disable high-bit (10 or more) SDR formats. May help work around buggy
     // drivers which don't dither properly when outputting high bit depth
     // SDR backbuffers to 8-bit screens.
@@ -376,6 +381,18 @@ struct pl_vulkan_swapchain_params {
     // be used to prefer formats with higher color bit depth. This is a hint,
     // if no matching format is found, lower bit depths will be accepted.
     uint8_t color_bits;
+
+    // Render with the surface's current pure rotation (0/90/180/270 degrees)
+    // already applied. Unsupported mirrored or inherited transforms fail.
+    // Defaults to false, preserving the unrotated framebuffer convention.
+    //
+    // With this enabled, pl_swapchain_resize takes and returns logical display
+    // dimensions; the framebuffer's storage dimensions may be transposed.
+    // Call resize on orientation changes even if the logical size is unchanged.
+    // A zero dimension retains the usual current/unknown-size query semantics.
+    // Render using pl_swapchain_frame.rotation (or pl_frame_from_swapchain),
+    // and account for target rotation when setting an aspect-preserving crop.
+    bool pre_rotate;
 };
 
 #define pl_vulkan_swapchain_params(...) (&(struct pl_vulkan_swapchain_params) { __VA_ARGS__ })
@@ -396,6 +413,28 @@ PL_API bool pl_vulkan_swapchain_get_diagnostics(
     pl_swapchain sw, int *requested_mode,
     int *created_mode, int *requested_depth,
     uint32_t *create_min_images, uint32_t *actual_images);
+
+#define PL_HAVE_VULKAN_PRESENTATION_FEEDBACK 1
+
+struct pl_vulkan_presentation_feedback {
+    uint64_t generation;
+    uint64_t latest_submit_id;
+    uint64_t latest_submit_begin_ns;
+    uint64_t matched_submit_id;
+    uint64_t matched_submit_begin_ns;
+    uint64_t actual_present_ns;
+};
+
+// Poll available presentation feedback without waiting for presentation. Only
+// Vulkan swapchains are supported. Call outside the start_frame/submit_frame
+// lock pair. Times use CLOCK_MONOTONIC on Linux/Android, not pl_clock_now().
+// Returns false and zeroes out when unsupported or no usable matched timing is
+// available. The generation changes on
+// recreation; IDs identify submissions, not display refreshes. Missing timing
+// does not imply a dropped frame. The latest matched observation is historical,
+// and may be reused across calls; callers own any presentation-time prediction.
+PL_API bool pl_vulkan_get_presentation_feedback(pl_swapchain sw,
+                                struct pl_vulkan_presentation_feedback *out);
 
 // Vulkan interop API, for sharing a single VkDevice (and associated vulkan
 // resources) directly with the API user. The use of this API is a bit sketchy
@@ -488,6 +527,8 @@ PL_API extern const VkPhysicalDeviceFeatures2 pl_vulkan_required_features;
 // VkDevice intact.
 PL_API pl_vulkan pl_vulkan_import(pl_log log, const struct pl_vulkan_import_params *params);
 
+struct pl_vulkan_ycbcr_params;
+
 struct pl_vulkan_wrap_params {
     // The image itself. It *must* be usable concurrently by all of the queue
     // family indices listed in `pl_vulkan->queues`. Note that this requires
@@ -500,7 +541,8 @@ struct pl_vulkan_wrap_params {
     // Which aspect of `image` to wrap. Only useful for wrapping individual
     // sub-planes of planar images. If left as 0, it defaults to the entire
     // image (i.e. the union of VK_IMAGE_ASPECT_PLANE_N_BIT for planar formats,
-    // and VK_IMAGE_ASPECT_COLOR_BIT otherwise).
+    // and VK_IMAGE_ASPECT_COLOR_BIT otherwise). YCbCr conversion requires 0
+    // or VK_IMAGE_ASPECT_COLOR_BIT.
     VkImageAspectFlags aspect;
 
     // The image's dimensions (unused dimensions must be 0)
@@ -509,17 +551,45 @@ struct pl_vulkan_wrap_params {
     int depth;
 
     // The image's format. libplacebo will try to map this to an equivalent
-    // pl_fmt. If no compatible pl_fmt is found, wrapping will fail.
+    // pl_fmt. If no compatible pl_fmt is found, wrapping will fail. When
+    // `ycbcr` is set, this may be a concrete multi-planar format or
+    // VK_FORMAT_UNDEFINED for an Android external format.
     VkFormat format;
 
     // The usage flags the image was created with. libplacebo will set the
     // pl_tex capabilities to include whatever it can, as determined by the set
-    // of enabled usage flags.
+    // of enabled usage flags. For YCbCr images this must exactly match the
+    // image creation usage so libplacebo can query descriptor requirements.
     VkImageUsageFlags usage;
 
     // See `pl_tex_params`
     void *user_data;
     pl_debug_tag debug_tag;
+
+    // Optional YCbCr sampling configuration. When set, the wrapped image is
+    // exposed as a normalized four-component texture backed by an immutable
+    // VkSamplerYcbcrConversion sampler. The selected conversion model
+    // determines whether shaders receive converted RGB or reconstructed source
+    // components. The pointed-to data is consumed during this call and does
+    // not need to remain alive afterwards.
+    const struct pl_vulkan_ycbcr_params *ycbcr;
+};
+
+struct pl_vulkan_ycbcr_params {
+    // Android external-format identifier. Must be non-zero exactly when the
+    // wrapped image format is VK_FORMAT_UNDEFINED.
+    uint64_t external_format;
+    VkComponentMapping components;
+    VkSamplerYcbcrModelConversion model;
+    VkSamplerYcbcrRange range;
+    VkChromaLocation x_chroma_offset;
+    VkChromaLocation y_chroma_offset;
+    VkFilter chroma_filter;
+    bool separate_reconstruction_filter;
+    bool force_explicit_reconstruction;
+
+    // Effective component precision of the samples returned to shaders.
+    int sample_depth;
 };
 
 #define pl_vulkan_wrap_params(...) (&(struct pl_vulkan_wrap_params) {   \

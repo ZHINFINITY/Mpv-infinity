@@ -259,6 +259,8 @@ PL_API extern const char *const pl_color_primaries_names[PL_COLOR_PRIM_COUNT];
 PL_API enum pl_color_primaries pl_color_primaries_guess(int width, int height);
 
 // The colorspace's transfer function (gamma / EOTF)
+#define PL_HAVE_HDR_LINEAR 1
+
 enum pl_color_transfer {
     PL_COLOR_TRC_UNKNOWN = 0,
     // Standard dynamic range:
@@ -280,6 +282,10 @@ enum pl_color_transfer {
     PL_COLOR_TRC_S_LOG1,        // Sony S-Log1
     PL_COLOR_TRC_S_LOG2,        // Sony S-Log2
     PL_COLOR_TRC_SCRGB,         // IEC 61966-2-2 scRGB (extended linear BT.709)
+    // Private working transfer: absolute linear HDR in the independently
+    // specified primaries, 1.0 = PL_COLOR_SDR_WHITE cd/m2. Retains HDR identity
+    // even when mastering peak is below SDR white; no black scaling.
+    PL_COLOR_TRC_LINEAR_HDR,
     PL_COLOR_TRC_COUNT
 };
 
@@ -295,6 +301,10 @@ PL_API extern const char *const pl_color_transfer_names[PL_COLOR_TRC_COUNT];
 // highest nominal peak in scene-referred space (3.77), which may be different
 // from the actual peak in display space after application of the HLG OOTF.
 PL_API float pl_color_transfer_nominal_peak(enum pl_color_transfer trc);
+
+// True for the identity transfer in PL_COLOR_SDR_WHITE-normalized linear light.
+// scRGB has a different normalization and is therefore not an identity here.
+PL_API bool pl_color_transfer_is_normalized_linear(enum pl_color_transfer trc);
 
 static inline bool pl_color_transfer_is_hdr(enum pl_color_transfer trc)
 {
@@ -520,7 +530,7 @@ PL_API bool pl_color_space_is_black_scaled(const struct pl_color_space *csp);
 // non-linear color will be scaled so that 1.0 is the maximum representable
 // value.
 //
-// Note: This is a no-op if csp->transfer == PL_COLOR_TRC_LINEAR.
+// Note: This is a no-op for normalized linear transfers (LINEAR and LINEAR_HDR).
 PL_API void pl_color_linearize(const struct pl_color_space *csp, float color[3]);
 PL_API void pl_color_delinearize(const struct pl_color_space *csp, float color[3]);
 

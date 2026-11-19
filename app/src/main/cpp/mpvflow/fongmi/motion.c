@@ -29,6 +29,7 @@ struct mp_motion {
     uint64_t ids[2];
     bool pair_valid;
     bool result_valid;
+    pl_tex result_first, result_second;
     float last_alpha;
     struct mp_motion_stats stats;
     int timing_stage;
@@ -659,6 +660,19 @@ static bool dispatch(struct mp_motion *m, pl_tex target,
     ));
 }
 
+static bool dispatch_storage(struct mp_motion *m, pl_tex target,
+                             struct pl_custom_shader *custom)
+{
+    custom->output = PL_SHADER_SIG_COLOR;
+    custom->compute = true;
+    custom->compute_group_size[0] = target->params.w == 1 ? 1 : 8;
+    custom->compute_group_size[1] = target->params.h == 1 ? 1 : 8;
+    pl_shader shader = begin_dispatch(m, custom);
+    return shader && pl_dispatch_compute(m->dispatch, pl_dispatch_compute_params(
+        .shader = &shader,
+        .dispatch_size = {target->params.w, target->params.h, 1},
+    ));
+}
 static bool dispatch_matching(struct mp_motion *m, pl_tex target,
                               struct pl_custom_shader *custom)
 {
@@ -1045,7 +1059,8 @@ static bool render_motion(struct mp_motion *m,
         if (!same_size)
             m->result_valid = false;
         destination = m->result;
-        if (m->result_valid && m->last_alpha == alpha) {
+        if (m->result_valid && m->last_alpha == alpha &&
+            m->result_first == first && m->result_second == second) {
             m->stats.repeated_frames++;
             *output = destination;
             return true;
@@ -1091,16 +1106,25 @@ static bool render_motion(struct mp_motion *m,
         {.var = pl_var_float("alpha"), .data = &alpha, .dynamic = true},
     };
     m->timing_stage = LEVELS + 1;
-    if (!dispatch(m, destination, &(struct pl_custom_shader) {
+    bool synthesis_ok = destination->params.renderable
+        ? dispatch(m, destination, &(struct pl_custom_shader) {
         .description = "motion compensated interpolation",
         .body = synthesis_body,
         .descriptors = desc, .num_descriptors = 5,
         .variables = vars, .num_variables = 4,
-    }))
+    }) : dispatch_storage(m, destination, &(struct pl_custom_shader) {
+        .description = "motion compensated interpolation",
+        .body = synthesis_body,
+        .descriptors = desc, .num_descriptors = 5,
+        .variables = vars, .num_variables = 4,
+    });
+    if (!synthesis_ok)
         return false;
 
     if (!target) {
         m->last_alpha = alpha;
+        m->result_first = first;
+        m->result_second = second;
         m->result_valid = true;
     }
     m->stats.generated_frames++;

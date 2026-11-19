@@ -253,8 +253,21 @@ static inline float pl_aspect_rotate(float aspect, pl_rotation rot)
     return (rot % PL_ROTATION_180) ? 1.0 / aspect : aspect;
 }
 
-#define pl_rect2df_aspect_set_rot(rc, aspect, rot, panscan) \
-    pl_rect2df_aspect_set((rc), pl_aspect_rotate((aspect), (rot)), (panscan))
+static inline void pl_rect2df_aspect_set_rot(pl_rect2df *rc, float aspect,
+                                             pl_rotation rot, float panscan)
+{
+    if (rot % PL_ROTATION_180) {
+        // Fit in the logical coordinate system to avoid reciprocal rounding.
+        pl_rect2df logical = {rc->y0, rc->x0, rc->y1, rc->x1};
+        pl_rect2df_aspect_set(&logical, aspect, panscan);
+        rc->x0 = logical.y0;
+        rc->y0 = logical.x0;
+        rc->x1 = logical.y1;
+        rc->y1 = logical.x1;
+    } else {
+        pl_rect2df_aspect_set(rc, aspect, panscan);
+    }
+}
 
 #define pl_rect2df_aspect_copy_rot(rc, src, panscan, rot) \
     pl_rect2df_aspect_set_rot((rc), pl_rect2df_aspect(src), (rot), (panscan))

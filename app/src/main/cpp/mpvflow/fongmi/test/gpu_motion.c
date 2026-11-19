@@ -512,6 +512,7 @@ static void straight_edge(pl_gpu gpu, struct mp_motion *motion,
         readback(gpu, result, output);
         double error = 0;
         float maximum_error = 0;
+    assert(isfinite(maximum_error));
         int worst_x = 0, worst_y = 0;
         int samples = 0;
         for (int v = 16 * scale; v < tangent - 16 * scale; v++) {
@@ -523,6 +524,7 @@ static void straight_edge(pl_gpu gpu, struct mp_motion *motion,
                 float actual = output[(y * width + x) * 4];
                 assert(isfinite(actual));
                 float difference = fabs(actual - expected);
+                assert(isfinite(difference));
                 if (difference > maximum_error) {
                     maximum_error = difference;
                     worst_x = x;
@@ -1049,6 +1051,7 @@ static void capture_ownership(pl_gpu gpu, struct mp_motion *motion)
                 float sy = 4 + (y + 0.5f) * 88 / HEIGHT - 0.5f;
                 float error = fabs(output[(y * WIDTH + x) * 4 + c] -
                                    ramp(sx, sy, c));
+                assert(isfinite(error));
                 if (error > maximum_error)
                     maximum_error = error;
             }
@@ -1109,6 +1112,7 @@ static void color_roundtrip(pl_gpu gpu, struct mp_motion *motion)
     float maximum_error = 0;
     for (int i = 0; i < WIDTH * HEIGHT * 4; i++) {
         float error = fabs(output[i] - expected[i]);
+        assert(isfinite(error));
         if (error > maximum_error)
             maximum_error = error;
     }
@@ -1398,6 +1402,7 @@ static void synthesis_sampling(pl_gpu gpu)
                         float expected = original * (1 - trust) + warped * trust;
                         assert(isfinite(output[index]) && isfinite(expected));
                         float difference = fabsf(output[index] - expected);
+                    assert(isfinite(difference));
                         if (difference > maximum) {
                             maximum = difference; worst_x = x; worst_y = y;
                         }

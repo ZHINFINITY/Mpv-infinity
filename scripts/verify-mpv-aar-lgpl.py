@@ -136,6 +136,17 @@ def verify_placebo_logger_export(abi: str, path: Path, library_name: str = "libm
     expected_placebo_api_ver(api_ver)
     if not re.search(rf"\b{re.escape(expected_symbol)}(?:@[^\s]+)?\b", exports):
         raise SystemExit(f"Standard {abi}/{library_name} does not export {expected_symbol}")
+    if api_ver == "387":
+        # API 387 alone does not identify the FongMi fork's extended public structs.
+        for marker in (
+            "pl_vulkan_swapchain_set_diagnostics",
+            "pl_vulkan_swapchain_get_diagnostics",
+        ):
+            if not re.search(rf"[ \t]{re.escape(marker)}(?:@[^\s]+)?$", exports, re.MULTILINE):
+                raise SystemExit(
+                    f"Standard {abi}/{library_name} API-387 runtime is missing "
+                    f"MPVFlow FongMi ABI marker {marker}"
+                )
 
 
 def verify_mpv(

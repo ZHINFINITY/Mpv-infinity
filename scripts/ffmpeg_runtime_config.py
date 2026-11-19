@@ -58,8 +58,10 @@ def ffmpeg_runtime_version(text: str) -> str:
         version = next(iter(versions))
         if _FFMPEG_N90_VERSION.fullmatch(version):
             return version
-        if version == _FONGMI_FFMPEG_VERSION:
-            return f"n9.1-FongMi-{_FONGMI_FFMPEG_REVISION[:8]}"
+        if version.startswith(_FONGMI_FFMPEG_BASE_VERSION + "-"):
+            suffix = version.rsplit("-", 1)[-1]
+            if _FONGMI_FFMPEG_REVISION.startswith(suffix):
+                return f"n9.1-FongMi-{_FONGMI_FFMPEG_REVISION[:8]}"
     found = ", ".join(sorted(versions)) if versions else "none"
     raise RuntimeEvidenceError(
         "expected FFmpeg n9.0 or the exact FongMi version marker "

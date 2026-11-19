@@ -57,6 +57,10 @@ PL_API int pl_swapchain_latency(pl_swapchain sw);
 // swapchain). It's also possible for libplacebo to return values of 0, such as
 // in the case that the swapchain doesn't exist yet.
 //
+// For Vulkan pre_rotate swapchains, dimensions are logical display dimensions,
+// not necessarily framebuffer storage dimensions. An explicit call also checks
+// for orientation changes, including when both requested dimensions are zero.
+//
 // Returns false on significant errors (e.g. dead surface). This function can
 // effectively be used to probe if creating a swapchain works.
 PL_API bool pl_swapchain_resize(pl_swapchain sw, int *width, int *height);
@@ -103,6 +107,12 @@ struct pl_swapchain_frame {
     // and alpha handling (where available).
     struct pl_color_repr color_repr;
     struct pl_color_space color_space;
+
+    // Logical display rotation relative to the framebuffer, using the same
+    // convention as pl_frame.rotation for a target frame. This is independent
+    // of the source image rotation. A zero value preserves the usual convention.
+    // pl_frame_from_swapchain propagates this field to the rendering target.
+    pl_rotation rotation;
 };
 
 // Retrieve a new frame from the swapchain. Returns whether successful. It's

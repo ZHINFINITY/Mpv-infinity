@@ -735,6 +735,7 @@ enum pl_sampler_type {
     PL_SAMPLER_NORMAL,      // gsampler2D, gsampler3D etc.
     PL_SAMPLER_RECT,        // gsampler2DRect
     PL_SAMPLER_EXTERNAL,    // gsamplerExternalOES
+    PL_SAMPLER_EXTERNAL_YUV, // __samplerExternal2DY2YEXT (raw YUV)
     PL_SAMPLER_TYPE_COUNT,
 };
 
@@ -778,6 +779,10 @@ struct pl_tex_t {
     // If `params.sampleable` is true, this indicates the correct sampler type
     // to use when sampling from this texture.
     enum pl_sampler_type sampler_type;
+
+    // Backend-specific sampler identity. A non-zero value means render passes
+    // must be specialized for the immutable sampler attached to this texture.
+    uint64_t sampler_signature;
 };
 
 // Create a texture (with undefined contents). Returns NULL on failure. This is
@@ -1139,6 +1144,12 @@ struct pl_desc {
     // the other descriptor types (uniform buffers and sampled textures are
     // always read-only).
     enum pl_desc_access access;
+
+    // Static sampler state used while creating sampled-texture descriptors.
+    // `sampler_signature` is zero for ordinary dynamically bound samplers.
+    uint64_t sampler_signature;
+    enum pl_tex_address_mode address_mode;
+    enum pl_tex_sample_mode sample_mode;
 };
 
 // Framebuffer blending mode (for raster passes)

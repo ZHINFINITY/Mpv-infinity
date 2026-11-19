@@ -30,6 +30,7 @@ PL_API_BEGIN
 
 typedef struct pl_cache_obj {
     // Cache object key. This will uniquely identify this cached object.
+    // Keys must be nonzero.
     uint64_t key;
 
     // Cache data pointer and length. 0-length cached objects are invalid
@@ -114,7 +115,7 @@ PL_API uint64_t pl_cache_signature(pl_cache cache);
 
 // Serialize the internal state of a `pl_cache` into an abstract cache
 // object that can be e.g. saved to disk and loaded again later. Returns the
-// number of objects saved.
+// number of objects traversed, not necessarily written successfully; callers must check stream errors and flush/close before replacing a cache.
 //
 // Note: Using `save/load` is largely redundant with using `insert/lookup`
 // callbacks, and the user should decide whether to use the explicit API or the

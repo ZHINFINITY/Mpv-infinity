@@ -606,8 +606,6 @@ index bd3d1aa..d913d95 100644
 +    if (!can_interpolate)
 +        p->motion_clock = (struct mp_motion_clock) {0};
 @@ -1358,0 +1656,4 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
-+    if (p->motion_fps)
-+        params.frame_mixer = NULL;
 +    if (p->motion)
 +        params.skip_caching_single_frame = true;
 @@ -1404,3 +1705 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)

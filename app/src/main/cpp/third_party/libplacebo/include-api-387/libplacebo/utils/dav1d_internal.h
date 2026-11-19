@@ -45,7 +45,7 @@ PL_DAV1D_API enum pl_color_system pl_system_from_dav1d(enum Dav1dMatrixCoefficie
         // requires inferring from other sources, but libplacebo makes
         // explicit. Default to PQ as it's the more common scenario.
         case DAV1D_MC_ICTCP:        return PL_COLOR_SYSTEM_BT_2100_PQ;
-        case DAV1D_MC_RESERVED: abort();
+        case DAV1D_MC_RESERVED: return PL_COLOR_SYSTEM_UNKNOWN;
     }
 
     return PL_COLOR_SYSTEM_UNKNOWN;
@@ -152,7 +152,7 @@ PL_DAV1D_API enum pl_color_transfer pl_transfer_from_dav1d(enum Dav1dTransferCha
     case DAV1D_TRC_SMPTE2084:       return PL_COLOR_TRC_PQ;
     case DAV1D_TRC_SMPTE428:        return PL_COLOR_TRC_ST428;
     case DAV1D_TRC_HLG:             return PL_COLOR_TRC_HLG;
-    case DAV1D_TRC_RESERVED: abort();
+    case DAV1D_TRC_RESERVED: return PL_COLOR_TRC_UNKNOWN;
     }
 
     return PL_COLOR_TRC_UNKNOWN;
@@ -179,6 +179,7 @@ PL_DAV1D_API enum Dav1dTransferCharacteristics pl_transfer_to_dav1d(enum pl_colo
     case PL_COLOR_TRC_S_LOG1:       return DAV1D_TRC_UNKNOWN; // missing
     case PL_COLOR_TRC_S_LOG2:       return DAV1D_TRC_UNKNOWN; // missing
     case PL_COLOR_TRC_SCRGB:        return DAV1D_TRC_UNKNOWN; // missing
+    case PL_COLOR_TRC_LINEAR_HDR:   return DAV1D_TRC_UNKNOWN; // working transfer
     case PL_COLOR_TRC_COUNT: abort();
     }
 
@@ -432,16 +433,16 @@ PL_DAV1D_API bool pl_upload_dav1dpicture(pl_gpu gpu,
         }, {
             // U plane
             .type           = PL_FMT_UNORM,
-            .width          = pic->p.w >> sub_x,
-            .height         = pic->p.h >> sub_y,
+            .width          = (pic->p.w + (1 << sub_x) - 1) >> sub_x,
+            .height         = (pic->p.h + (1 << sub_y) - 1) >> sub_y,
             .pixel_stride   = bytes,
             .component_size = {bytes * 8},
             .component_map  = {1},
         }, {
             // V plane
             .type           = PL_FMT_UNORM,
-            .width          = pic->p.w >> sub_x,
-            .height         = pic->p.h >> sub_y,
+            .width          = (pic->p.w + (1 << sub_x) - 1) >> sub_x,
+            .height         = (pic->p.h + (1 << sub_y) - 1) >> sub_y,
             .pixel_stride   = bytes,
             .component_size = {bytes * 8},
             .component_map  = {2},
@@ -485,7 +486,14 @@ PL_DAV1D_API bool pl_upload_dav1dpicture(pl_gpu gpu,
         }
 
         if (!pl_upload_plane(gpu, &out->planes[p], &tex[p], &data[p])) {
-            free(ref);
+            if (ref) {
+                // Accepted uploads retain ref until their callback runs. Drain
+                // them before freeing the callback state, and leave pic owned
+                // by the caller because this operation failed.
+                for (int i = 0; i < p; i++)
+                    pl_tex_poll(gpu, tex[i], UINT64_MAX);
+                free(ref);
+            }
             return false;
         }
     }

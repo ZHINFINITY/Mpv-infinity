@@ -27,7 +27,11 @@ def verify_mocked(exports: str) -> None:
 assert verifier.expected_placebo_api_ver("374") == "374"
 assert verifier.expected_placebo_api_ver("387") == "387"
 verify_mocked("00000000 T pl_log_create_374\n")
-verify_mocked("00000000 T pl_log_create_387@@LIBPLACEBO_7.387\n")
+verify_mocked(
+    "00000000 T pl_log_create_387@@LIBPLACEBO_7.387\n"
+    "00000000 T pl_vulkan_swapchain_set_diagnostics\n"
+    "00000000 T pl_vulkan_swapchain_get_diagnostics\n"
+)
 
 # Unknown, absent, or ambiguous APIs fail closed rather than guessing a header.
 for exports in (
@@ -35,6 +39,8 @@ for exports in (
     "00000000 T pl_vulkan_create\n",
     "00000000 T pl_log_create_374.trailing\n",
     "00000000 T pl_log_create_374\n00000000 T pl_log_create_387\n",
+    "00000000 T pl_log_create_387\n"
+    "00000000 T pl_vulkan_swapchain_set_diagnostics\n",
 ):
     try:
         verify_mocked(exports)

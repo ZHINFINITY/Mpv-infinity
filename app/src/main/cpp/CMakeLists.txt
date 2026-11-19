@@ -174,6 +174,12 @@ if(MPVFLOW_ENABLE_VULKAN_BACKEND)
         pl_vulkan_default_params pl_vulkan_create pl_vulkan_destroy
         pl_vulkan_wrap pl_vulkan_hold_ex pl_vulkan_release_ex
         "pl_log_create_${MPVFLOW_DETECTED_PLACEBO_API_VER}")
+    if(MPVFLOW_DETECTED_PLACEBO_API_VER STREQUAL "387")
+        # API version alone does not identify the FongMi fork's extended struct ABI.
+        list(APPEND MPVFLOW_REQUIRED_PLACEBO_SYMBOLS
+            pl_vulkan_swapchain_set_diagnostics
+            pl_vulkan_swapchain_get_diagnostics)
+    endif()
     foreach(MPVFLOW_REQUIRED_PLACEBO_SYMBOL IN LISTS MPVFLOW_REQUIRED_PLACEBO_SYMBOLS)
         set(MPVFLOW_SYMBOL_EXPORTED FALSE)
         foreach(MPVFLOW_EXPORT_LINE IN LISTS MPVFLOW_PLACEBO_EXPORT_LINES)

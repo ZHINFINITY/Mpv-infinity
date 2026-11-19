@@ -157,6 +157,57 @@ struct pl_dispatch_compute_params {
 // objects).
 PL_API bool pl_dispatch_compute(pl_dispatch dp, const struct pl_dispatch_compute_params *params);
 
+#define PL_HAVE_DISPATCH_PREPARED 1
+
+typedef struct pl_dispatch_prepared_t *pl_dispatch_prepared;
+
+// Prepare a compute shader without executing it. Takes ownership of *shader,
+// including on failure. Returns NULL on failure. The dispatch and GPU must
+// outlive the prepared handle; destroy all handles before destroying dispatch.
+//
+// The COLOR variant requires a full, non-transposed target, no vertex attributes
+// or blending. Target dimensions and format are fixed at preparation time.
+// The NONE variant requires a compute shader with no vertex attributes.
+PL_API pl_dispatch_prepared pl_dispatch_prepare(
+    pl_dispatch dp, const struct pl_dispatch_params *params);
+PL_API pl_dispatch_prepared pl_dispatch_prepare_compute(
+    pl_dispatch dp, const struct pl_dispatch_compute_params *params);
+
+struct pl_dispatch_prepared_params {
+    // Complete arrays in the original shader order, excluding any variables or
+    // descriptors generated internally by dispatch. Variable types and shapes,
+    // texture shapes/formats and immutable sampler state must remain unchanged.
+    // Data and resource pointers are borrowed for this call, like pl_pass_run.
+    const struct pl_desc_binding *descriptors;
+    int num_descriptors;
+    const struct pl_shader_var *variables;
+    int num_variables;
+
+    // Required for COLOR; must be NULL for NONE.
+    pl_tex target;
+
+    // NONE only. All zero reuses the prepared dispatch size.
+    int dispatch_size[3];
+    pl_timer timer;
+};
+
+#define pl_dispatch_prepared_params(...) \
+    (&(struct pl_dispatch_prepared_params) { __VA_ARGS__ })
+
+// Run without shader generation or pass lookup. Invalid inputs return false
+// without submitting work. Success has the same completion semantics as dispatch.
+// reset_frame does not invalidate handles. For a new shader identity, destroy
+// and prepare again; this also applies to compile-time/specialization constants.
+PL_API bool pl_dispatch_run_prepared(
+    pl_dispatch_prepared prepared, const struct pl_dispatch_prepared_params *params);
+// With defer_submit set, the backend may defer submitting recorded commands.
+// Submit the batch with a normal dispatch or pl_gpu_flush before waiting for
+// completion. The backend can submit earlier to satisfy resource dependencies.
+PL_API bool pl_dispatch_run_prepared_ex(
+    pl_dispatch_prepared prepared, const struct pl_dispatch_prepared_params *params,
+    bool defer_submit);
+PL_API void pl_dispatch_prepared_destroy(pl_dispatch_prepared *prepared);
+
 enum pl_vertex_coords {
     PL_COORDS_ABSOLUTE,     // Absolute/integer `target` coordinates
     PL_COORDS_RELATIVE,     // Relative `target` coordinates in range [0, 1]

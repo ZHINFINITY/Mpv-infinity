@@ -25,6 +25,13 @@
 // is increased)
 #define PL_API_VER 387
 
+// Public FongMi extension capabilities.
+#define PL_HAVE_FONGMI_VULKAN_YCBCR 1
+#define PL_HAVE_FONGMI_CHECKED_DOVI 1
+#define PL_HAVE_FONGMI_VULKAN_DISABLE_STORAGE 1
+#define PL_HAVE_FONGMI_OPENGL_EXTERNAL_YUV 1
+#define PL_HAVE_FONGMI_VULKAN_PRE_ROTATION 1
+
 // Increased any time a fix is made to a given API version.
 #define PL_FIX_VER (pl_fix_ver())
 
@@ -45,6 +52,7 @@
 #define PL_HAVE_VK_PROC_ADDR 1
 #define PL_HAVE_VULKAN 1
 #undef PL_HAVE_XXHASH
+
 
 // Extra compiler-specific stuff
 #ifndef PL_DEPRECATED_IN

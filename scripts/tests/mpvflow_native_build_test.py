@@ -136,6 +136,33 @@ spec = importlib.util.spec_from_file_location("prepare_mpvflow", PREPARE)
 assert spec and spec.loader, "could not load MPVFlow preparation module"
 prepare = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(prepare)
+options_fixture = """
+void pl_options_add_hook(pl_options opts, const struct pl_hook *hook)
+{
+    PL_ARRAY_APPEND(opts, p->hooks, hook);
+    opts->params.hooks = p->hooks.elem;
+}
+void pl_options_insert_hook(pl_options opts, const struct pl_hook *hook, int idx)
+{
+    PL_ARRAY_INSERT_AT(opts, p->hooks, idx, hook);
+    opts->params.hooks = p->hooks.elem;
+}
+void pl_options_remove_hook_at(pl_options opts, int idx)
+{
+    PL_ARRAY_REMOVE_AT(p->hooks, idx);
+    opts->params.hooks = p->hooks.elem;
+}
+"""
+patched_options = prepare.publish_libplacebo_hook_count(options_fixture)
+assert patched_options.count("opts->params.num_hooks = p->hooks.num;") == 3
+assert patched_options.count(prepare.PLACEBO_OPTIONS_HOOK_COUNT_MARKER) == 3
+assert prepare.publish_libplacebo_hook_count(patched_options) == patched_options
+try:
+    prepare.publish_libplacebo_hook_count(options_fixture.replace("PL_ARRAY_INSERT_AT", "PL_ARRAY_INSERT"))
+except SystemExit as error:
+    assert "hook helper changed" in str(error)
+else:
+    raise AssertionError("hook-count adapter accepted an unverified upstream helper")
 gpu_source = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_gpu.c").read_text(encoding="utf-8")
 gpu_header = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_gpu.h").read_text(encoding="utf-8")
 for marker in (
@@ -223,8 +250,8 @@ assert patched_mailbox_context.index("pl_params.present_mode = p->opts->swap_mod
 assert prepare.enable_mailbox_suboptimal_tolerance(patched_mailbox_context) == patched_mailbox_context, (
     "mailbox suboptimal preparation must be safe to repeat"
 )
-assert "pl_params.allow_suboptimal =\n        pl_params.present_mode == VK_PRESENT_MODE_MAILBOX_KHR;" in patched_mailbox_context, (
-    "only the effective Mailbox request may opt into suboptimal tolerance; FIFO and other modes remain false"
+assert "pl_params.allow_suboptimal =\n        pl_params.allow_suboptimal ||\n        pl_params.present_mode == VK_PRESENT_MODE_MAILBOX_KHR;" in patched_mailbox_context, (
+    "the effective Mailbox request must preserve prior suboptimal policy while enabling tolerance"
 )
 for bad_mailbox_context in (
     "no Vulkan swap-mode override here\n",
