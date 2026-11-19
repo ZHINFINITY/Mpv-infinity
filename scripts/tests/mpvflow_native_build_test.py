@@ -1,3 +1,4 @@
+import re
 #!/usr/bin/env python3
 """Guard the Android MPVFlow native compiler and Vulkan build configuration."""
 from __future__ import annotations
@@ -52,11 +53,14 @@ STRING_RESOURCES = ROOT / "app/src/main/res/values/strings.xml"
 
 sys.dont_write_bytecode = True
 vo_patch = VO_PATCH.read_text(encoding="utf-8")
-assert "flow_release_frame(fp->vo, fp, true);" in vo_patch, (
-    "MPVFlow must release prepared source textures and the active motion pair on terminal unmap"
+patch_hunks = re.split(r"(?m)(?=^@@ )", vo_patch)
+unmap_hunk = next((hunk for hunk in patch_hunks if hunk.startswith("@@") and "static void unmap_frame" in hunk.splitlines()[0]), "")
+discard_hunk = next((hunk for hunk in patch_hunks if hunk.startswith("@@") and "static void discard_frame" in hunk.splitlines()[0]), "")
+assert "flow_release_frame(fp->vo, fp, true);" in unmap_hunk, (
+    "MPVFlow must release prepared source textures on terminal unmap"
 )
-assert "flow_release_frame(fp->vo, fp, true);" in vo_patch, (
-    "MPVFlow must still release prepared source textures and the active motion pair when a source frame is discarded"
+assert "flow_release_frame(fp->vo, fp, true);" in discard_hunk, (
+    "MPVFlow must release prepared source textures when a source frame is discarded"
 )
 release_frame = vo_patch.split("+static void flow_release_frame(", 1)[1].split("\n+}", 1)[0]
 assert "if (discard) flow_release_pair_for_frame(p, fp->frame_id);" in release_frame

@@ -1076,6 +1076,10 @@ endif
     meson = prefer_fork_for_android_mpv_subprocesses(
         enable_android_vulkan_dependency(meson_path.read_text())
     )
+    # Dependency setup reloads Meson from disk; preserve the capability-gated
+    # renderer-hook probe on the final content we publish.
+    if '# MPVFLOW_HAVE_RENDERER_HOOK' not in meson:
+        meson += renderer_hook_probe
     if mapper_marker not in hwdec_header_path.read_text() or "# MPVFLOW_AIMAGE_VULKAN_MAPPER" not in meson:
         raise SystemExit("Android MediaCodec/Vulkan mapper patch was not fully applied")
 
