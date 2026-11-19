@@ -585,17 +585,17 @@ class Media3FlowVideoSink(
         Log.WARN,
         "event=ahb_import state=fallback stage=AHardwareBuffer.create image_role=$role " +
           "width=$width height=$height storage_usage=0x${driverRequiredUsage.toString(16)} " +
-          "fallback_usage=0x${baseUsage.toString(16)}",
+          "fallback_usage=0x${(baseUsage or driverRequiredUsage).toString(16)}",
         error,
       )
       try {
-        HardwareBuffer.create(width, height, HardwareBuffer.RGBA_8888, 1, baseUsage)
+        HardwareBuffer.create(width, height, HardwareBuffer.RGBA_8888, 1, baseUsage or driverRequiredUsage)
       } catch (fallbackError: RuntimeException) {
         logFlowRecordOnce(
           "ahb-allocation-$role",
           Log.ERROR,
           "event=ahb_import state=failed stage=AHardwareBuffer.create image_role=$role " +
-            "width=$width height=$height format=rgba8 fallback_usage=0x${baseUsage.toString(16)}",
+            "width=$width height=$height format=rgba8 fallback_usage=0x${(baseUsage or driverRequiredUsage).toString(16)}",
           fallbackError,
         )
         throw fallbackError
@@ -736,6 +736,8 @@ class Media3FlowVideoSink(
     var consumerFencePollScheduled = false
     var frame: PresentationFrame? = null
     var completionReported = false
+    var sharedImportFailureContext = 0L
+    var sharedImportFailureAttempts = 0
   }
 
   private data class PresentationFrame(
@@ -2154,7 +2156,17 @@ class Media3FlowVideoSink(
     if (dimensionsMatch && (!preferSharedOutput || slot.nativeImageHandle != 0L)) {
       return slot.nativeImageHandle != 0L
     }
-    destroyPresentationSlotTarget(slot)
+    // Preserve same-size GLES staging after a shared import failure. Retry is
+    // bounded for this Vulkan context and naturally resets on resize/context loss.
+    if (dimensionsMatch && preferSharedOutput && slot.nativeImageHandle == 0L &&
+      slot.sharedImportFailureContext == flowVulkanContext && slot.sharedImportFailureAttempts >= 3) return false
+    if (dimensionsMatch && preferSharedOutput && slot.nativeImageHandle == 0L) {
+      slot.sharedImportFailureAttempts++
+    } else {
+      slot.sharedImportFailureContext = 0L
+      slot.sharedImportFailureAttempts = 0
+      destroyPresentationSlotTarget(slot)
+    }
     if (preferSharedOutput && flowVulkanContext != 0L) {
       var buffer: HardwareBuffer? = null
       var imageHandle = 0L
@@ -2189,6 +2201,8 @@ class Media3FlowVideoSink(
           runCatching { Media3FlowVulkanNative.nativeDestroyImage(flowVulkanContext, imageHandle) }
         }
         buffer?.let { runCatching { it.close() } }
+        slot.sharedImportFailureContext = flowVulkanContext
+        slot.sharedImportFailureAttempts = maxOf(slot.sharedImportFailureAttempts, 1)
         logFlowRecordOnce(
           "presentation-slot-output-fallback-$width-$height",
           Log.WARN,
@@ -2238,6 +2252,9 @@ class Media3FlowVideoSink(
       )
     } finally {
       if (presentationQueue.state(lease.slot) == Media3FlowPresentationQueue.State.WRITING) {
+        // A failed external handoff may leave the Vulkan image owned by Vulkan;
+        // never return that slot to GLES. Retire its shared target first.
+        if (sharedTarget && slot.nativeImageHandle != 0L) destroyPresentationSlotTarget(slot)
         presentationQueue.abortWrite(lease)
       }
     }

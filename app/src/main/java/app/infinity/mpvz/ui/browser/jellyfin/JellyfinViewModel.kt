@@ -1057,7 +1057,7 @@ class JellyfinViewModel(
 
   fun loadMoreItems() {
     val state = _uiState.value
-    if (state.isLoading || state.isLoadingMore || !state.hasMore) return
+    if (state.isLoading || state.isLoadingMore || !state.hasMore || state.error != null) return
     val active = state.activeServer ?: return
     val library = state.openLibrary ?: return
     loadLibraryItems(active, library, resetPagination = false)

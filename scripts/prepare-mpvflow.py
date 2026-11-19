@@ -985,6 +985,17 @@ def main() -> None:
     vo = vo_path.read_text()
     stats_lua = patch_mpvflow_stats_lua(stats_lua_path.read_text())
     meson = meson_path.read_text()
+    # mpvflow_gpu.c is compiled by MPV's Meson target, not the app CMake
+    # target. Enable the hook only when the selected libplacebo exposes both
+    # APIs; otherwise mpvflow_gpu.c intentionally retains its safe stub.
+    renderer_hook_probe = """
+# MPVFLOW_HAVE_RENDERER_HOOK
+if features.get('libplacebo', false) and cc.has_header_symbol('libplacebo/shaders/custom.h', 'pl_shader_custom') and cc.has_header_symbol('libplacebo/gpu.h', 'pl_shader_is_compute')
+    c_args += ['-DMPVFLOW_HAVE_RENDERER_HOOK=1']
+endif
+"""
+    if '# MPVFLOW_HAVE_RENDERER_HOOK' not in meson:
+        meson += renderer_hook_probe
     vulkan_context = enable_android_external_memory_extensions(
         vulkan_context_path.read_text()
     )

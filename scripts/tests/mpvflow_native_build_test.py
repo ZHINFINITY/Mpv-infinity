@@ -52,8 +52,8 @@ STRING_RESOURCES = ROOT / "app/src/main/res/values/strings.xml"
 
 sys.dont_write_bytecode = True
 vo_patch = VO_PATCH.read_text(encoding="utf-8")
-assert "flow_release_frame(fp->vo, fp, false);" in vo_patch, (
-    "MPVFlow must retain prepared source textures and the active motion pair across temporary unmap"
+assert "flow_release_frame(fp->vo, fp, true);" in vo_patch, (
+    "MPVFlow must release prepared source textures and the active motion pair on terminal unmap"
 )
 assert "flow_release_frame(fp->vo, fp, true);" in vo_patch, (
     "MPVFlow must still release prepared source textures and the active motion pair when a source frame is discarded"
@@ -77,6 +77,15 @@ for marker in (
     "temporal_identity_valid",
 ):
     assert marker in vo_patch, f"MPV renderer-fusion integration must preserve safe fallbacks and exact PTS caching: missing {marker!r}"
+prepare_source = PREPARE.read_text(encoding="utf-8")
+for marker in (
+    "MPVFLOW_HAVE_RENDERER_HOOK",
+    "features.get('libplacebo', false)",
+    "pl_shader_custom",
+    "pl_shader_is_compute",
+):
+    assert marker in prepare_source, f"MPV Meson renderer hook must be capability-gated: missing {marker!r}"
+
 cmake_config = (ROOT / "app/src/main/cpp/CMakeLists.txt").read_text(encoding="utf-8")
 for marker in (
     "MPVFLOW_HAS_CUSTOM_SHADER_API",

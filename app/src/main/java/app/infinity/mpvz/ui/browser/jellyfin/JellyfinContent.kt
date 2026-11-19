@@ -833,7 +833,7 @@ fun JellyfinContent(
                   }
 
                 LaunchedEffect(shouldLoadMore.value, uiState.hasMore, uiState.isLoading, uiState.isLoadingMore, items.size) {
-                  if (shouldLoadMore.value && uiState.hasMore && !uiState.isLoading && !uiState.isLoadingMore) {
+                  if (shouldLoadMore.value && uiState.hasMore && uiState.error == null && !uiState.isLoading && !uiState.isLoadingMore) {
                     viewModel.loadMoreItems()
                   }
                 }

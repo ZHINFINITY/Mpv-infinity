@@ -939,6 +939,7 @@ object YtdlpManager {
 
   private fun isPlaybackRuntimeReady(context: Context): Boolean =
     isInstalled(context) &&
+      File(getYtdlDir(context), "python313.zip").let { it.isFile && it.length() > 0L } &&
       File(getYtdlDir(context), PLAYBACK_RUNTIME_VERSION_FILE).readTextOrNull() == PLAYBACK_RUNTIME_VERSION
 
   private fun markPlaybackRuntimeReady(context: Context) {

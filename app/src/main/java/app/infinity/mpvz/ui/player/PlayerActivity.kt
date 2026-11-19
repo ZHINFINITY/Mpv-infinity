@@ -1195,6 +1195,9 @@ class PlayerActivity :
   private var activeSaveMediaIdentifier: String = ""
 
   private var pendingBackgroundPlaybackStart = false
+  // Startup may finish after onStop; prevent the first load from starting while
+  // background playback is disabled.
+  @Volatile private var stoppedBeforePlayerReady = false
 
   /**
    * Playlist of URIs for sequential playback
@@ -2111,6 +2114,10 @@ class PlayerActivity :
       return
     }
     playerInitializationComplete = true
+    if (stoppedBeforePlayerReady && !isBackgroundPlaybackEnabled()) {
+      pendingBackgroundPlaybackStart = true
+      runCatching { pauseActiveEngine() }
+    }
     // Construct the Activity-scoped adapter only after the process-wide native core exists;
     // its StateFlow declarations register native properties during ViewModel initialization.
     viewModel.attachHost(this)
@@ -3635,6 +3642,7 @@ class PlayerActivity :
   }
 
   override fun onStop() {
+    if (!playerInitializationComplete) stoppedBeforePlayerReady = true
     if (viewModelHostAttached) viewModel.setAmbientLifecycleActive(false)
     if (isVideoAmbientPresentationActive) setVideoAmbientPresentationActive(false)
     if (!ownsPlaybackSession()) {
@@ -4453,13 +4461,14 @@ class PlayerActivity :
 
   private fun prepareMpvAssetsForStartup() {
     val preparationStartedAt = android.os.SystemClock.elapsedRealtime()
-    synchronized(MPV_ASSET_PREPARATION_LOCK) {
-      runCatching {
-        syncBundledAssetsIfNeeded()
-        prepareUserMpvAssetsForStartup()
-        sanitizeInternalFontsDirectory()
-      }.onFailure { error -> Log.e(TAG, "Error copying MPV config and assets", error) }
-    }
+    runCatching {
+      if (Thread.currentThread().isInterrupted) return
+      syncBundledAssetsIfNeeded()
+      if (Thread.currentThread().isInterrupted) return
+      prepareUserMpvAssetsForStartup()
+      if (Thread.currentThread().isInterrupted) return
+      sanitizeInternalFontsDirectory()
+    }.onFailure { error -> Log.e(TAG, "Error copying MPV config and assets", error) }
     Log.d(TAG, "MPV startup assets ready in ${android.os.SystemClock.elapsedRealtime() - preparationStartedAt} ms")
   }
 
@@ -6185,11 +6194,12 @@ class PlayerActivity :
 
     if (playerPreferences.playlistMode.get() && (autoplay || repeatAll)) {
       val sourceIntent = intent
+      val expectedGeneration = PlaybackSession.state.value.generation
       isAdvancingAtEof = true
       eofAdvanceJob =
         lifecycleScope.launch(Dispatchers.IO) {
           val path = parsePathFromIntent(sourceIntent)
-          if (path != null) generatePlaylistFromFolderInternal(path, sourceIntent)
+          if (path != null) generatePlaylistFromFolderInternal(path, sourceIntent, expectedGeneration)
           withContext(Dispatchers.Main) {
             val hasNext = PlaybackSession.hasNext()
             when {
@@ -7216,7 +7226,18 @@ class PlayerActivity :
     var state = playbackStateRepository.getVideoDataByTitle(identifier)
     if (state != null) return state
 
-    val legacyKey = legacyIdentifier?.takeIf { it.isNotBlank() && it != identifier }
+    val providerBackingKey = legacyIdentifier
+      ?.takeIf { it.startsWith("content://") }
+      ?.let { original ->
+        withContext(Dispatchers.IO) {
+          runCatching {
+            contentResolver.query(Uri.parse(original), arrayOf(MediaStore.MediaColumns.DATA), null, null, null)?.use { c ->
+              if (c.moveToFirst()) c.getString(c.getColumnIndexOrThrow(MediaStore.MediaColumns.DATA)) else null
+            }
+          }.getOrNull()
+        }
+      }?.takeIf { !it.isNullOrBlank() }?.let(PlaybackIdentity::forLocalPath)
+    val legacyKey = (providerBackingKey ?: legacyIdentifier)?.takeIf { it.isNotBlank() && it != identifier }
     // Bare filenames from older versions are ambiguous; only migrate collision-resistant keys.
     val isCollisionResistant =
       legacyKey != null && (legacyKey.startsWith("media:v2:") || legacyKey.contains('_'))
@@ -8826,13 +8847,19 @@ class PlayerActivity :
   }
 
   private fun revealStartupControlsWhenReady(targetLandscape: Boolean) {
-    if (startupControlsTargetLandscape != targetLandscape || !hasStartupControlsOrientationSettled(targetLandscape)) return
+    if (startupControlsTargetLandscape != targetLandscape) return
+    val root = binding.root
+    val layoutMatches = root.width > 0 && root.height > 0 &&
+      (root.width > root.height) == targetLandscape
+    if (!hasStartupControlsOrientationSettled(targetLandscape) && !layoutMatches) return
 
     // PlayerControls selects different button sets from LocalConfiguration. Give Compose one frame
     // to process the matching configuration before showing the overlay.
     binding.controls.postOnAnimation {
       if (isDestroyed || startupControlsTargetLandscape != targetLandscape ||
-        !hasStartupControlsOrientationSettled(targetLandscape)
+        !hasStartupControlsOrientationSettled(targetLandscape) &&
+          !(binding.root.width > 0 && binding.root.height > 0 &&
+            (binding.root.width > binding.root.height) == targetLandscape)
       ) return@postOnAnimation
       startupControlsOrientationListener?.let(binding.root::removeOnLayoutChangeListener)
       startupControlsOrientationListener = null

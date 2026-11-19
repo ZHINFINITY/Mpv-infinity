@@ -2213,6 +2213,10 @@ class PlayerViewModel(
               )
             if (resolvedDuration <= 0.0) return@collect
             _preciseDuration.value = resolvedDuration.toFloat()
+            currentItem?.let { item ->
+              MediaPlaybackService.republishDurationForGeneration(
+                sessionState.generation, MediaSessionItemIdentity(item.stableId, item.originalUri), resolvedDuration)
+            }
             // Chapter-list and duration are independent MPV properties. A chapter list can arrive
             // first (or be identical to the previous file), so derive its markers again whenever
             // the active item's duration becomes available.

@@ -497,6 +497,17 @@ class MediaPlaybackService :
         service.foregroundReady && !activityForeground && !service.handingBackToActivity
       } == true
 
+    internal fun republishDurationForGeneration(generation: Long, identity: MediaSessionItemIdentity, durationSeconds: Double) {
+      activeInstance?.let { service ->
+        service.serviceScope.launch {
+          if (PlaybackSession.state.value.generation != generation ||
+            service.mediaDurationIdentity != identity) return@launch
+          service.mediaDurationSeconds = durationSeconds
+          service.updateMediaSessionMetadata()
+          service.updateNotification()
+        }
+      }
+    }
     internal fun durationSecondsForItem(item: PlaybackItem?): Double? {
       item ?: return null
       val identity = MediaSessionItemIdentity(item.stableId, item.originalUri)
