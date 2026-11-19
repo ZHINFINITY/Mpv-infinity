@@ -337,7 +337,7 @@ class PlayerFollowupUiContractTest {
     assertFalse("Content URI legacy identity must not query providers on the Activity thread", legacyIdentity.contains("resolveLocalPath(this)"))
     assertTrue(folderPlaylistLoader.contains("lifecycleScope.launch(Dispatchers.IO)"))
     assertTrue(folderPlaylistLoader.indexOf("parsePathFromIntent(sourceIntent)") > folderPlaylistLoader.indexOf("lifecycleScope.launch(Dispatchers.IO)"))
-    assertTrue(activity.contains("generatePlaylistFromFolderInternal(path, sourceIntent)"))
+    assertTrue(activity.contains("generatePlaylistFromFolderInternal(path, sourceIntent, expectedGeneration)"))
     assertFalse(activity.contains("generatePlaylistFromFolderInternal(path)"))
     assertTrue(createPlaylistBranch.contains("generatePlaylistFromFolder(intent)"))
     assertFalse(createPlaylistBranch.contains("parsePathFromIntent(intent)"))

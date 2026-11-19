@@ -4488,7 +4488,15 @@ class PlayerActivity :
     mpvCorePreparationJob?.cancel()
     val preparationStartedAt = android.os.SystemClock.elapsedRealtime()
     mpvCorePreparationJob = lifecycleScope.async(Dispatchers.IO) {
-      mpvAssetPreparationJob?.join()
+      // A superseded startup may be blocked in a slow SAF provider. Do not
+      // let that stale job hold its replacement indefinitely; the current
+      // owner can finish core setup using the last valid cache.
+      withTimeoutOrNull(MPV_ASSET_PREPARATION_WAIT_TIMEOUT_MS) {
+        mpvAssetPreparationJob?.join()
+      } ?: run {
+        mpvAssetPreparationJob?.cancel()
+        Log.w(TAG, "Timed out waiting for superseded MPV asset preparation")
+      }
       initializeMpvCoreWithOwnerGuard().also {
         Log.d(TAG, "MPV core startup stage completed in ${android.os.SystemClock.elapsedRealtime() - preparationStartedAt} ms")
       }
@@ -11071,6 +11079,7 @@ class PlayerActivity :
 
   companion object {
     private val MPV_ASSET_PREPARATION_LOCK = Any()
+    private const val MPV_ASSET_PREPARATION_WAIT_TIMEOUT_MS = 5_000L
     @Volatile
     private var activeNativeCloseActivity: WeakReference<PlayerActivity>? = null
 
