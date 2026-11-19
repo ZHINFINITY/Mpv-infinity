@@ -10928,8 +10928,8 @@ class PlayerActivity :
   private fun generatePlaylistFromFolder(sourceIntent: Intent) {
     val expectedGeneration = mediaRequestGeneration
     lifecycleScope.launch(Dispatchers.IO) {
-      val currentPath = parsePathFromIntent(sourceIntent) ?: return@launch
-      generatePlaylistFromFolderInternal(currentPath, sourceIntent, expectedGeneration)
+      val path = parsePathFromIntent(sourceIntent) ?: return@launch
+      generatePlaylistFromFolderInternal(path, sourceIntent, expectedGeneration)
     }
   }
 
