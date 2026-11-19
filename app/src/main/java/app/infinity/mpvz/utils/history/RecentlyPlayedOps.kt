@@ -10,6 +10,7 @@ package app.infinity.mpvz.utils.history
 import android.annotation.SuppressLint
 import android.content.Context
 import android.net.Uri
+import android.provider.MediaStore
 import app.infinity.mpvz.catalog.StreamWatchHistory
 import app.infinity.mpvz.database.entities.RecentlyPlayedEntity
 import app.infinity.mpvz.domain.recentlyplayed.repository.RecentlyPlayedRepository
@@ -78,6 +79,29 @@ object RecentlyPlayedOps {
       android.util.Log.w("RecentlyPlayedOps", "Watch statistics update failed", failure)
     }
   }
+
+  fun resolveRecentlyPlayedFilePath(context: Context, uri: Uri): String =
+    when (uri.scheme) {
+      "file" -> uri.path ?: uri.toString()
+      "content" ->
+        runCatching {
+          context.contentResolver.query(
+            uri,
+            arrayOf(MediaStore.MediaColumns.DATA),
+            null,
+            null,
+            null,
+          )?.use { cursor ->
+            if (cursor.moveToFirst()) {
+              val columnIndex = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
+              if (columnIndex != -1) cursor.getString(columnIndex) else null
+            } else {
+              null
+            }
+          }
+        }.getOrNull() ?: uri.toString()
+      else -> uri.toString()
+    }
 
   suspend fun backfillWatchStatistics(context: Context) {
     if (!shouldTrackWatchStatistics(preferences.enableRecentlyPlayed.get(), preferences.enableWatchStatistics.get())) return
@@ -217,6 +241,15 @@ object RecentlyPlayedOps {
   suspend fun onVideoDeleted(filePath: String) {
     if (filePath.isBlank()) return
     withContext(Dispatchers.IO) {
+      kotlin.runCatching { repository.deleteByFilePath(filePath) }
+    }
+  }
+
+  suspend fun onVideoFinished(context: Context, originalUri: String) {
+    if (originalUri.isBlank()) return
+    withContext(Dispatchers.IO) {
+      val filePath = resolveRecentlyPlayedFilePath(context, Uri.parse(originalUri))
+      if (filePath.isBlank()) return@withContext
       kotlin.runCatching { repository.deleteByFilePath(filePath) }
     }
   }
