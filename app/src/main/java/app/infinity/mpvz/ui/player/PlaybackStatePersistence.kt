@@ -201,7 +201,6 @@ internal object PlaybackStatePersistence {
       currentPosition.toFloat() / durationSeconds >= threshold
   }
 
-  }
 }
 
 internal fun shouldRestorePerVideoAspect(
