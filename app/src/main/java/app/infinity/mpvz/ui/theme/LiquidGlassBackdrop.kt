@@ -149,6 +149,7 @@ fun LiquidGlassBackdropHost(
   DisposableEffect(Unit) { onDispose { captureBuffers.recycle() } }
   val ready by rememberUpdatedState(isReady)
   val playing by rememberUpdatedState(isPlaying)
+  val currentFrost by rememberUpdatedState(sampledFrost)
   val aspect by rememberUpdatedState(sampleAspect)
   val thermalNow by rememberUpdatedState(thermal)
   val largeSurface by rememberUpdatedState(largeSurfaceVisible)
@@ -218,6 +219,7 @@ fun LiquidGlassBackdropHost(
           continue
         }
         // Only the tiny UI copy is cropped/frosted. The actual video surface remains untouched.
+        val frostStrength = currentFrost
         val sampled = withContext(Dispatchers.Default) {
           captureBuffers.sampleMutex.withLock {
             val target = captureBuffers.acquire(dimensions.first, dimensions.second)
@@ -227,7 +229,7 @@ fun LiquidGlassBackdropHost(
               val frosted = copied?.let { copiedBitmap ->
                 frostGlassFrame(
                   copiedBitmap,
-                  tuning.frost,
+                  frostStrength,
                   captureBuffers.pixels,
                   captureBuffers.frostOutput,
                   captureBuffers.frostScratch,
