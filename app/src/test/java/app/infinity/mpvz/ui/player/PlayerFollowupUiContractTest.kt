@@ -346,6 +346,7 @@ class PlayerFollowupUiContractTest {
     assertTrue("Raw queue paths must become playable file URIs before MPV load", contentUriResolver.contains("PlaybackUriPolicy.playableUriString(item.playableUri)"))
     assertTrue(activity.contains("playlist = queueItems.map { item -> PlaybackUriPolicy.playableUri(item.originalUri) }"))
     assertTrue(activity.contains("PlaybackUriPolicy.playableUriString(queueState.items[position].originalUri)"))
+    val viewModel = read("app/src/main/java/app/infinity/mpvz/ui/player/PlayerViewModel.kt")
     assertTrue(viewModel.contains("val uri = PlaybackUriPolicy.playableUri(item.originalUri)"))
     assertTrue(launchIdentity.contains("takeUnless { it.scheme.equals(\"content\", ignoreCase = true) }"))
     assertTrue(launchIdentity.indexOf("takeUnless") < launchIdentity.indexOf("resolveLocalPath(this)"))
