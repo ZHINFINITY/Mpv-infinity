@@ -247,7 +247,6 @@ object M3UParser {
     } catch (_: Exception) {
       M3UParseResult.Error("Failed to read playlist")
     }
-  }
 
   /** Compatibility wrapper for callers that already hold text. New loaders should use [parseFromStream]. */
   fun parseContent(
