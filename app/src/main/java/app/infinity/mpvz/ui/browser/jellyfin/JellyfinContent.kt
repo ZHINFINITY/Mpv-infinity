@@ -890,6 +890,14 @@ fun JellyfinContent(
                         }
                       }
                     }
+                    if (uiState.failedPageStartIndex != null && uiState.error != null) {
+                      item {
+                        ErrorView(
+                          message = uiState.error.orEmpty(),
+                          onRetry = { viewModel.retryFailedPage() },
+                        )
+                      }
+                    }
                     if (uiState.isLoadingMore) {
                       item {
                         Box(
@@ -973,6 +981,14 @@ fun JellyfinContent(
                       }
                     }
 
+                    if (uiState.failedPageStartIndex != null && uiState.error != null) {
+                      item(span = { GridItemSpan(maxLineSpan) }) {
+                        ErrorView(
+                          message = uiState.error.orEmpty(),
+                          onRetry = { viewModel.retryFailedPage() },
+                        )
+                      }
+                    }
                     if (uiState.isLoadingMore) {
                       item(span = { GridItemSpan(maxLineSpan) }) {
                         Box(

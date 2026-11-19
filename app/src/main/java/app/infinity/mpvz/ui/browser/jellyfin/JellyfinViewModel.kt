@@ -103,6 +103,7 @@ data class JellyfinUiState(
   val isLoading: Boolean = false,
   val isLoadingMore: Boolean = false,
   val hasMore: Boolean = false,
+  val failedPageStartIndex: Int? = null,
   val isAuthenticating: Boolean = false,
   val error: String? = null,
   val authError: String? = null,
@@ -994,11 +995,12 @@ class JellyfinViewModel(
               currentItems = emptyList(),
               startIndex = 0,
               hasMore = false,
+              failedPageStartIndex = null,
               error = null,
             )
           }
         } else {
-          _uiState.update { it.copy(isLoadingMore = true) }
+          _uiState.update { it.copy(isLoadingMore = true, error = null, failedPageStartIndex = null) }
         }
 
         val currentState = _uiState.value
@@ -1040,6 +1042,7 @@ class JellyfinViewModel(
                   ),
                 isLoading = false,
                 isLoadingMore = false,
+                failedPageStartIndex = null,
                 error = null,
               )
             }
@@ -1048,6 +1051,7 @@ class JellyfinViewModel(
               it.copy(
                 isLoading = false,
                 isLoadingMore = false,
+                failedPageStartIndex = if (resetPagination) null else startIndex,
                 error = err.message ?: "Failed to load items",
               )
             }
@@ -1060,6 +1064,16 @@ class JellyfinViewModel(
     if (state.isLoading || state.isLoadingMore || !state.hasMore || state.error != null) return
     val active = state.activeServer ?: return
     val library = state.openLibrary ?: return
+    loadLibraryItems(active, library, resetPagination = false)
+  }
+
+  fun retryFailedPage() {
+    val state = _uiState.value
+    val failedStartIndex = state.failedPageStartIndex ?: return
+    if (state.isLoading || state.isLoadingMore || failedStartIndex != state.startIndex) return
+    val active = state.activeServer ?: return
+    val library = state.openLibrary ?: return
+    // startIndex advances only after a successful page; retry exactly the same offset.
     loadLibraryItems(active, library, resetPagination = false)
   }
 
