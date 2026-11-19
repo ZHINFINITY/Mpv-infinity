@@ -1195,6 +1195,8 @@ class PlayerActivity :
   private var activeSaveMediaIdentifier: String = ""
 
   private var pendingBackgroundPlaybackStart = false
+  private var deferInitialMediaLoadUntilForeground = false
+  private var pendingInitialMediaLoad: (() -> Unit)? = null
   // Startup may finish after onStop; prevent the first load from starting while
   // background playback is disabled.
   @Volatile private var stoppedBeforePlayerReady = false
@@ -1282,6 +1284,7 @@ class PlayerActivity :
 
   private var isReady = false // Single flag: true when video loaded and ready
   private var startupControlsOrientationListener: View.OnLayoutChangeListener? = null
+  private var startupControlsOrientationFallback: Runnable? = null
   private var startupControlsTargetLandscape: Boolean? = null
   private var isUserFinishing = false
   private var audioMinimizePresentationCompleted = false
@@ -2114,7 +2117,11 @@ class PlayerActivity :
       return
     }
     playerInitializationComplete = true
-    if (stoppedBeforePlayerReady && !isBackgroundPlaybackEnabled()) {
+    deferInitialMediaLoadUntilForeground =
+      stoppedBeforePlayerReady &&
+        !isBackgroundPlaybackEnabled() &&
+        (!lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) || isDeviceScreenOffOrLocked())
+    if (deferInitialMediaLoadUntilForeground) {
       pendingBackgroundPlaybackStart = true
       runCatching { pauseActiveEngine() }
     }
@@ -3816,6 +3823,7 @@ class PlayerActivity :
   override fun onStart() {
     super.onStart()
     startInitializedPlayer()
+    dispatchPendingInitialMediaLoadIfReady()
   }
 
   private fun startInitializedPlayer() {
@@ -5281,6 +5289,7 @@ class PlayerActivity :
   override fun onResume() {
     super.onResume()
     resumeInitializedPlayer()
+    dispatchPendingInitialMediaLoadIfReady()
   }
 
   private fun resumeInitializedPlayer() {
@@ -6201,14 +6210,17 @@ class PlayerActivity :
     }
 
     if (playerPreferences.playlistMode.get() && (autoplay || repeatAll)) {
-      val sourceIntent = intent
+      val sourceIntent = Intent(intent)
       val expectedGeneration = PlaybackSession.state.value.generation
+      val expectedMediaRequestGeneration = mediaRequestGeneration
       isAdvancingAtEof = true
       eofAdvanceJob =
         lifecycleScope.launch(Dispatchers.IO) {
           val path = parsePathFromIntent(sourceIntent)
+          if (expectedMediaRequestGeneration != mediaRequestGeneration || !ownsPlaybackSession()) return@launch
           if (path != null) generatePlaylistFromFolderInternal(path, sourceIntent, expectedGeneration)
           withContext(Dispatchers.Main) {
+            if (expectedMediaRequestGeneration != mediaRequestGeneration || !ownsPlaybackSession()) return@withContext
             val hasNext = PlaybackSession.hasNext()
             when {
               (autoplay && hasNext) || (repeatAll && playlist.isNotEmpty()) -> playNextQueueItem()
@@ -7899,6 +7911,32 @@ class PlayerActivity :
     }
   }
 
+  private fun deferInitialMediaLoadIfNeeded(load: () -> Unit): Boolean {
+    if (!deferInitialMediaLoadUntilForeground) return false
+    val isForegroundAndUnlocked =
+      lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) && !isDeviceScreenOffOrLocked()
+    if (isForegroundAndUnlocked) {
+      deferInitialMediaLoadUntilForeground = false
+      return false
+    }
+    val expectedRequestGeneration = mediaRequestGeneration
+    pendingInitialMediaLoad = {
+      if (expectedRequestGeneration == mediaRequestGeneration && ownsPlaybackSession()) load()
+    }
+    return true
+  }
+
+  private fun dispatchPendingInitialMediaLoadIfReady() {
+    if (!deferInitialMediaLoadUntilForeground ||
+      !lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) ||
+      isDeviceScreenOffOrLocked() || !ownsPlaybackSession()
+    ) return
+    val pendingLoad = pendingInitialMediaLoad
+    pendingInitialMediaLoad = null
+    deferInitialMediaLoadUntilForeground = false
+    pendingLoad?.invoke()
+  }
+
   private fun startMediaLoad(
     playableUri: String,
     originalUri: String? = null,
@@ -7907,6 +7945,10 @@ class PlayerActivity :
     positionRestoreOverride: PlaybackPositionRestoreOverride? = null,
   ) {
     if (!ownsPlaybackSession()) return
+    if (deferInitialMediaLoadIfNeeded {
+        startMediaLoad(playableUri, originalUri, expandM3u, preserveTorrentSession, positionRestoreOverride)
+      }
+    ) return
     val loadPositionRestoreOverride = positionRestoreOverride ?: pendingInterpolationRestore
       ?.takeIf { pendingInterpolationEngine?.first == mediaIdentifier }
     pendingInterpolationRestore = null
@@ -8842,7 +8884,9 @@ class PlayerActivity :
     val root = binding.root
     val controls = binding.controls
     startupControlsOrientationListener?.let(root::removeOnLayoutChangeListener)
+    startupControlsOrientationFallback?.let(root::removeCallbacks)
     startupControlsOrientationListener = null
+    startupControlsOrientationFallback = null
     startupControlsTargetLandscape = targetLandscape
     controls.visibility = View.GONE
     val listener =
@@ -8851,7 +8895,18 @@ class PlayerActivity :
       }
     startupControlsOrientationListener = listener
     root.addOnLayoutChangeListener(listener)
+    val fallback = Runnable { revealStartupControlsAfterOrientationTimeout(targetLandscape) }
+    startupControlsOrientationFallback = fallback
+    root.postDelayed(fallback, 1_500L)
     root.post { revealStartupControlsWhenReady(targetLandscape) }
+  }
+
+  private fun revealStartupControlsAfterOrientationTimeout(targetLandscape: Boolean) {
+    if (startupControlsTargetLandscape != targetLandscape) return
+    binding.controls.postOnAnimation {
+      if (isDestroyed || startupControlsTargetLandscape != targetLandscape) return@postOnAnimation
+      clearStartupControlsOrientationGate()
+    }
   }
 
   private fun revealStartupControlsWhenReady(targetLandscape: Boolean) {
@@ -8870,7 +8925,9 @@ class PlayerActivity :
             (binding.root.width > binding.root.height) == targetLandscape)
       ) return@postOnAnimation
       startupControlsOrientationListener?.let(binding.root::removeOnLayoutChangeListener)
+      startupControlsOrientationFallback?.let(binding.root::removeCallbacks)
       startupControlsOrientationListener = null
+      startupControlsOrientationFallback = null
       startupControlsTargetLandscape = null
       binding.controls.visibility = View.VISIBLE
     }
@@ -8887,7 +8944,9 @@ class PlayerActivity :
 
   private fun clearStartupControlsOrientationGate() {
     startupControlsOrientationListener?.let(binding.root::removeOnLayoutChangeListener)
+    startupControlsOrientationFallback?.let(binding.root::removeCallbacks)
     startupControlsOrientationListener = null
+    startupControlsOrientationFallback = null
     startupControlsTargetLandscape = null
     if (binding.controls.visibility == View.GONE) binding.controls.visibility = View.VISIBLE
   }
@@ -9891,6 +9950,15 @@ class PlayerActivity :
       Log.e(TAG, "Invalid playlist index: $index (playlist size: ${playlist.size})")
       return
     }
+    if (deferInitialMediaLoadIfNeeded {
+        loadPlaylistItemInternal(
+          index = index,
+          saveCurrentPlaybackState = saveCurrentPlaybackState,
+          requestAlreadyStarted = requestAlreadyStarted,
+          positionRestoreOverride = positionRestoreOverride,
+        )
+      }
+    ) return
     if (!requestAlreadyStarted && !beginMediaRequest()) return
     engineHandoffJob?.cancel()
     engineHandoffJob = null
