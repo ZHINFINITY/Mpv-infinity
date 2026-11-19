@@ -169,14 +169,25 @@ class RadioMusicUiContracts(unittest.TestCase):
         self.assertIn("compact(sample.synthesizedSubmitFps)", summary)
         self.assertIn("sample.targetFps?.let", summary)
 
-    def test_recent_music_preserves_metadata_in_the_dedicated_audio_queue(self):
+    def test_recent_music_preserves_metadata_in_the_music_only_media_session(self):
         launcher = (JAVA / "ui/browser/music/MusicPlaybackLauncher.kt").read_text()
+        session = (JAVA / "ui/browser/music/MusicPlaybackSession.kt").read_text()
+        service = (JAVA / "ui/browser/music/MusicPlaybackService.kt").read_text()
         recent = (JAVA / "ui/browser/recentlyplayed/RecentlyPlayedScreen.kt").read_text()
-        self.assertIn("artist = artist", launcher)
-        self.assertIn('mimeType = "audio/*"', launcher)
-        self.assertIn("artworkUri = albumArtUri?.toString()", launcher)
-        self.assertIn('putExtra("media_library_audio", true)', launcher)
-        self.assertIn("if (playableVideo.isAudio)", recent)
+        self.assertIn("Intent(context, MusicPlayerActivity::class.java)", launcher)
+        self.assertIn("MusicQueueLaunchStore.stage(songs, selectedIndex)", launcher)
+        self.assertIn("putExtra(MusicPlayerActivity.EXTRA_ARTIST, selectedSong.artist)", launcher)
+        self.assertIn("putExtra(MusicPlayerActivity.EXTRA_ARTWORK_URI, selectedSong.albumArtUri?.toString())", launcher)
+        self.assertIn(".setArtist(artist)", session)
+        self.assertIn(".setArtworkUri(albumArtUri)", session)
+        self.assertIn("MUSIC_METADATA_SOURCE_EXTENSION", session)
+        self.assertIn("sourceExtension = metadata?.extras?.getString(MUSIC_METADATA_SOURCE_EXTENSION)", service)
+        legacy_route = launcher[launcher.index("private fun playAudiobookSongsOnLegacyPlayer"):]
+        music_route = launcher[:launcher.index("private fun playAudiobookSongsOnLegacyPlayer")]
+        self.assertNotIn('putExtra("media_library_audio"', music_route)
+        self.assertIn('putExtra("media_library_audio", true)', legacy_route)
+        self.assertIn("playableVideo.isAudio &&", recent)
+        self.assertIn("isEligibleLocalMusicPath(recentPath)", recent)
         self.assertIn("resolveRecentAudioSong(playableVideo)", recent)
         self.assertIn("playRecentAudioPathIfPresent", recent)
 

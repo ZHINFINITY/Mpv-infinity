@@ -544,7 +544,12 @@ object RecentlyPlayedScreen : Screen {
                   coroutineScope.launch {
                     val playableVideo = viewModel.resolvePlayableRecentVideo(video)
                     if (playableVideo != null) {
-                      if (playableVideo.isAudio) {
+                      val recentPath = playableVideo.path.ifBlank { playableVideo.uri.toString() }
+                      if (
+                        playableVideo.isAudio &&
+                          app.infinity.mpvz.ui.browser.music.MusicPlaybackLauncher
+                            .isEligibleLocalMusicPath(recentPath)
+                      ) {
                         val song = viewModel.resolveRecentAudioSong(playableVideo)
                         app.infinity.mpvz.ui.browser.music.MusicPlaybackLauncher
                           .playSong(context, song, launchSource = "recently_played")

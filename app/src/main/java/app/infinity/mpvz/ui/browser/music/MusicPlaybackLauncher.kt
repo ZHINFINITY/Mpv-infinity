@@ -7,22 +7,14 @@ package app.infinity.mpvz.ui.browser.music
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
+import app.infinity.mpvz.domain.audiobook.AudiobookMarkerUtils
 import app.infinity.mpvz.ui.player.PlaybackItem
 import app.infinity.mpvz.ui.player.PreparedPlaybackLaunchStore
 import app.infinity.mpvz.ui.player.PlayerActivity
 import app.infinity.mpvz.utils.media.fileExtension
 import app.infinity.mpvz.utils.storage.FileTypeUtils
-
-/** Builds audio queue items from music metadata rather than routing songs through video models. */
-internal fun MusicSong.toMusicPlaybackItem(): PlaybackItem =
-  PlaybackItem.fromUri(
-    uri = uri.toString(),
-    title = title,
-    artist = artist,
-    mimeType = "audio/*",
-    artworkUri = albumArtUri?.toString(),
-    durationSeconds = durationMs.takeIf { it > 0L }?.div(1000L)?.toInt(),
-  )
+import java.util.Locale
 
 /** One launch path for the Music library and audio entries in Recently Played. */
 internal object MusicPlaybackLauncher {
@@ -46,23 +38,25 @@ internal object MusicPlaybackLauncher {
     if (songs.isEmpty()) return
     val selectedIndex = currentIndex.coerceIn(songs.indices)
     val selectedSong = songs[selectedIndex]
-    val launchToken =
-      PreparedPlaybackLaunchStore.stage(
-        items = songs.map { it.toMusicPlaybackItem() },
-        currentIndex = selectedIndex,
-        isExplicitQueue = true,
-      )
-    val intent = Intent(Intent.ACTION_VIEW, selectedSong.uri).apply {
-      setClass(context, PlayerActivity::class.java)
+    if (songs.any { isAudiobookSong(it) }) {
+      playAudiobookSongsOnLegacyPlayer(context, songs, selectedIndex, launchSource)
+      return
+    }
+    val launch = MusicQueueLaunchStore.stage(songs, selectedIndex)
+    val intent = Intent(context, MusicPlayerActivity::class.java).apply {
+      action = Intent.ACTION_VIEW
+      data = selectedSong.uri
       addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-      putExtra("internal_launch", true)
-      putExtra(PlayerActivity.EXTRA_PREPARED_PLAYBACK_QUEUE, true)
-      putExtra(PlayerActivity.EXTRA_PREPARED_PLAYBACK_TOKEN, launchToken)
-      putExtra("playlist_index", selectedIndex)
-      putExtra("launch_source", launchSource)
-      putExtra("media_library_audio", true)
-      putExtra("is_audio", true)
-      putExtra("title", selectedSong.title)
+      putExtra(MusicPlayerActivity.EXTRA_QUEUE_TOKEN, launch.token)
+      putExtra(MusicPlayerActivity.EXTRA_SONG_ID, selectedSong.id)
+      putExtra(MusicPlayerActivity.EXTRA_TITLE, selectedSong.title)
+      putExtra(MusicPlayerActivity.EXTRA_ARTIST, selectedSong.artist)
+      putExtra(MusicPlayerActivity.EXTRA_ALBUM, selectedSong.album)
+      putExtra(MusicPlayerActivity.EXTRA_ALBUM_ID, selectedSong.albumId)
+      putExtra(MusicPlayerActivity.EXTRA_DURATION_MS, selectedSong.durationMs)
+      putExtra(MusicPlayerActivity.EXTRA_PATH, selectedSong.path)
+      putExtra(MusicPlayerActivity.EXTRA_ARTWORK_URI, selectedSong.albumArtUri?.toString())
+      putExtra(EXTRA_LAUNCH_SOURCE, launchSource)
     }
     context.startActivity(intent)
   }
@@ -76,9 +70,85 @@ internal object MusicPlaybackLauncher {
     val extension =
       path.substringBefore('?').substringBefore('#').fileExtension()
         .ifBlank { fallbackTitle.orEmpty().fileExtension() }
-    if (extension !in FileTypeUtils.AUDIO_EXTENSIONS) return false
+    if (extension !in FileTypeUtils.AUDIO_EXTENSIONS || !isEligibleLocalMusicPath(path)) return false
     val song = MusicLibraryScanner.resolveSongByPath(context, path, fallbackTitle) ?: return false
+    if (isAudiobookSong(song)) return false
     playSong(context, song, launchSource)
     return true
   }
+
+  fun isEligibleLocalMusicPath(path: String): Boolean {
+    if (path.isBlank()) return false
+    val scheme = runCatching { Uri.parse(path).scheme?.lowercase(Locale.ROOT) }.getOrNull()
+    if (scheme != null && scheme != "file" && scheme != "content") return false
+    val extension = path.substringBefore('?').substringBefore('#').fileExtension()
+    if (extension in AUDIOBOOK_EXTENSIONS) return false
+    return !AudiobookMarkerUtils.isAudiobookPath(path)
+  }
+
+  suspend fun playLocalAudioPathsIfPresent(
+    context: Context,
+    paths: List<String>,
+    fallbackTitles: List<String?>,
+    currentIndex: Int,
+    launchSource: String,
+  ): Boolean {
+    if (paths.isEmpty() || paths.size != fallbackTitles.size) return false
+    if (!paths.all(::isEligibleLocalMusicPath)) return false
+
+    val songs = ArrayList<MusicSong>(paths.size)
+    for (index in paths.indices) {
+      val song = MusicLibraryScanner.resolveSongByPath(context, paths[index], fallbackTitles[index]) ?: return false
+      songs += song
+    }
+    playSongs(context, songs, currentIndex.coerceIn(songs.indices), launchSource)
+    return true
+  }
+
+  private fun isAudiobookSong(song: MusicSong): Boolean {
+    val extension =
+      song.path.substringBefore('?').substringBefore('#').fileExtension()
+        .ifBlank { song.title.fileExtension() }
+    return extension in AUDIOBOOK_EXTENSIONS || AudiobookMarkerUtils.isAudiobookPath(song.path)
+  }
+
+  private fun playAudiobookSongsOnLegacyPlayer(
+    context: Context,
+    songs: List<MusicSong>,
+    selectedIndex: Int,
+    launchSource: String,
+  ) {
+    val selectedSong = songs[selectedIndex]
+    val token =
+      PreparedPlaybackLaunchStore.stage(
+        items = songs.map { song ->
+          PlaybackItem.fromUri(
+            uri = song.uri.toString(),
+            title = song.title,
+            artist = song.artist,
+            mimeType = "audio/*",
+            artworkUri = song.albumArtUri?.toString(),
+            durationSeconds = song.durationMs.takeIf { it > 0L }?.div(1_000L)?.toInt(),
+          )
+        },
+        currentIndex = selectedIndex,
+        isExplicitQueue = true,
+      )
+    val intent = Intent(Intent.ACTION_VIEW, selectedSong.uri).apply {
+      setClass(context, PlayerActivity::class.java)
+      addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+      putExtra("internal_launch", true)
+      putExtra(PlayerActivity.EXTRA_PREPARED_PLAYBACK_QUEUE, true)
+      putExtra(PlayerActivity.EXTRA_PREPARED_PLAYBACK_TOKEN, token)
+      putExtra("playlist_index", selectedIndex)
+      putExtra("launch_source", launchSource)
+      putExtra("media_library_audio", true)
+      putExtra("is_audio", true)
+      putExtra("title", selectedSong.title)
+    }
+    context.startActivity(intent)
+  }
+
+  private const val EXTRA_LAUNCH_SOURCE = "music_launch_source"
+  private val AUDIOBOOK_EXTENSIONS = setOf("aa", "aax", "aaxc", "m4b")
 }

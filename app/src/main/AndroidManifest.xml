@@ -93,6 +93,16 @@
         </activity>
 
         <activity
+            android:name=".ui.browser.music.MusicPlayerActivity"
+            android:windowSoftInputMode="adjustResize"
+            android:enableOnBackInvokedCallback="true"
+            android:autoRemoveFromRecents="true"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize"
+            android:exported="false"
+            android:resizeableActivity="true"
+            android:theme="@style/Theme.mpvinfinity.Player" />
+
+        <activity
             android:name=".ui.player.PlayerActivity"
             android:windowSoftInputMode="adjustResize"
             android:enableOnBackInvokedCallback="false"
@@ -523,6 +533,15 @@
             android:foregroundServiceType="mediaPlayback">
             <intent-filter>
                 <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </service>
+        <service
+            android:name=".ui.browser.music.MusicPlaybackService"
+            android:enabled="true"
+            android:exported="true"
+            android:foregroundServiceType="mediaPlayback">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaSessionService" />
             </intent-filter>
         </service>
         <receiver

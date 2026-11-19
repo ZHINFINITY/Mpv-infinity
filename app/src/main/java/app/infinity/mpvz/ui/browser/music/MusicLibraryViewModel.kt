@@ -12,7 +12,6 @@ import androidx.lifecycle.viewModelScope
 import app.infinity.mpvz.database.entities.PlaylistEntity
 import app.infinity.mpvz.database.repository.PlaylistRepository
 import app.infinity.mpvz.preferences.FolderBlacklistMatcher
-import app.infinity.mpvz.ui.player.PlaybackSession
 import app.infinity.mpvz.utils.history.RecentlyPlayedOps
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -93,8 +92,8 @@ class MusicLibraryViewModel : ViewModel(), KoinComponent {
       .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
   val isPlaybackActive: StateFlow<Boolean> =
-    PlaybackSession.state
-      .map { session -> session.currentItem != null }
+    MusicPlaybackSession.state
+      .map { session -> session.currentUri != null }
       .distinctUntilChanged()
       .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 

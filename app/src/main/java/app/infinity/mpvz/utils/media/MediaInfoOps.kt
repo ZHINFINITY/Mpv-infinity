@@ -190,6 +190,8 @@ object MediaInfoOps {
         channels = mi.getInfo(MediaInfo.Stream.Audio, i, "Channel(s)/String"),
         channelLayout = mi.getInfo(MediaInfo.Stream.Audio, i, "ChannelLayout"),
         samplingRate = mi.getInfo(MediaInfo.Stream.Audio, i, "SamplingRate/String"),
+        bitDepth = mi.getInfo(MediaInfo.Stream.Audio, i, "BitDepth/String")
+          .ifBlank { mi.getInfo(MediaInfo.Stream.Audio, i, "BitDepth") },
         frameRate = mi.getInfo(MediaInfo.Stream.Audio, i, "FrameRate/String"),
         compressionMode = mi.getInfo(MediaInfo.Stream.Audio, i, "Compression_Mode"),
         delay = mi.getInfo(MediaInfo.Stream.Audio, i, "Video_Delay/String3"),
@@ -302,6 +304,7 @@ object MediaInfoOps {
     val language: String = "",
     val defaultStream: String = "",
     val forcedStream: String = "",
+    val bitDepth: String = "",
   )
 
   data class TextStreamInfo(
