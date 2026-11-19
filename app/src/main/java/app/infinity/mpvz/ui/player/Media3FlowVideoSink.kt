@@ -2236,9 +2236,10 @@ class Media3FlowVideoSink(
       return false
     }
     val slot = presentationSlots[lease.slot]
+    var sharedTarget = false
     try {
       check(ensureEgl() && makePbufferCurrent()) { "Media3 Flow producer EGL context is unavailable" }
-      val sharedTarget = ensurePresentationSlotTarget(slot, frameWidth, frameHeight, preferSharedOutput = true)
+      sharedTarget = ensurePresentationSlotTarget(slot, frameWidth, frameHeight, preferSharedOutput = true)
       val outputTargetHandle = if (sharedTarget) slot.nativeImageHandle else outputImageHandle
       dispatchSynthesis(a, b, pair, targetPtsUs, outputTargetHandle)
       checkGlError("frame synthesis")
