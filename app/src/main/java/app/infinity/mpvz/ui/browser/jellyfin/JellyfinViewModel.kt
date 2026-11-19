@@ -1062,6 +1062,10 @@ class JellyfinViewModel(
   fun loadMoreItems() {
     val state = _uiState.value
     if (state.isLoading || state.isLoadingMore || !state.hasMore || state.error != null) return
+    if (state.searchQuery.isNotBlank()) {
+      performSearch(state.searchQuery, debounceMs = 0L, startIndex = state.startIndex)
+      return
+    }
     val active = state.activeServer ?: return
     val library = state.openLibrary ?: return
     loadLibraryItems(active, library, resetPagination = false)
@@ -1070,12 +1074,12 @@ class JellyfinViewModel(
   fun retryFailedPage() {
     val state = _uiState.value
     if (state.isLoading || state.isLoadingMore) return
+    val failedStartIndex = state.failedPageStartIndex ?: return
+    if (failedStartIndex != state.startIndex) return
     if (state.searchQuery.isNotBlank()) {
-      performSearch(state.searchQuery, debounceMs = 0L)
+      performSearch(state.searchQuery, debounceMs = 0L, startIndex = failedStartIndex)
       return
     }
-    val failedStartIndex = state.failedPageStartIndex ?: return
-    if (state.isLoading || state.isLoadingMore || failedStartIndex != state.startIndex) return
     val active = state.activeServer ?: return
     val library = state.openLibrary ?: return
     // startIndex advances only after a successful page; retry exactly the same offset.
@@ -1097,55 +1101,102 @@ class JellyfinViewModel(
   fun performSearch(
     query: String,
     debounceMs: Long = 0L,
+    startIndex: Int = 0,
   ) {
-    val active = _uiState.value.activeServer ?: return
+    val requestedState = _uiState.value
+    val active = requestedState.activeServer ?: return
     searchJob?.cancel()
-    _uiState.update { it.copy(failedPageStartIndex = null) }
     if (query.isBlank()) {
+      _uiState.update { it.copy(failedPageStartIndex = null) }
       refresh()
       return
     }
+    val offset = startIndex.coerceAtLeast(0)
+    if (offset != 0 && offset != requestedState.startIndex) return
+    val library = requestedState.openLibrary
+    val searchCategory = requestedState.searchCategory
+    val sortBy = requestedState.sortBy
+    val sortOrder = requestedState.sortOrder
+    val currentItems = if (offset == 0) emptyList() else requestedState.currentItems
+    _uiState.update {
+      it.copy(
+        isLoading = offset == 0,
+        isLoadingMore = offset > 0,
+        startIndex = if (offset == 0) 0 else it.startIndex,
+        hasMore = if (offset == 0) false else it.hasMore,
+        failedPageStartIndex = null,
+        error = null,
+      )
+    }
     searchJob =
       viewModelScope.launch {
-        if (debounceMs > 0) {
-          delay(debounceMs)
-        }
-        _uiState.update { it.copy(isLoading = true, error = null) }
-        val library = _uiState.value.openLibrary
-
+        if (debounceMs > 0) delay(debounceMs)
         val includeTypes =
-          when (_uiState.value.searchCategory) {
+          when (searchCategory) {
             JellyfinSearchCategory.ALL -> null
             JellyfinSearchCategory.MOVIES -> "Movie"
             JellyfinSearchCategory.SHOWS -> "Series"
             JellyfinSearchCategory.EPISODES -> "Episode"
           }
-
         val result =
           jellyfinRepository.getItems(
             server = active,
             parentId = library?.id,
             searchTerm = query,
             includeItemTypes = includeTypes,
-            sortBy = _uiState.value.sortBy,
-            sortOrder = _uiState.value.sortOrder,
-            startIndex = 0,
+            sortBy = sortBy,
+            sortOrder = sortOrder,
+            startIndex = offset,
             limit = 100,
           )
         result
           .onSuccess { queryResult ->
+            val latest = _uiState.value
+            if (latest.searchQuery != query || latest.searchCategory != searchCategory ||
+              latest.activeServer?.id != active.id || latest.openLibrary?.id != library?.id
+            ) return@onSuccess
+            val knownItemIds = currentItems.mapTo(mutableSetOf()) { it.id }
+            val pageHasNewItems = queryResult.items.any { knownItemIds.add(it.id) }
+            val combined = (currentItems + queryResult.items).distinctBy { it.id }
+            val nextStartIndex = JellyfinPaginationPolicy.nextStartIndex(offset, queryResult.items.size)
+            val totalRecordCount =
+              JellyfinPaginationPolicy.estimatedTotalRecordCount(
+                totalRecordCount = queryResult.totalRecordCount,
+                startIndex = offset,
+                pageItemCount = queryResult.items.size,
+              )
             _uiState.update {
               it.copy(
-                currentItems = queryResult.items.distinctBy { item -> item.id },
-                totalRecordCount = queryResult.totalRecordCount,
-                startIndex = queryResult.items.size,
-                hasMore = queryResult.items.size < queryResult.totalRecordCount,
+                currentItems = combined,
+                totalRecordCount = totalRecordCount,
+                startIndex = nextStartIndex,
+                hasMore =
+                  JellyfinPaginationPolicy.hasMore(
+                    totalRecordCount = queryResult.totalRecordCount,
+                    startIndex = offset,
+                    pageItemCount = queryResult.items.size,
+                    pageSize = 100,
+                    pageHasNewItems = pageHasNewItems,
+                  ),
                 isLoading = false,
+                isLoadingMore = false,
+                failedPageStartIndex = null,
                 error = null,
               )
             }
           }.onFailure { err ->
-            _uiState.update { it.copy(isLoading = false, error = err.message) }
+            val latest = _uiState.value
+            if (latest.searchQuery != query || latest.searchCategory != searchCategory ||
+              latest.activeServer?.id != active.id || latest.openLibrary?.id != library?.id
+            ) return@onFailure
+            _uiState.update {
+              it.copy(
+                isLoading = false,
+                isLoadingMore = false,
+                failedPageStartIndex = offset,
+                error = err.message ?: "Failed to search items",
+              )
+            }
           }
       }
   }

@@ -2215,7 +2215,9 @@ class Media3FlowVideoSink(
         )
       }
     }
-    slot.textureId = createTexture(GLES20.GL_TEXTURE_2D, width, height, GLES30.GL_RGBA8)
+    if (slot.textureId == 0) {
+      slot.textureId = createTexture(GLES20.GL_TEXTURE_2D, width, height, GLES30.GL_RGBA8)
+    }
     slot.width = width
     slot.height = height
     return false

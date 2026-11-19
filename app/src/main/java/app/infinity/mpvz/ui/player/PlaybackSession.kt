@@ -403,17 +403,6 @@ object PlaybackSession : MPVLib.EventObserver {
         MPVLib.setOptionString("force-window", "no")
         MPVLib.setOptionString("idle", "yes")
         ensureOwnerActive()
-        nativeLock.withLock {
-          // This is the publication commit point: a superseded owner must not
-          // expose a core that it can cancel immediately afterward.
-          ensureOwnerActive()
-          defaultUserAgent = userAgent
-          initialized = true
-          retiringCore = false
-          activeCoreConfigurationKey = coreConfigurationKey
-          updateState { it.copy(phase = PlaybackPhase.IDLE, paused = true, error = null) }
-        }
-        ensureOwnerActive()
         nativeCallbackGate.open()
         ensureOwnerActive()
         MPVLib.addObserver(this)
@@ -423,6 +412,16 @@ object PlaybackSession : MPVLib.EventObserver {
         ensureOwnerActive()
         observeProperties()
         ensureOwnerActive()
+        nativeLock.withLock {
+          // Publish only after the owner has completed observer setup; after this point,
+          // cancellation must not roll back a core already visible to playback callers.
+          ensureOwnerActive()
+          defaultUserAgent = userAgent
+          initialized = true
+          retiringCore = false
+          activeCoreConfigurationKey = coreConfigurationKey
+          updateState { it.copy(phase = PlaybackPhase.IDLE, paused = true, error = null) }
+        }
         true
       } catch (error: Throwable) {
         nativeLock.withLock {
