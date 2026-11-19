@@ -1,7 +1,8 @@
-import re
 #!/usr/bin/env python3
 """Guard the Android MPVFlow native compiler and Vulkan build configuration."""
 from __future__ import annotations
+
+import re
 
 import importlib.util
 import json

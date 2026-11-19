@@ -1078,7 +1078,7 @@ class JellyfinViewModel(
   }
 
   fun onSearchQueryChanged(query: String) {
-    _uiState.update { it.copy(searchQuery = query) }
+    _uiState.update { it.copy(searchQuery = query, failedPageStartIndex = null) }
     performSearch(query, debounceMs = 300L)
   }
 

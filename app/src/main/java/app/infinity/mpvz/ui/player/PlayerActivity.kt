@@ -1452,10 +1452,12 @@ class PlayerActivity :
           Intent.ACTION_USER_PRESENT -> {
             restoreForegroundVideoAndAmbientIfUnlocked()
             resumePlaybackAfterScreenUnlockIfNeeded()
+            dispatchPendingInitialMediaLoadIfReady()
           }
           Intent.ACTION_SCREEN_ON -> {
             restoreForegroundVideoAndAmbientIfUnlocked()
             resumePlaybackAfterScreenUnlockIfNeeded()
+            dispatchPendingInitialMediaLoadIfReady()
           }
         }
       }
@@ -7937,6 +7939,11 @@ class PlayerActivity :
     pendingLoad?.invoke()
   }
 
+  private fun invalidateDeferredInitialMediaLoad() {
+    pendingInitialMediaLoad = null
+    deferInitialMediaLoadUntilForeground = false
+  }
+
   private fun startMediaLoad(
     playableUri: String,
     originalUri: String? = null,
@@ -9227,6 +9234,7 @@ class PlayerActivity :
 
               override fun onStop() {
                 runIfActivePlaybackOwner {
+                  invalidateDeferredInitialMediaLoad()
                   if (fileName.isNotBlank()) saveVideoPlaybackState(fileName, immediate = true)
                   torrentStreamingEngine.stopStream()
                   PlaybackSession.stop(clearQueue = false)

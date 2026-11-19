@@ -2183,10 +2183,13 @@ class Media3FlowVideoSink(
         check(texture != 0 && GLES20.glGetError() == GLES20.GL_NO_ERROR) {
           "EGL rejected a presentation-slot output image"
         }
+        if (slot.textureId != 0 && slot.textureId != texture) deleteTexture(slot.textureId)
         slot.hardwareBuffer = buffer
         slot.nativeImageHandle = imageHandle
         slot.textureId = texture
         slot.width = width
+        slot.sharedImportFailureContext = 0L
+        slot.sharedImportFailureAttempts = 0
         slot.height = height
         logFlowRecordOnce(
           "presentation-slot-output-ready-$width-$height",
