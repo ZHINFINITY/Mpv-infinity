@@ -21,14 +21,19 @@ import app.infinity.mpvz.repository.MediaFileRepository
 import app.infinity.mpvz.ui.browser.base.BaseBrowserViewModel
 import app.infinity.mpvz.ui.browser.videolist.VideoWithPlaybackInfo
 import app.infinity.mpvz.ui.browser.videolist.buildVideoWithPlaybackInfo
+import app.infinity.mpvz.ui.browser.videolist.explicitVideoWatchedOverride
+import app.infinity.mpvz.ui.browser.videolist.setExplicitVideoWatchedOverride
 import app.infinity.mpvz.ui.browser.videolist.videoPlaybackIdentifiers
 import app.infinity.mpvz.ui.player.PlaybackIdentity
 import app.infinity.mpvz.utils.media.MetadataRetrieval
+import app.infinity.mpvz.utils.media.MediaLibraryEvents
 import app.infinity.mpvz.utils.media.PlaybackStateEvents
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -61,6 +66,17 @@ class MediaLibraryViewModel(
       PlaybackStateEvents.changes.collectLatest { mediaIdentifier ->
         if (_videos.value.isNotEmpty()) updatePlaybackInfo(mediaIdentifier)
       }
+    }
+    viewModelScope.launch(Dispatchers.IO) {
+      combine(
+        browserPreferences.watchedThreshold.changes(),
+        appearancePreferences.showUnplayedOldVideoLabel.changes(),
+        appearancePreferences.unplayedOldVideoDays.changes(),
+      ) { _, _, _ -> Unit }
+        .drop(1)
+        .collectLatest {
+          if (_videos.value.isNotEmpty()) loadPlaybackInfo(_videos.value)
+        }
     }
   }
 
@@ -113,12 +129,15 @@ class MediaLibraryViewModel(
 
     val videosWithInfo =
       videos.map { video ->
+        val manualOverride = explicitVideoWatchedOverride(getApplication(), video.path)
         buildVideoWithPlaybackInfo(
           video = video,
           playbackState = videoPlaybackIdentifiers(video).firstNotNullOfOrNull(playbackByTitle::get),
           currentTimeMillis = currentTime,
           newLabelDays = thresholdDays,
           watchedThreshold = watchedThreshold,
+          explicitlyMarkedUnwatched = manualOverride == false,
+          explicitlyMarkedWatched = manualOverride == true,
         )
       }
     _videosWithPlaybackInfo.value = videosWithInfo
@@ -139,6 +158,7 @@ class MediaLibraryViewModel(
       return
     }
 
+    val manualOverride = explicitVideoWatchedOverride(getApplication(), video.path)
     val updatedItem =
       buildVideoWithPlaybackInfo(
         video = video,
@@ -148,6 +168,8 @@ class MediaLibraryViewModel(
         currentTimeMillis = System.currentTimeMillis(),
         newLabelDays = appearancePreferences.unplayedOldVideoDays.get(),
         watchedThreshold = browserPreferences.watchedThreshold.get(),
+        explicitlyMarkedUnwatched = manualOverride == false,
+        explicitlyMarkedWatched = manualOverride == true,
       )
     if (currentItems[index] == updatedItem) return
 
@@ -158,13 +180,14 @@ class MediaLibraryViewModel(
   }
 
   fun setWatched(video: Video, watched: Boolean) {
+    setExplicitVideoWatchedOverride(getApplication(), video.path, watched)
     _videosWithPlaybackInfo.update { videos ->
       videos.map { item ->
         if (item.video.path == video.path) {
           item.copy(
             timeRemaining = if (watched) 0L else (video.duration / 1000L).coerceAtLeast(0L),
             progressPercentage = null,
-            isOldAndUnplayed = !watched && (appearancePreferences.unplayedOldVideoDays.get() == 0 || System.currentTimeMillis() - video.dateModified * 1000L <= appearancePreferences.unplayedOldVideoDays.get().toLong() * 24L * 60L * 60L * 1000L),
+            isOldAndUnplayed = !watched,
             isWatched = watched,
           )
         } else item
@@ -197,6 +220,7 @@ class MediaLibraryViewModel(
         ),
       )
       PlaybackStateEvents.notifyChanged(PlaybackIdentity.forLocalPath(video.path))
+      MediaLibraryEvents.notifyChanged()
     }
   }
 

@@ -53,6 +53,7 @@ import app.infinity.mpvz.preferences.GesturePreferences
 import app.infinity.mpvz.preferences.PlayerPreferences
 import app.infinity.mpvz.repository.MediaFileRepository
 import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.utils.history.RecentlyPlayedOps
 import app.infinity.mpvz.utils.media.MediaLibraryEvents
 import app.infinity.mpvz.utils.media.PlaybackStateEvents
 import app.infinity.mpvz.utils.storage.FileTypeUtils
@@ -3071,6 +3072,9 @@ class MediaPlaybackService :
             watchedThreshold = browserPreferences.watchedThreshold.get(),
           )
         playbackStateRepository.upsert(playbackState)
+        if (shouldRemoveRecentlyPlayedEntry(capturedSnapshot, playbackState)) {
+          RecentlyPlayedOps.onVideoFinished(applicationContext, capturedSnapshot.recentlyPlayedUri.orEmpty())
+        }
         if (playbackState.hasBeenWatched && oldState?.hasBeenWatched != true) {
           MediaFileRepository.invalidateTreeCache()
           MediaLibraryEvents.notifyChanged()
@@ -3095,6 +3099,11 @@ class MediaPlaybackService :
     oldState: PlaybackStateEntity?,
   ): PlaybackStateSnapshot? {
     if (identifier.isBlank()) return null
+    val recentlyPlayedUri =
+      PlaybackSession.queue.value.currentItem
+        ?.takeIf { it.stableId == identifier }
+        ?.originalUri
+        ?.takeIf { it.isNotBlank() }
 
     val mpvPosition = readMpvIntSecondsOrNull("time-pos")
     fun nullableDouble(property: String) = runCatching { PlaybackSession.getPropertyDouble(property) }.getOrNull()
@@ -3116,6 +3125,7 @@ class MediaPlaybackService :
     return PlaybackStateSnapshot(
       mediaIdentifier = identifier,
       mediaTitle = mediaTitle.ifBlank { identifier },
+      recentlyPlayedUri = recentlyPlayedUri,
       currentPosition = mpvPosition ?: currentPositionSeconds.toInt(),
       duration = readMpvIntSeconds("duration", mediaDurationSeconds.toInt()),
       isPositionRestorePending =

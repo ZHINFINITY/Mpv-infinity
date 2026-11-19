@@ -51,7 +51,7 @@ enum class PlayerButton(
   EQUALIZER(Icons.RoundedFilled.Equalizer),
   NONE(Icons.RoundedFilled.Bookmarks),
   FRAME_INTERPOLATION(Icons.RoundedFilled.AutoAwesome),
-  FRAME_INTERPOLATION_FPS(Icons.RoundedFilled.Speed),
+  FRAME_INTERPOLATION_FPS(Icons.RoundedFilled.TargetFps),
 }
 
 /**

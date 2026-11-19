@@ -4,6 +4,7 @@ import android.content.Context;
 import android.graphics.SurfaceTexture;
 import android.util.AttributeSet;
 import android.util.Log;
+import android.util.Size;
 import android.view.Surface;
 import android.view.TextureView;
 import androidx.annotation.Nullable;
@@ -18,6 +19,8 @@ public final class LibassSubtitleSurfaceView extends TextureView implements Text
   @Nullable private volatile LibassSubtitleRenderer renderer;
   @Nullable private Surface nativeSurface;
   private volatile long positionUs;
+  @Nullable private volatile Size pendingRendererSize;
+  @Nullable private volatile Size appliedRendererSize;
   private final Object renderExecutorLock = new Object();
   @Nullable private ScheduledExecutorService renderExecutor;
   private volatile boolean surfaceReady;
@@ -47,7 +50,14 @@ public final class LibassSubtitleSurfaceView extends TextureView implements Text
         long now = System.nanoTime();
         if (surfaceReady && current != null && now - lastRenderNs >= 33_000_000L) {
           lastRenderNs = now;
-          try { current.renderSurface(positionUs); } catch (IllegalStateException ignored) { }
+          try {
+            Size requestedSize = pendingRendererSize;
+            if (requestedSize != null && !requestedSize.equals(appliedRendererSize)) {
+              current.setSize(requestedSize.getWidth(), requestedSize.getHeight());
+              appliedRendererSize = requestedSize;
+            }
+            current.renderSurface(positionUs);
+          } catch (IllegalStateException ignored) { }
         }
       }, 0, 16, TimeUnit.MILLISECONDS);
     }
@@ -90,9 +100,15 @@ public final class LibassSubtitleSurfaceView extends TextureView implements Text
     if (old != null) {
       try { old.setSurface(null); } catch (IllegalStateException ignored) { }
     }
+    pendingRendererSize = null;
+    appliedRendererSize = null;
     renderer = value;
     if (value != null && surfaceReady && nativeSurface != null) value.setSurface(nativeSurface);
     startRenderLoop();
+  }
+
+  public void requestRendererSize(int width, int height) {
+    if (width > 0 && height > 0) pendingRendererSize = new Size(width, height);
   }
 
   public void setPositionUs(long value) { positionUs = Math.max(0L, value); }

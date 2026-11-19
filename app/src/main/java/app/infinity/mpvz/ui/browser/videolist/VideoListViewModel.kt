@@ -8,6 +8,7 @@
 package app.infinity.mpvz.ui.browser.videolist
 
 import android.app.Application
+import android.content.Context
 import android.util.Log
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
@@ -34,6 +35,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -49,6 +51,11 @@ data class VideoWithPlaybackInfo(
   val isOldAndUnplayed: Boolean = false, // true while the NEW badge is eligible
   val isWatched: Boolean = false, // true once the configured watched threshold is reached
 )
+
+internal fun shouldShowNewBadge(
+  isWatched: Boolean,
+  isWithinNewLabelWindow: Boolean,
+): Boolean = !isWatched && isWithinNewLabelWindow
 
 internal fun videoProgressPercentage(
   playbackState: PlaybackStateEntity?,
@@ -82,6 +89,28 @@ internal fun videoPlaybackIdentifiers(video: Video): Set<String> =
     add(video.displayName)
   }
 
+internal fun explicitVideoWatchedOverride(context: Context, videoPath: String): Boolean? {
+  val prefix = "$videoPath\u001f"
+  val stored =
+    context.getSharedPreferences("video_watched_overrides", Context.MODE_PRIVATE)
+      .getStringSet("values", emptySet())
+      .orEmpty()
+  return when {
+    "${prefix}0" in stored -> false
+    "${prefix}1" in stored -> true
+    else -> null
+  }
+}
+
+internal fun setExplicitVideoWatchedOverride(context: Context, videoPath: String, watched: Boolean) {
+  val prefix = "$videoPath\u001f"
+  val preferences = context.getSharedPreferences("video_watched_overrides", Context.MODE_PRIVATE)
+  val values = preferences.getStringSet("values", emptySet())?.toMutableSet() ?: mutableSetOf()
+  values.removeIf { it.startsWith(prefix) }
+  values += "$prefix${if (watched) 1 else 0}"
+  preferences.edit().putStringSet("values", values).apply()
+}
+
 internal fun buildVideoWithPlaybackInfo(
   video: Video,
   playbackState: PlaybackStateEntity?,
@@ -97,12 +126,7 @@ internal fun buildVideoWithPlaybackInfo(
   // A manual swipe-to-unwatched writes a reset playback state (position 0, full time remaining,
   // hasBeenWatched=false). Keep that explicit child override visible even when its parent folder
   // is marked watched and the file is older than the automatic NEW-label age window.
-  val persistedUnwatched =
-    explicitlyMarkedUnwatched ||
-      (playbackState != null &&
-        !playbackState.hasBeenWatched &&
-        playbackState.lastPosition <= 0 &&
-        playbackState.timeRemaining >= durationSeconds - 1)
+  val persistedUnwatched = explicitlyMarkedUnwatched
   val newLabelWindowMillis = newLabelDays.toLong() * 24L * 60L * 60L * 1000L
   val videoAgeMillis = currentTimeMillis - video.dateModified * 1000L
   val isWithinNewLabelWindow =
@@ -121,7 +145,7 @@ internal fun buildVideoWithPlaybackInfo(
     video = video,
     timeRemaining = playbackState?.timeRemaining?.toLong(),
     progressPercentage = videoProgressPercentage(playbackState, durationSeconds, isWatched),
-    isOldAndUnplayed = !isWatched && isWithinNewLabelWindow,
+    isOldAndUnplayed = shouldShowNewBadge(isWatched, isWithinNewLabelWindow),
     isWatched = isWatched,
   )
 }
@@ -158,16 +182,10 @@ class VideoListViewModel(
         } == true
 
   private fun explicitlyMarkedUnwatched(video: Video): Boolean =
-    getApplication<Application>()
-      .getSharedPreferences("video_watched_overrides", android.content.Context.MODE_PRIVATE)
-      .getStringSet("values", emptySet())
-      ?.any { it == "${video.path}\u001f0" } == true
+    explicitVideoWatchedOverride(getApplication(), video.path) == false
 
   private fun explicitlyMarkedWatched(video: Video): Boolean =
-    getApplication<Application>()
-      .getSharedPreferences("video_watched_overrides", android.content.Context.MODE_PRIVATE)
-      .getStringSet("values", emptySet())
-      ?.any { it == "${video.path}\u001f1" } == true
+    explicitVideoWatchedOverride(getApplication(), video.path) == true
   // Using MediaFileRepository singleton directly
 
   private val _videos = MutableStateFlow<List<Video>>(emptyList())
@@ -235,6 +253,18 @@ class VideoListViewModel(
           updatePlaybackInfo(mediaIdentifier)
         }
       }
+    }
+
+    viewModelScope.launch(Dispatchers.IO) {
+      combine(
+        browserPreferences.watchedThreshold.changes(),
+        appearancePreferences.showUnplayedOldVideoLabel.changes(),
+        appearancePreferences.unplayedOldVideoDays.changes(),
+      ) { _, _, _ -> Unit }
+        .drop(1)
+        .collectLatest {
+          if (_videos.value.isNotEmpty()) loadPlaybackInfo(_videos.value)
+        }
     }
   }
 
@@ -434,12 +464,7 @@ class VideoListViewModel(
     video: Video,
     watched: Boolean,
   ) {
-    val overrides = getApplication<Application>()
-      .getSharedPreferences("video_watched_overrides", android.content.Context.MODE_PRIVATE)
-    val values = overrides.getStringSet("values", emptySet())?.toMutableSet() ?: mutableSetOf()
-    values.removeIf { it.startsWith("${video.path}\u001f") }
-    values.add("${video.path}\u001f${if (watched) 1 else 0}")
-    overrides.edit().putStringSet("values", values).apply()
+    setExplicitVideoWatchedOverride(getApplication(), video.path, watched)
     _videosWithPlaybackInfo.update { videos ->
       videos.map { item ->
         if (item.video.path == video.path) {

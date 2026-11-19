@@ -168,6 +168,16 @@ class FolderListViewModel(
       }
     }
 
+    viewModelScope.launch(Dispatchers.IO) {
+      combine(
+        browserPreferences.watchedThreshold.changes(),
+        appearancePreferences.showUnplayedOldVideoLabel.changes(),
+        appearancePreferences.unplayedOldVideoDays.changes(),
+      ) { _, _, _ -> Unit }
+        .drop(1)
+        .collectLatest { calculateNewVideoCounts(_videoFolders.value) }
+    }
+
     // Filter folders based on blacklist (video vs audio scope)
     val blacklistFlow = if (audioOnly) {
       foldersPreferences.blacklistedAudioFolders.changes()
@@ -327,7 +337,8 @@ class FolderListViewModel(
                         playbackStateRepository.getVideoDataByTitle(identifier)
                       }
                     val durationSeconds = video.duration / 1000L
-                    val isWatched = isPlaybackStateWatched(playbackState, durationSeconds, watchedThreshold)
+                    val explicitlyWatched = "${video.path}\u001f1" in explicitVideoOverrides
+                    val isWatched = explicitlyWatched || isPlaybackStateWatched(playbackState, durationSeconds, watchedThreshold)
                     val explicitlyUnwatched = "${video.path}\u001f0" in explicitVideoOverrides
                     val persistedUnwatched =
                       playbackState != null &&
@@ -335,7 +346,6 @@ class FolderListViewModel(
                         playbackState.lastPosition <= 0 &&
                         playbackState.timeRemaining >= durationSeconds - 1
                     val markedNew = explicitlyUnwatched || persistedUnwatched
-                    val explicitlyWatched = "${video.path}\u001f1" in explicitVideoOverrides
                     val isRecent = currentTime - (video.dateModified * 1000) <= thresholdMillis
 
                     // A saved watched flag or reached threshold always removes NEW, including

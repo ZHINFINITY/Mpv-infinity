@@ -67,7 +67,7 @@ internal object PlaybackStatePersistence {
     savePositionOnQuit: Boolean,
     watchedThreshold: Int,
   ): PlaybackStateEntity {
-    val lastPosition =
+    val candidateLastPosition =
       calculateSavePosition(
         oldState = oldState,
         currentPosition = snapshot.currentPosition,
@@ -77,8 +77,18 @@ internal object PlaybackStatePersistence {
         positionIsKnown = snapshot.positionIsKnown,
       )
     val duration = snapshot.duration
+    val completedByProgress =
+      snapshot.positionIsKnown &&
+        !snapshot.isPositionRestorePending &&
+        hasReachedWatchedThreshold(
+          currentPosition = snapshot.currentPosition,
+          duration = duration,
+          watchedThreshold = watchedThreshold,
+        )
+    val lastPosition = if (completedByProgress) 0 else candidateLastPosition
     val timeRemaining =
-      if (!snapshot.positionIsKnown && duration <= 0) oldState?.timeRemaining ?: 0
+      if (completedByProgress) 0
+      else if (!snapshot.positionIsKnown && duration <= 0) oldState?.timeRemaining ?: 0
       else if (duration > lastPosition) duration - lastPosition else 0
     val externalSubtitles =
       if (!snapshot.externalSubtitlesAreKnown && snapshot.externalSubtitles.isBlank()) {
@@ -103,13 +113,16 @@ internal object PlaybackStatePersistence {
       timeRemaining = timeRemaining,
       externalSubtitles = externalSubtitles,
       hasBeenWatched =
-        isWatched(
-          oldState = oldState,
-          currentPosition = snapshot.currentPosition,
-          lastPosition = lastPosition,
-          duration = duration,
-          watchedThreshold = watchedThreshold,
-        ),
+        completedByProgress ||
+          isWatched(
+            oldState = oldState,
+            currentPosition = snapshot.currentPosition,
+            lastPosition = candidateLastPosition,
+            duration = duration,
+            watchedThreshold = watchedThreshold,
+            positionIsKnown = snapshot.positionIsKnown,
+            isPositionRestorePending = snapshot.isPositionRestorePending,
+          ),
       audioSelection = snapshot.audioSelection ?: oldState?.audioSelection,
       subtitleSelection = snapshot.subtitleSelection ?: oldState?.subtitleSelection,
       secondarySubtitleSelection = snapshot.secondarySubtitleSelection ?: oldState?.secondarySubtitleSelection,
@@ -151,7 +164,11 @@ internal object PlaybackStatePersistence {
     lastPosition: Int,
     duration: Int,
     watchedThreshold: Int,
+    positionIsKnown: Boolean,
+    isPositionRestorePending: Boolean,
   ): Boolean {
+    if (!positionIsKnown || isPositionRestorePending) return oldState?.hasBeenWatched == true
+
     // Watched threshold 0 means "Infinitely": the video is never auto-marked as
     // watched based on progress (only an explicit flag keeps it marked).
     if (watchedThreshold == 0) return oldState?.hasBeenWatched == true
@@ -168,6 +185,22 @@ internal object PlaybackStatePersistence {
       isFinished ||
       savedProgress >= threshold ||
       (oldState?.hasBeenWatched == true)
+  }
+
+  private fun hasReachedWatchedThreshold(
+    currentPosition: Int,
+    duration: Int,
+    watchedThreshold: Int,
+  ): Boolean {
+    // Threshold 0 means automatic completion is disabled; do not clear an in-progress resume position.
+    if (watchedThreshold == 0 || duration <= 0) return false
+
+    val threshold = watchedThreshold / 100f
+    val durationSeconds = duration.toFloat()
+    return currentPosition >= duration - 1 ||
+      currentPosition.toFloat() / durationSeconds >= threshold
+  }
+
   }
 }
 
