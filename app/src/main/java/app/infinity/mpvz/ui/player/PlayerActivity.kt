@@ -1196,6 +1196,7 @@ class PlayerActivity :
 
   private var pendingBackgroundPlaybackStart = false
   private var deferInitialMediaLoadUntilForeground = false
+  @Volatile private var pendingInitialM3uExpansion = false
   private var pendingInitialMediaLoad: (() -> Unit)? = null
   // Startup may finish after onStop; prevent the first load from starting while
   // background playback is disabled.
@@ -4378,6 +4379,7 @@ class PlayerActivity :
   private fun beginMediaRequest(): Boolean =
     PlaybackActivityOwner.beginRequest(playbackOwnerToken) {
       mediaRequestGeneration++
+      pendingInitialM3uExpansion = false
       mpvAspectLoadRequestGeneration.clear()
       glassMediaGeneration++
       manualOrientationOverride = false
@@ -5467,6 +5469,11 @@ class PlayerActivity :
   }
 
   private fun rebuildRendererAfterLongBackground() {
+    if (pendingInitialMediaLoad != null) {
+      dispatchPendingInitialMediaLoadIfReady()
+      if (pendingInitialMediaLoad != null) return
+    }
+    if (pendingInitialM3uExpansion && mediaLoadJob?.isActive == true) return
     val playable = currentPlayableUri?.takeIf { it.isNotBlank() } ?: intent?.dataString?.takeIf { it.isNotBlank() }
     if (playable.isNullOrBlank() || isFinishing || isDestroyed || !ownsPlaybackSession()) return
     val mpvPaused = viewModel.paused == true || PlaybackSession.getPropertyBoolean("pause") == true
@@ -5492,6 +5499,7 @@ class PlayerActivity :
     startMediaLoad(
       playableUri = playable,
       originalUri = playable,
+      expandM3u = pendingInitialM3uExpansion,
       positionRestoreOverride = restore,
       preserveTorrentSession = activeTorrentSourceUri != null,
     )
@@ -7243,35 +7251,45 @@ class PlayerActivity :
   private suspend fun resolvePlaybackState(
     identifier: String,
     legacyIdentifier: String?,
+    legacyContentUri: String? = null,
   ): PlaybackStateEntity? {
-    var state = playbackStateRepository.getVideoDataByTitle(identifier)
-    if (state != null) return state
+    playbackStateRepository.getVideoDataByTitle(identifier)?.let { return it }
 
-    val providerBackingKey = legacyIdentifier
-      ?.takeIf { it.startsWith("content://") }
-      ?.let { original ->
-        withContext(Dispatchers.IO) {
-          runCatching {
-            contentResolver.query(Uri.parse(original), arrayOf(MediaStore.MediaColumns.DATA), null, null, null)?.use { c ->
-              if (c.moveToFirst()) c.getString(c.getColumnIndexOrThrow(MediaStore.MediaColumns.DATA)) else null
-            }
-          }.getOrNull()
-        }
-      }?.takeIf { !it.isNullOrBlank() }?.let(PlaybackIdentity::forLocalPath)
-    val legacyKey = (providerBackingKey ?: legacyIdentifier)?.takeIf { it.isNotBlank() && it != identifier }
-    // Bare filenames from older versions are ambiguous; only migrate collision-resistant keys.
-    val isCollisionResistant =
-      legacyKey != null && (legacyKey.startsWith("media:v2:") || legacyKey.contains('_'))
-    val legacyState =
-      legacyKey
-        ?.takeIf { isCollisionResistant }
-        ?.let { playbackStateRepository.getVideoDataByTitle(it) }
-    if (legacyState != null) {
-      state = legacyState.copy(mediaTitle = identifier)
-      playbackStateRepository.upsert(state)
-      Log.d(TAG, "Migrated playback state to collision-resistant media identifier")
+    fun isCollisionResistant(key: String): Boolean =
+      key.startsWith("media:v2:") || key.contains('_')
+
+    // First honor the old URI-derived key; only query the provider after that lookup misses.
+    val legacyKey = legacyIdentifier?.takeIf {
+      it.isNotBlank() && it != identifier && isCollisionResistant(it)
     }
-    return state
+    if (legacyKey != null) {
+      playbackStateRepository.getVideoDataByTitle(legacyKey)?.let { legacyState ->
+        val migrated = legacyState.copy(mediaTitle = identifier)
+        playbackStateRepository.upsert(migrated)
+        Log.d(TAG, "Migrated playback state to collision-resistant media identifier")
+        return migrated
+      }
+    }
+
+    val providerUri = legacyContentUri
+      ?.takeIf { it.startsWith("content://", ignoreCase = true) }
+      ?: legacyIdentifier?.takeIf { it.startsWith("content://", ignoreCase = true) }
+    val providerBackingKey = providerUri?.let { original ->
+      withContext(Dispatchers.IO) {
+        runCatching {
+          contentResolver.query(Uri.parse(original), arrayOf(MediaStore.MediaColumns.DATA), null, null, null)?.use { c ->
+            if (c.moveToFirst()) c.getString(c.getColumnIndexOrThrow(MediaStore.MediaColumns.DATA)) else null
+          }
+        }.getOrNull()
+      }
+    }?.takeIf { !it.isNullOrBlank() }?.let(PlaybackIdentity::forLocalPath)
+      ?.takeIf { it != identifier && isCollisionResistant(it) }
+    val providerState = providerBackingKey?.let { playbackStateRepository.getVideoDataByTitle(it) }
+      ?: return null
+    val migrated = providerState.copy(mediaTitle = identifier)
+    playbackStateRepository.upsert(migrated)
+    Log.d(TAG, "Migrated playback state from content URI backing path")
+    return migrated
   }
 
   private suspend fun loadVideoPlaybackState(
@@ -7912,7 +7930,10 @@ class PlayerActivity :
     }
   }
 
-  private fun deferInitialMediaLoadIfNeeded(load: () -> Unit): Boolean {
+  private fun deferInitialMediaLoadIfNeeded(
+    expandM3u: Boolean = false,
+    load: () -> Unit,
+  ): Boolean {
     if (!deferInitialMediaLoadUntilForeground) return false
     val isForegroundAndUnlocked =
       lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) && !isDeviceScreenOffOrLocked()
@@ -7921,6 +7942,7 @@ class PlayerActivity :
       return false
     }
     val expectedRequestGeneration = mediaRequestGeneration
+    pendingInitialM3uExpansion = expandM3u
     pendingInitialMediaLoad = {
       if (expectedRequestGeneration == mediaRequestGeneration && ownsPlaybackSession()) load()
     }
@@ -7940,6 +7962,7 @@ class PlayerActivity :
 
   private fun invalidateDeferredInitialMediaLoad() {
     pendingInitialMediaLoad = null
+    pendingInitialM3uExpansion = false
     deferInitialMediaLoadUntilForeground = false
   }
 
@@ -7951,7 +7974,8 @@ class PlayerActivity :
     positionRestoreOverride: PlaybackPositionRestoreOverride? = null,
   ) {
     if (!ownsPlaybackSession()) return
-    if (deferInitialMediaLoadIfNeeded {
+    if (expandM3u) pendingInitialM3uExpansion = true
+    if (deferInitialMediaLoadIfNeeded(expandM3u) {
         startMediaLoad(playableUri, originalUri, expandM3u, preserveTorrentSession, positionRestoreOverride)
       }
     ) return
@@ -8036,13 +8060,17 @@ class PlayerActivity :
             return@launch
           }
 
-          if (expandM3u &&
-            loadDynamicM3uPlaylist(
-              uriString = originalUri ?: playableUri,
-              sourceIntent = sourceIntent,
-              requestGeneration = requestGeneration,
-            )
-          ) {
+          val expandedDynamicM3u =
+            expandM3u &&
+              loadDynamicM3uPlaylist(
+                uriString = originalUri ?: playableUri,
+                sourceIntent = sourceIntent,
+                requestGeneration = requestGeneration,
+              )
+          if (expandM3u && requestGeneration == mediaRequestGeneration) {
+            pendingInitialM3uExpansion = false
+          }
+          if (expandedDynamicM3u) {
             withContext(Dispatchers.Main) {
               ensureCurrentMediaRequest(requestGeneration)
               if (playlist.isNotEmpty()) {
@@ -8278,8 +8306,10 @@ class PlayerActivity :
         val savedPlaybackStateJob =
           async(Dispatchers.IO) {
             immediatePlaybackStateSaveJob?.join()
-            resolvePlaybackState(item.stableId, legacyMediaIdentifier)
-              ?: resolvePlaybackState(mediaIdentifier, legacyMediaIdentifier)
+            val legacyContentUri = listOfNotNull(item.originalUri, item.playableUri)
+              .firstOrNull { source -> Uri.parse(source).scheme.equals("content", ignoreCase = true) }
+            resolvePlaybackState(item.stableId, legacyMediaIdentifier, legacyContentUri)
+              ?: resolvePlaybackState(mediaIdentifier, legacyMediaIdentifier, legacyContentUri)
               ?: playbackStateRepository.getVideoDataByTitle(PlaybackIdentity.forUri(item.playableUri))
               ?: playbackStateRepository.getVideoDataByTitle(PlaybackIdentity.forLocalPath(item.playableUri))
           }
@@ -9233,6 +9263,10 @@ class PlayerActivity :
 
               override fun onStop() {
                 runIfActivePlaybackOwner {
+                  mediaRequestGeneration++
+                  mediaLoadJob?.cancel()
+                  mediaLoadJob = null
+                  cancelPlaybackLoadRecovery()
                   invalidateDeferredInitialMediaLoad()
                   if (fileName.isNotBlank()) saveVideoPlaybackState(fileName, immediate = true)
                   torrentStreamingEngine.stopStream()
