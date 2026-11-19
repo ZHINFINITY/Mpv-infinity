@@ -6213,14 +6213,13 @@ class PlayerActivity :
 
     if (playerPreferences.playlistMode.get() && (autoplay || repeatAll)) {
       val sourceIntent = Intent(intent)
-      val expectedGeneration = PlaybackSession.state.value.generation
       val expectedMediaRequestGeneration = mediaRequestGeneration
       isAdvancingAtEof = true
       eofAdvanceJob =
         lifecycleScope.launch(Dispatchers.IO) {
           val path = parsePathFromIntent(sourceIntent)
           if (expectedMediaRequestGeneration != mediaRequestGeneration || !ownsPlaybackSession()) return@launch
-          if (path != null) generatePlaylistFromFolderInternal(path, sourceIntent, expectedGeneration)
+          if (path != null) generatePlaylistFromFolderInternal(path, sourceIntent, expectedMediaRequestGeneration)
           withContext(Dispatchers.Main) {
             if (expectedMediaRequestGeneration != mediaRequestGeneration || !ownsPlaybackSession()) return@withContext
             val hasNext = PlaybackSession.hasNext()

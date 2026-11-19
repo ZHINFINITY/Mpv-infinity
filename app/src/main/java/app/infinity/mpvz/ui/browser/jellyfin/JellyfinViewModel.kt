@@ -1069,6 +1069,11 @@ class JellyfinViewModel(
 
   fun retryFailedPage() {
     val state = _uiState.value
+    if (state.isLoading || state.isLoadingMore) return
+    if (state.searchQuery.isNotBlank()) {
+      performSearch(state.searchQuery, debounceMs = 0L)
+      return
+    }
     val failedStartIndex = state.failedPageStartIndex ?: return
     if (state.isLoading || state.isLoadingMore || failedStartIndex != state.startIndex) return
     val active = state.activeServer ?: return
@@ -1095,6 +1100,7 @@ class JellyfinViewModel(
   ) {
     val active = _uiState.value.activeServer ?: return
     searchJob?.cancel()
+    _uiState.update { it.copy(failedPageStartIndex = null) }
     if (query.isBlank()) {
       refresh()
       return
