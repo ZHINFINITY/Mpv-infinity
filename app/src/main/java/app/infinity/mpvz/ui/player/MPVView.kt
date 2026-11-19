@@ -617,7 +617,7 @@ class MPVView(
           "fallback=source_passthrough",
       )
     }
-    val mpvFlowFrameInterpolationEnabled =
+    var mpvFlowFrameInterpolationEnabled =
       mpvFlowFrameInterpolationCandidate && flowTimingOptionsReady
     mpvFlowOsdStatsEnabled = false
     mpvFlowDiagnosticsEnabled = BuildConfig.DEBUG && BuildConfig.MPV_HAS_MPVFLOW && mpvFlowFrameInterpolationEnabled
