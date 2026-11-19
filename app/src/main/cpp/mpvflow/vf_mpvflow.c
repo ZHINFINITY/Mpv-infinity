@@ -392,7 +392,7 @@ static struct mp_image *interpolate(struct mp_filter *f, struct mp_image *a,
     mp_image_copy_attributes(rgb_out, a);
     if (mp_sws_scale(p->sws, out, rgb_out) < 0) {
         talloc_free(out);
-        talloc_free(rgb_out);
+        // rgb_out is owned by the reusable scratch state; only discard the temporary output.
         return NULL;
     }
     out->pts = pts;

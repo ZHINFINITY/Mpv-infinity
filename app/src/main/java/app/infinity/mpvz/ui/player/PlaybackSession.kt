@@ -404,6 +404,9 @@ object PlaybackSession : MPVLib.EventObserver {
         MPVLib.setOptionString("idle", "yes")
         ensureOwnerActive()
         nativeLock.withLock {
+          // This is the publication commit point: a superseded owner must not
+          // expose a core that it can cancel immediately afterward.
+          ensureOwnerActive()
           defaultUserAgent = userAgent
           initialized = true
           retiringCore = false
@@ -1615,6 +1618,7 @@ object PlaybackSession : MPVLib.EventObserver {
                   error = null,
                 )
               }
+              if (!restoringPosition) publishTimelinePropertiesLocked()
               propBoolean.emit("pause", appliedPaused)
               restoreSuspendedVideoTrackLocked()
               // Some audio-only demuxers do not emit PLAYBACK_RESTART reliably. Keep the normal

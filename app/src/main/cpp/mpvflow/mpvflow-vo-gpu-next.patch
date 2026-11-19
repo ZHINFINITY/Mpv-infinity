@@ -705,7 +705,7 @@ index bd3d1aa..75ffbb1 100644
 +    flow_update_context(vo);
 +    flow_prepare_input(vo, frame, mpi, fp);
 @@ -1118,0 +1811,1 @@ static void unmap_frame(pl_gpu gpu, struct pl_frame *frame,
-+    flow_release_frame(fp->vo, fp, false);
++    flow_release_frame(fp->vo, fp, true);
 @@ -1135,0 +1829,2 @@ static void discard_frame(const struct pl_source_frame *src)
 +    struct frame_priv *fp = mpi->priv;
 +    flow_release_frame(fp->vo, fp, true);

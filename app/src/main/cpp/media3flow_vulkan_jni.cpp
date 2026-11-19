@@ -801,8 +801,9 @@ bool queryAhbImageSupport(FlowContext *context, VkImageUsageFlags usage,
 #undef AHB_PROBE_LOG
 }
 
-SharedImage *createSharedImage(FlowContext *context, JNIEnv *env, jobject javaBuffer,
-                               int width, int height, bool output) {
+SharedImage *createSharedImageAttempt(FlowContext *context, JNIEnv *env, jobject javaBuffer,
+                                      int width, int height, bool output,
+                                      bool forceTransferOnly) {
     const uint64_t importFailureBit = output ? DIAG_OUTPUT_IMPORT_FAILURE : DIAG_INPUT_IMPORT_FAILURE;
     const uint64_t importReadyBit = output ? DIAG_OUTPUT_IMPORT_READY : DIAG_INPUT_IMPORT_READY;
     const char *role = output ? "output" : "input";
@@ -845,7 +846,7 @@ SharedImage *createSharedImage(FlowContext *context, JNIEnv *env, jobject javaBu
         : VK_IMAGE_USAGE_SAMPLED_BIT;
     VkImageUsageFlags usage = baseUsage;
     bool storageOutput = false;
-    if (output && context->outputStorageImageSupported) {
+    if (output && !forceTransferOnly && context->outputStorageImageSupported) {
         const VkImageUsageFlags storageUsage = baseUsage | VK_IMAGE_USAGE_STORAGE_BIT;
         storageOutput = queryAhbImageSupport(
             context, storageUsage, &bufferDesc, nullptr,
@@ -1052,6 +1053,19 @@ SharedImage *createSharedImage(FlowContext *context, JNIEnv *env, jobject javaBu
     return shared;
 }
 
+
+// A storage-capable image may fail after vkCreateImage (import, bind, or
+// libplacebo wrapping). Every failed attempt is fully destroyed before retry.
+SharedImage *createSharedImage(FlowContext *context, JNIEnv *env, jobject javaBuffer,
+                               int width, int height, bool output) {
+    SharedImage *image = createSharedImageAttempt(
+        context, env, javaBuffer, width, height, output, false);
+    if (image || !output) return image;
+    logFlowOnce(context, DIAG_OUTPUT_STORAGE_FALLBACK, ANDROID_LOG_WARN,
+                "MPVFLOW_DIAGNOSTIC component=native-media3 event=output_storage state=fallback "
+                "stage=post_create_import path=transfer_destination");
+    return createSharedImageAttempt(context, env, javaBuffer, width, height, output, true);
+}
 } // namespace
 
 extern "C" JNIEXPORT jlong JNICALL

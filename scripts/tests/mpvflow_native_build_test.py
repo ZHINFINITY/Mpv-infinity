@@ -51,6 +51,9 @@ STRING_RESOURCES = ROOT / "app/src/main/res/values/strings.xml"
 FFMPEG_SHA = "f2c5162b7c4b3e8835de270ff78cecc524decad1"
 FFMPEG_REPOSITORY = "https://github.com/FongMi/FFmpeg.git"
 VULKAN_HEADERS_SHA = "a4f8ada9f4f97c45b8c89c57997be9cebaae65d2"
+VULKAN_MAPPER_PATCH = ROOT / "app/src/main/cpp/mpvflow/mpvflow-aimagereader-vulkan.patch"
+VULKAN_MAPPER_DIR = ROOT / "app/src/main/cpp/mpvflow/mediacodec-vulkan"
+VO_PATCH = ROOT / "app/src/main/cpp/mpvflow/mpvflow-vo-gpu-next.patch"
 
 sys.dont_write_bytecode = True
 fongmi_motion = (FONGMI_DIR / "motion.c").read_text(encoding="utf-8")
@@ -61,6 +64,23 @@ assert 'pl_var_vec2("motion_size")' in fongmi_motion
 assert "mp_motion_render_sources_to" in fongmi_motion and "scaled_source_pair" in fongmi_test
 assert "mp_motion_" not in media3_native, "Native Media3 must remain on its pre-FongMi MPVFlow implementation"
 assert "mpvflow_gpu_synthesize_with_policy_to_texture(" in media3_native
+vo_patch = VO_PATCH.read_text(encoding="utf-8")
+assert "flow_release_frame(fp->vo, fp, true);" in vo_patch
+release_frame = vo_patch.split("+static void flow_release_frame(", 1)[1].split("\n+}", 1)[0]
+assert "if (discard) flow_release_pair_for_frame(p, fp->frame_id);" in release_frame
+assert "if (discard && fp->flow_source)" in release_frame and "if (discard && fp->flow_input)" in release_frame
+assert "flow_prepare_input(vo, frame, mpi, fp);" in vo_patch
+for marker in (
+    "mpvflow_gpu_renderer_hook_supported", "mpvflow_gpu_renderer_hook_begin",
+    "flow_compute_fusion_fallback", "flow_cached_synthesis_hook",
+    "flow_renderer_fusion_disabled", "params->num_hooks == 0",
+    "synthesis_rate_limited_cached", "temporal_identity_valid",
+):
+    assert marker in vo_patch, f"MPV renderer-fusion integration missing {marker!r}"
+prepare_source = PREPARE.read_text(encoding="utf-8")
+for marker in ("MPVFLOW_HAVE_RENDERER_HOOK", "features.get('libplacebo', false)", "pl_shader_custom", "pl_shader_is_compute"):
+    assert marker in prepare_source, f"MPV Meson renderer hook must be capability-gated: missing {marker!r}"
+
 cmake_config = (ROOT / "app/src/main/cpp/CMakeLists.txt").read_text(encoding="utf-8")
 runtime_packager = (ROOT / "scripts/package-mpv-runtime-aar.py").read_text(encoding="utf-8")
 assert "mpvflow/fongmi/motion.c" not in cmake_config, "FongMi motion must not be linked into Native Media3"
@@ -755,8 +775,8 @@ assert 'qcom_log(qcom->gpu, PL_LOG_INFO,\n             "MPVFLOW_DIAGNOSTIC event
 )
 assert 'FONGMI_PATCH = VENDOR / "fongmi/mpv-fongmi-android.patch"' not in prepare_source
 assert '"--input", str(FONGMI_PATCH)' not in prepare_source
-assert '"mpvflow-vo-gpu-next.patch"' not in prepare_source
-assert '"mpvflow-aimagereader-vulkan.patch"' not in prepare_source
+assert '"mpvflow-vo-gpu-next.patch"' in prepare_source
+assert '"mpvflow-aimagereader-vulkan.patch"' in prepare_source
 assert '"video/out/gpu_next/motion.c"' in prepare_source
 assert '"motion-interpolation", OPT_INT(motion_fps)' in prepare_source
 assert '"video/out/hwdec/hwdec_aimagereader_vk_direct.c"' in prepare_source
@@ -769,9 +789,9 @@ assert "Pinned FongMi VO is missing the transient hwdec-map retry/ownership cont
 assert "vulkan_context = enable_mailbox_suboptimal_tolerance(vulkan_context)" in prepare_source, (
     "the measured mailbox suboptimal fix must be applied by the pinned MPV preparation pipeline"
 )
-assert "mpvflow_gpu.c" not in prepare_source, "MPV runtime preparation must not stage the retired Flow renderer"
+assert "mpvflow_gpu.c" in prepare_source, "MPVFlow renderer source must be staged into the runtime"
 assert "FONGMI_PATCH" not in prepare_source, "MPV runtime must compile the pinned FongMi source directly"
-assert "mpvflow_gpu.c" not in prepare_source, "MPV runtime preparation must not stage the retired Flow renderer"
+assert "mpvflow_gpu.c" in prepare_source, "MPVFlow renderer source must be staged into the runtime"
 prepare_call = 'python3 "$ROOT/scripts/prepare-mpvflow.py" --mpv-dir "$BUILDSCRIPTS/deps/mpv" --libplacebo-dir "$BUILDSCRIPTS/deps/libplacebo"'
 assert prepare_call in build, "the native build must patch pinned libplacebo before compilation"
 native_cmake = (ROOT / "app/src/main/cpp/CMakeLists.txt").read_text(encoding="utf-8")

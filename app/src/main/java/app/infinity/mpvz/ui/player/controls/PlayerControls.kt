@@ -500,7 +500,6 @@ fun PlayerControls(
     PlayerControlVisibilityPolicy.shouldShowBufferingIndicator(
       nativeEngineActive = nativeEngineActive,
       nativeReady = nativeSnapshot.isReady,
-      nativeLoading = nativeSnapshot.isLoading,
       nativeBuffering = nativeSnapshot.isBuffering,
       nativeEnded = nativeSnapshot.isEnded,
       mpvLoading = playbackSessionState.phase == PlaybackPhase.LOADING,

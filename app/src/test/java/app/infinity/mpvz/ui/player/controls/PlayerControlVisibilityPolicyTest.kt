@@ -101,7 +101,6 @@ class PlayerControlVisibilityPolicyTest {
       PlayerControlVisibilityPolicy.shouldShowBufferingIndicator(
         nativeEngineActive = true,
         nativeReady = false,
-        nativeLoading = false,
         nativeBuffering = false,
         nativeEnded = false,
         mpvLoading = false,
@@ -114,7 +113,6 @@ class PlayerControlVisibilityPolicyTest {
       PlayerControlVisibilityPolicy.shouldShowBufferingIndicator(
         nativeEngineActive = true,
         nativeReady = true,
-        nativeLoading = false,
         nativeBuffering = false,
         nativeEnded = false,
         mpvLoading = true,
@@ -131,7 +129,6 @@ class PlayerControlVisibilityPolicyTest {
       PlayerControlVisibilityPolicy.shouldShowBufferingIndicator(
         nativeEngineActive = true,
         nativeReady = true,
-        nativeLoading = false,
         nativeBuffering = true,
         nativeEnded = false,
         mpvLoading = false,
@@ -144,7 +141,6 @@ class PlayerControlVisibilityPolicyTest {
       PlayerControlVisibilityPolicy.shouldShowBufferingIndicator(
         nativeEngineActive = false,
         nativeReady = false,
-        nativeLoading = false,
         nativeBuffering = false,
         nativeEnded = false,
         mpvLoading = true,
@@ -157,7 +153,6 @@ class PlayerControlVisibilityPolicyTest {
       PlayerControlVisibilityPolicy.shouldShowBufferingIndicator(
         nativeEngineActive = false,
         nativeReady = false,
-        nativeLoading = false,
         nativeBuffering = false,
         nativeEnded = false,
         mpvLoading = true,
