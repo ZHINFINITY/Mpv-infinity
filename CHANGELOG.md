@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.2.6
+
+- 🎞️ Frame interpolation gets motion-analysis and blending refinements to reduce warped or ghosted edges in challenging scenes while keeping motion smooth.
+- ▶️ Playback is more reliable through startup, buffering, background return, aspect-ratio changes, subtitles, and watch-history updates.
+- 🎵 Music now keeps its track title, metadata, duration, and playback state separate from video playback.
+- ✨ Video controls and mark-as actions behave more consistently, with improved translations and subtitle-lane handling.
+- 🐛 Fixed several Media3, Native-player, and metadata regressions, plus removed retired diagnostic tooling from the shipping path.
+
 ## 2.2.5
 
 Jellyfin, Navidrome, and yt-dlp crash fixes
