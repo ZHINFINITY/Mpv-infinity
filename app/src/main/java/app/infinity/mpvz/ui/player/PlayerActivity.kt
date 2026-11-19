@@ -283,6 +283,8 @@ class PlayerActivity :
   private val idleNativeFirstFrame = MutableStateFlow(false)
   private var playerStoppedAtElapsedRealtime = 0L
   private var pendingRendererRebuildAfterBackground = false
+  private var nativeVideoSurfaceCallbackView: android.view.SurfaceView? = null
+  private var nativeVideoSurfaceCallback: android.view.SurfaceHolder.Callback? = null
   private var pendingVideoTrackRestoreAfterRebuild = false
   val nativePlaybackSnapshot get() = nativeEngineOrNull()?.snapshot ?: idleNativePlaybackSnapshot
   private val nativeFirstFrame get() = nativeEngineOrNull()?.hasRenderedFirstFrame ?: idleNativeFirstFrame
@@ -545,6 +547,7 @@ class PlayerActivity :
     }
     if (!nativeEngineConfigured) {
       nativeEngine.attach(binding.media3Player)
+      configureNativeVideoSurfaceCallback()
       nativeEngine.setSubtitleStyle(
         textColor = subtitlesPreferences.textColor.get(),
         backgroundColor = subtitlesPreferences.backgroundColor.get(),
@@ -3118,6 +3121,11 @@ class PlayerActivity :
 
   override fun onDestroy() {
     Log.d(TAG, "PlayerActivity onDestroy")
+    nativeVideoSurfaceCallback?.let { callback ->
+      nativeVideoSurfaceCallbackView?.holder?.removeCallback(callback)
+    }
+    nativeVideoSurfaceCallback = null
+    nativeVideoSurfaceCallbackView = null
     mpvCorePreparationJob?.cancel()
     mpvAssetPreparationJob?.cancel()
     if (activeNativeCloseActivity?.get() === this) activeNativeCloseActivity = null
@@ -3270,7 +3278,9 @@ class PlayerActivity :
             val item = queueState.currentItem
             val queueChanged =
               playlist.size != queueState.items.size ||
-                playlist.indices.any { position -> playlist[position].toString() != queueState.items[position].originalUri }
+                playlist.indices.any { position ->
+                  playlist[position].toString() != PlaybackUriPolicy.playableUriString(queueState.items[position].originalUri)
+                }
             if (queueChanged) {
               syncPlaylistFromSession(queueState)
               viewModel.refreshPlaylistItems()
@@ -3279,13 +3289,13 @@ class PlayerActivity :
 
             playlistIndex = index
             networkPlaylistConnectionId = item.networkSource?.connectionId ?: -1L
-            fileName = item.title?.takeIf { it.isNotBlank() } ?: getFileNameFromUri(Uri.parse(NetworkPlaybackUri.normalize(item.originalUri)))
+            fileName = item.title?.takeIf { it.isNotBlank() } ?: getFileNameFromUri(PlaybackUriPolicy.playableUri(item.originalUri))
             legacyMediaIdentifier = PlaybackIdentity.forUri(item.originalUri)
             mediaIdentifier = item.stableId
             currentPlayableUri = item.playableUri
             isReady = false
             viewModel.onVideoLoadStarted()
-            viewModel.calculateVideoHash(Uri.parse(NetworkPlaybackUri.normalize(item.originalUri)))
+            viewModel.calculateVideoHash(PlaybackUriPolicy.playableUri(item.originalUri))
           }
       }
     }
@@ -3293,7 +3303,7 @@ class PlayerActivity :
 
   private fun syncPlaylistFromSession(queueState: PlaybackQueueState = PlaybackSession.queue.value) {
     val queueItems = queueState.items
-    playlist = queueItems.map { item -> Uri.parse(NetworkPlaybackUri.normalize(item.originalUri)) }
+    playlist = queueItems.map { item -> PlaybackUriPolicy.playableUri(item.originalUri) }
     playlistWindowOffset = 0
     playlistTotalCount = playlist.size
     networkPlaylistPaths = queueItems.map { item -> item.networkSource?.relativePath.orEmpty() }
@@ -4159,7 +4169,7 @@ class PlayerActivity :
     playlistId = null
     playlistItems = emptyList()
     playlistEntity = null
-    playlist = savedQueue.items.map { item -> Uri.parse(NetworkPlaybackUri.normalize(item.originalUri)) }
+    playlist = savedQueue.items.map { item -> PlaybackUriPolicy.playableUri(item.originalUri) }
     playlistIndex = savedQueue.currentIndex
     playlistWindowOffset = 0
     playlistTotalCount = playlist.size
@@ -4215,7 +4225,7 @@ class PlayerActivity :
     if (sessionState.phase !in setOf(PlaybackPhase.LOADING, PlaybackPhase.READY, PlaybackPhase.BACKGROUND)) return false
 
     val queueState = PlaybackSession.queue.value
-    playlist = queueState.items.map { item -> Uri.parse(NetworkPlaybackUri.normalize(item.originalUri)) }
+    playlist = queueState.items.map { item -> PlaybackUriPolicy.playableUri(item.originalUri) }
     playlistIndex = queueState.currentIndex.coerceAtLeast(0)
     playlistWindowOffset = 0
     playlistTotalCount = playlist.size
@@ -4224,7 +4234,7 @@ class PlayerActivity :
     networkPlaylistHeaders = queueState.items.map(PlaybackItem::headers)
     networkPlaylistConnectionId = currentItem.networkSource?.connectionId ?: -1L
 
-    fileName = currentItem.title?.takeIf { it.isNotBlank() } ?: getFileNameFromUri(Uri.parse(currentItem.originalUri))
+    fileName = currentItem.title?.takeIf { it.isNotBlank() } ?: getFileNameFromUri(PlaybackUriPolicy.playableUri(currentItem.originalUri))
     mediaIdentifier = currentItem.stableId
     currentPlayableUri = currentItem.playableUri
     isReady = sessionState.phase == PlaybackPhase.READY || sessionState.phase == PlaybackPhase.BACKGROUND
@@ -4312,7 +4322,7 @@ class PlayerActivity :
     playlistItems = emptyList()
     playlistEntity = null
     isM3uPlaylist = launch.isM3u
-    playlist = restoredItems.map { item -> Uri.parse(NetworkPlaybackUri.normalize(item.originalUri)) }
+    playlist = restoredItems.map { item -> PlaybackUriPolicy.playableUri(item.originalUri) }
     playlistIndex = requestedIndex
     playlistWindowOffset = 0
     playlistTotalCount = playlist.size
@@ -4427,6 +4437,55 @@ class PlayerActivity :
       restoreForegroundResumePositionIfNeeded()
       viewModel.restartAmbientIfActive()
       binding.root.post(::updateVideoAmbientPlayerBounds)
+    }
+  }
+
+  private fun configureNativeVideoSurfaceCallback() {
+    val surfaceView = binding.media3Player.videoSurfaceView as? android.view.SurfaceView ?: return
+    if (nativeVideoSurfaceCallbackView === surfaceView && nativeVideoSurfaceCallback != null) return
+    nativeVideoSurfaceCallback?.let { callback ->
+      nativeVideoSurfaceCallbackView?.holder?.removeCallback(callback)
+    }
+    val callback =
+      object : android.view.SurfaceHolder.Callback {
+        override fun surfaceCreated(holder: android.view.SurfaceHolder) {
+          onNativeVideoSurfaceAvailable()
+        }
+
+        override fun surfaceChanged(
+          holder: android.view.SurfaceHolder,
+          format: Int,
+          width: Int,
+          height: Int,
+        ) {
+          onNativeVideoSurfaceAvailable()
+        }
+
+        override fun surfaceDestroyed(holder: android.view.SurfaceHolder) = Unit
+      }
+    nativeVideoSurfaceCallbackView = surfaceView
+    nativeVideoSurfaceCallback = callback
+    surfaceView.holder.addCallback(callback)
+    if (surfaceView.holder.surface.isValid) onNativeVideoSurfaceAvailable()
+  }
+
+  private fun isNativeVideoSurfaceReady(): Boolean {
+    val surfaceView = binding.media3Player.videoSurfaceView as? android.view.SurfaceView ?: return false
+    return surfaceView.isAttachedToWindow &&
+      surfaceView.visibility == View.VISIBLE &&
+      binding.media3Player.visibility == View.VISIBLE &&
+      surfaceView.holder.surface.isValid
+  }
+
+  private fun onNativeVideoSurfaceAvailable() {
+    val surfaceView = nativeVideoSurfaceCallbackView ?: return
+    surfaceView.post {
+      if (!ownsPlaybackSession() || !isNativeEngineActive() || !isNativeVideoSurfaceReady()) return@post
+      nativeEngineOrNull()?.refreshAfterConfigurationChange()
+      if (!pendingRendererRebuildAfterBackground) return@post
+      pendingRendererRebuildAfterBackground = false
+      rebuildRendererAfterLongBackground()
+      restoreForegroundResumePositionIfNeeded()
     }
   }
 
@@ -5368,14 +5427,7 @@ class PlayerActivity :
     val audioMedia = viewModel.isAudioOnly.value || isCurrentMediaKnownAudio() || isKnownAudioLaunch(intent)
     if (PlayerLifecyclePolicy.shouldRebuildRendererAfterBackground(stoppedForMs, audioMedia)) {
       Log.w(TAG, "Rebuilding video renderer after ${stoppedForMs}ms in the background")
-      pendingRendererRebuildAfterBackground = true
-      val surfaceReady = isNativeEngineActive() || player.isSurfaceReady
-      if (!PlayerLifecyclePolicy.shouldWaitForSurfaceBeforeRebuild(surfaceReady)) {
-        pendingRendererRebuildAfterBackground = false
-        rebuildRendererAfterLongBackground()
-      } else {
-        Log.w(TAG, "Deferring renderer rebuild until the playback surface is ready")
-      }
+      requestRendererRebuildAfterBackground()
       viewModel.setAmbientLifecycleActive(true)
       return true
     }
@@ -5391,7 +5443,7 @@ class PlayerActivity :
       val hasPlayableSource = !currentPlayableUri.isNullOrBlank() || !intent?.dataString.isNullOrBlank()
       if (shouldRecoverNative && hasPlayableSource) {
         Log.w(TAG, "Recovering Native video after foreground return from a missing or idle player")
-        rebuildRendererAfterLongBackground()
+        requestRendererRebuildAfterBackground()
         viewModel.setAmbientLifecycleActive(true)
         return true
       }
@@ -5417,6 +5469,20 @@ class PlayerActivity :
     restoreForegroundResumePositionIfNeeded()
     viewModel.setAmbientLifecycleActive(true)
     return true
+  }
+
+  private fun requestRendererRebuildAfterBackground() {
+    pendingRendererRebuildAfterBackground = true
+    val nativeActive = isNativeEngineActive()
+    if (nativeActive) setNativeVideoSurfaceVisible(true)
+    val surfaceReady = if (nativeActive) isNativeVideoSurfaceReady() else player.isSurfaceReady
+    if (!PlayerLifecyclePolicy.shouldWaitForSurfaceBeforeRebuild(surfaceReady)) {
+      pendingRendererRebuildAfterBackground = false
+      rebuildRendererAfterLongBackground()
+      restoreForegroundResumePositionIfNeeded()
+    } else {
+      Log.w(TAG, "Deferring renderer rebuild until the playback surface is ready")
+    }
   }
 
   private fun currentForegroundRecoveryPositionSeconds(): Double? {

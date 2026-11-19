@@ -6101,7 +6101,7 @@ class PlayerViewModel(
       }
 
     return queue.items.mapIndexed { index, item ->
-      val uri = Uri.parse(NetworkPlaybackUri.normalize(item.originalUri))
+      val uri = PlaybackUriPolicy.playableUri(item.originalUri)
       val title = item.title?.takeIf { it.isNotBlank() } ?: uri.lastPathSegment.orEmpty()
       val resolvedUri =
         if (uri.scheme == "content") {

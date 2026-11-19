@@ -196,7 +196,6 @@ class PlayerControlVisibilityPolicyTest {
       PlayerControlVisibilityPolicy.isNativePlaybackStalled(
         isEnded = false,
         isReady = false,
-        isLoading = true,
         isBuffering = true,
         isLocalSource = true,
         hasRenderedFirstFrame = false,
@@ -206,7 +205,6 @@ class PlayerControlVisibilityPolicyTest {
       PlayerControlVisibilityPolicy.isNativePlaybackStalled(
         isEnded = false,
         isReady = false,
-        isLoading = true,
         isBuffering = false,
         isLocalSource = false,
         hasRenderedFirstFrame = false,
@@ -216,7 +214,6 @@ class PlayerControlVisibilityPolicyTest {
       PlayerControlVisibilityPolicy.isNativePlaybackStalled(
         isEnded = false,
         isReady = true,
-        isLoading = false,
         isBuffering = true,
         isLocalSource = true,
         hasRenderedFirstFrame = true,
@@ -226,10 +223,43 @@ class PlayerControlVisibilityPolicyTest {
       PlayerControlVisibilityPolicy.isNativePlaybackStalled(
         isEnded = true,
         isReady = false,
-        isLoading = true,
         isBuffering = true,
         isLocalSource = false,
         hasRenderedFirstFrame = true,
+      ),
+    )
+  }
+
+  @Test
+  fun nativeLoadingAheadDoesNotShowBufferingWhilePlaybackIsAdvancing() {
+    assertFalse(
+      PlayerControlVisibilityPolicy.isNativePlaybackStalled(
+        isEnded = false,
+        isReady = true,
+        isBuffering = false,
+        isLocalSource = false,
+        hasRenderedFirstFrame = true,
+        isPlaying = true,
+      ),
+    )
+    assertFalse(
+      PlayerControlVisibilityPolicy.isNativePlaybackStalled(
+        isEnded = false,
+        isReady = true,
+        isBuffering = true,
+        isLocalSource = false,
+        hasRenderedFirstFrame = true,
+        isPlaying = true,
+      ),
+    )
+    assertTrue(
+      PlayerControlVisibilityPolicy.isNativePlaybackStalled(
+        isEnded = false,
+        isReady = true,
+        isBuffering = true,
+        isLocalSource = false,
+        hasRenderedFirstFrame = true,
+        isPlaying = false,
       ),
     )
   }
