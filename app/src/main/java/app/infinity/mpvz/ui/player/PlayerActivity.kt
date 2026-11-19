@@ -499,6 +499,27 @@ class PlayerActivity :
     return isKnownAudioLaunch(intent)
   }
 
+  private fun isAudioPlaybackState(identifier: String? = null): Boolean {
+    val queueState = PlaybackSession.queue.value
+    val item = if (identifier == null) {
+      queueState.currentItem
+    } else {
+      queueState.items.firstOrNull { it.stableId == identifier }
+    }
+    if (item != null) return item.usesDedicatedAudioState()
+    if (identifier != null && identifier != mediaIdentifier) return false
+    return intent.getBooleanExtra("media_library_audio", false) ||
+      intent.getBooleanExtra("is_audio", false) ||
+      isKnownAudioLaunch(intent) ||
+      viewModel.isAudioOnly.value ||
+      isCurrentMediaKnownAudio()
+  }
+
+  private fun clearStaleMediaMetadataForLoad() {
+    PlaybackSession.propString.clearMediaMetadata()
+    runCatching { PlaybackSession.setPropertyString("force-media-title", "") }
+  }
+
   // Renderer ownership is authoritative even while Native is preparing/seeking. Readiness
   // must not route controls or lifecycle saves back to the frozen MPV instance.
   override fun isNativeEngineActive(): Boolean = activeEngineMode == PlaybackEngineMode.NATIVE
@@ -6548,6 +6569,7 @@ class PlayerActivity :
       // target it even while its database-backed resume position is still being restored.
       activeSaveMediaIdentifier = loadedMediaIdentifier
     }
+    val audioPlayback = isAudioPlaybackState(loadedMediaIdentifier)
     currentUri?.let { viewModel.calculateVideoHash(it) }
 
     reportJellyfinStop()
@@ -6570,13 +6592,17 @@ class PlayerActivity :
         if (mpvInterpolationReloadGeneration != loadGeneration) {
           // Load playback state (will skip track restoration if preferred language configured)
           val hasState =
-            loadVideoPlaybackState(
-              identifier = loadedMediaIdentifier,
-              legacyIdentifier = loadedLegacyIdentifier,
-              loadGeneration = loadGeneration,
-              positionRestoreOverride = positionRestoreOverride,
-              initialPositionApplied = initialPositionApplied,
-            )
+            if (audioPlayback) {
+              false
+            } else {
+              loadVideoPlaybackState(
+                identifier = loadedMediaIdentifier,
+                legacyIdentifier = loadedLegacyIdentifier,
+                loadGeneration = loadGeneration,
+                positionRestoreOverride = positionRestoreOverride,
+                initialPositionApplied = initialPositionApplied,
+              )
+            }
           if (!PlaybackSession.isCurrentGeneration(loadGeneration)) return@launch
 
           // Apply track selection logic (defaults only apply when no saved state)
@@ -6597,7 +6623,7 @@ class PlayerActivity :
           }
 
           // Apply default zoom only if there's no saved state
-          if (!hasState) {
+          if (!audioPlayback && !hasState) {
             withContext(Dispatchers.Main) {
               if (!PlaybackSession.isCurrentGeneration(loadGeneration)) return@withContext
               val zoomPreference = playerPreferences.defaultVideoZoom.get()
@@ -6999,6 +7025,7 @@ class PlayerActivity :
     immediate: Boolean = false,
   ): Job? {
     val snapshot = capturePlaybackStateSnapshot(mediaTitle) ?: return null
+    if (!shouldPersistVideoPlaybackState(snapshot)) return null
     val appContext = applicationContext
     val directAudiobook = PlaybackSession.queue.value.items
       .firstOrNull { item -> item.stableId == snapshot.mediaIdentifier }
@@ -7181,6 +7208,7 @@ class PlayerActivity :
         else captureMpvTrackSelection("sub", "sid", pendingSharedSubtitleSelection),
       secondarySubtitleSelection = if (nativeEngineActive) null
         else captureMpvTrackSelection("sub", "secondary-sid", pendingSharedSecondarySubtitleSelection),
+      isAudioPlayback = isAudioPlaybackState(saveIdentifier),
     )
   }
 
@@ -7323,6 +7351,8 @@ class PlayerActivity :
     if (identifier.isBlank() || !PlaybackSession.isCurrentGeneration(loadGeneration)) {
       return false
     }
+
+    if (isAudioPlaybackState(identifier)) return false
 
     return runCatching {
       val state = resolvePlaybackState(identifier, legacyIdentifier)
@@ -7905,6 +7935,7 @@ class PlayerActivity :
 
       currentPlayableUri = uri
       isReady = false
+      clearStaleMediaMetadataForLoad()
       viewModel.onVideoLoadStarted()
       val originalUri = extractUriFromIntent(intent)
       val shouldExpandM3u =
@@ -10016,6 +10047,7 @@ class PlayerActivity :
     // Avoid blocking UI thread while mpv opens network streams (e.g., HLS).
     isAdvancingAtEof = true
     isReady = false
+    clearStaleMediaMetadataForLoad()
     viewModel.onVideoLoadStarted()
 
     // Stop the outgoing renderer before asynchronous URI preparation. Previously the old MPV
@@ -10203,6 +10235,11 @@ class PlayerActivity :
     }?.let { return it }
 
     getExplicitIntentTitle()?.let { return it }
+
+    // The shared MPV core may still expose the outgoing title while a new URI is opening.
+    if (viewModel.videoOpenAnimationState.value.isWaitingForVideo) {
+      return fileName.ifBlank { "Unknown Video" }
+    }
 
     if (HttpUtils.shouldPreferResolvedMediaTitle(extractUriFromIntent(intent), fileName)) {
       PlaybackSession

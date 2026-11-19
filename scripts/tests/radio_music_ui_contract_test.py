@@ -169,6 +169,40 @@ class RadioMusicUiContracts(unittest.TestCase):
         self.assertIn("compact(sample.synthesizedSubmitFps)", summary)
         self.assertIn("sample.targetFps?.let", summary)
 
+    def test_recent_music_preserves_metadata_in_the_dedicated_audio_queue(self):
+        launcher = (JAVA / "ui/browser/music/MusicPlaybackLauncher.kt").read_text()
+        recent = (JAVA / "ui/browser/recentlyplayed/RecentlyPlayedScreen.kt").read_text()
+        self.assertIn("artist = artist", launcher)
+        self.assertIn('mimeType = "audio/*"', launcher)
+        self.assertIn("artworkUri = albumArtUri?.toString()", launcher)
+        self.assertIn('putExtra("media_library_audio", true)', launcher)
+        self.assertIn("if (playableVideo.isAudio)", recent)
+        self.assertIn("resolveRecentAudioSong(playableVideo)", recent)
+        self.assertIn("playRecentAudioPathIfPresent", recent)
+
+    def test_audio_never_loads_or_saves_video_playback_state(self):
+        activity = (JAVA / "ui/player/PlayerActivity.kt").read_text()
+        service = (JAVA / "ui/player/MediaPlaybackService.kt").read_text()
+        state = (JAVA / "ui/player/PlaybackStatePersistence.kt").read_text()
+        self.assertIn("if (isAudioPlaybackState(identifier)) return false", activity)
+        self.assertIn("if (!shouldPersistVideoPlaybackState(snapshot)) return null", activity)
+        self.assertIn("if (!shouldPersistVideoPlaybackState(capturedSnapshot)) return", service)
+        self.assertIn("val isAudioPlayback: Boolean = false", state)
+        self.assertIn("snapshot != null && !snapshot.isAudioPlayback", state)
+
+    def test_new_video_load_and_terminal_stop_clear_outgoing_title(self):
+        activity = (JAVA / "ui/player/PlayerActivity.kt").read_text()
+        view_model = (JAVA / "ui/player/PlayerViewModel.kt").read_text()
+        session = (JAVA / "ui/player/PlaybackSession.kt").read_text()
+        title = activity[activity.index("fun getTitleForControls()"):]
+        self.assertIn("isWaitingForVideo", title[:1200])
+        load_start = view_model[view_model.index("fun onVideoLoadStarted()"):]
+        self.assertIn('currentMediaTitle = ""', load_start[:1500])
+        self.assertIn("propString.clearMediaMetadata()", activity)
+        final_stop = session[session.index("private fun finalizeStopLocked()"):]
+        self.assertIn("propString.clearMediaMetadata()", final_stop[:900])
+        self.assertIn('MPVLib.setPropertyString("force-media-title", "")', final_stop[:900])
+
 
 if __name__ == "__main__":
     unittest.main()

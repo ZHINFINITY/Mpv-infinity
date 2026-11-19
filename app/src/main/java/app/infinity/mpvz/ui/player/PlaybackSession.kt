@@ -640,6 +640,8 @@ object PlaybackSession : MPVLib.EventObserver {
     pendingStopClearQueue = false
     releaseActiveNetworkStreamLocked()
     releaseAuxiliaryNetworkStreamsLocked()
+    propString.clearMediaMetadata()
+    runCatching { MPVLib.setPropertyString("force-media-title", "") }
     updateState {
       it.copy(
         phase = PlaybackPhase.IDLE,

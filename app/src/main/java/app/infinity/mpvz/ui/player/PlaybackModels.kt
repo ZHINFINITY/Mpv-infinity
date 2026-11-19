@@ -178,6 +178,10 @@ internal fun PlaybackItem.declaredMediaKind(videoHint: Boolean = false): Declare
 internal fun PlaybackItem.isDefinitelyAudioOnly(): Boolean =
   declaredMediaKind() == DeclaredPlaybackMediaKind.AUDIO
 
+/** Audiobooks retain their existing resume owner; ordinary audio must not use video-state rows. */
+internal fun PlaybackItem.usesDedicatedAudioState(): Boolean =
+  isDefinitelyAudioOnly() && audiobook == null && directAudiobook == null
+
 /** Internal network-browser items have trusted direct-media provenance even without MIME/extension. */
 internal fun PlaybackItem.isTrustedNetworkVideoSource(): Boolean =
   networkSource != null && declaredMediaKind() != DeclaredPlaybackMediaKind.AUDIO

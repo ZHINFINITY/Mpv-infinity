@@ -57,8 +57,13 @@ internal data class PlaybackStateSnapshot(
   val secondarySubDelayMs: Int? = null,
   val secondarySubSpeed: Double? = null,
   val recentlyPlayedUri: String? = null,
+  /** Audio has its own resume store and must never create or update a video-state database row. */
+  val isAudioPlayback: Boolean = false,
   val captureSequence: Long = PlaybackStateSaveCoordinator.nextSequence(),
 )
+
+internal fun shouldPersistVideoPlaybackState(snapshot: PlaybackStateSnapshot?): Boolean =
+  snapshot != null && !snapshot.isAudioPlayback
 
 internal fun shouldRemoveRecentlyPlayedEntry(
   snapshot: PlaybackStateSnapshot,

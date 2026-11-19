@@ -7,17 +7,12 @@
 package app.infinity.mpvz.ui.browser.music
 
 import android.content.Context
-import android.content.Intent
-import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.infinity.mpvz.database.entities.PlaylistEntity
 import app.infinity.mpvz.database.repository.PlaylistRepository
 import app.infinity.mpvz.preferences.FolderBlacklistMatcher
-import app.infinity.mpvz.ui.player.PlaybackItem
 import app.infinity.mpvz.ui.player.PlaybackSession
-import app.infinity.mpvz.ui.player.PreparedPlaybackLaunchStore
-import app.infinity.mpvz.ui.player.PlayerActivity
 import app.infinity.mpvz.utils.history.RecentlyPlayedOps
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -310,72 +305,18 @@ class MusicLibraryViewModel : ViewModel(), KoinComponent {
   fun playSong(context: Context, song: MusicSong, songList: List<MusicSong> = _songs.value) {
     if (songList.isEmpty()) return
     val index = songList.indexOfFirst { it.id == song.id }.coerceAtLeast(0)
-
-    val queueItems = songList.map { item ->
-      PlaybackItem.fromUri(
-        uri = item.uri.toString(),
-        title = item.title,
-        artist = item.artist,
-        mimeType = "audio/*",
-        artworkUri = item.albumArtUri?.toString(),
-        durationSeconds = item.durationMs.takeIf { it > 0L }?.div(1000L)?.toInt(),
-      )
-    }
-    val launchToken = PreparedPlaybackLaunchStore.stage(
-      items = queueItems,
-      currentIndex = index,
-      isExplicitQueue = true,
-    )
-
-    val intent = Intent(Intent.ACTION_VIEW, song.uri).apply {
-      setClass(context, PlayerActivity::class.java)
-      addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-      putExtra("internal_launch", true)
-      putExtra(PlayerActivity.EXTRA_PREPARED_PLAYBACK_QUEUE, true)
-      putExtra(PlayerActivity.EXTRA_PREPARED_PLAYBACK_TOKEN, launchToken)
-      putExtra("playlist_index", index)
-      putExtra("launch_source", "music_library")
-      putExtra("media_library_audio", true)
-      putExtra("is_audio", true)
-      putExtra("title", song.title)
-    }
-    context.startActivity(intent)
+    MusicPlaybackLauncher.playSongs(context, songList, currentIndex = index)
   }
 
   fun playAllSongs(context: Context, songsToPlay: List<MusicSong>, shuffle: Boolean = false) {
     if (songsToPlay.isEmpty()) return
     val list = if (shuffle) songsToPlay.shuffled() else songsToPlay
-    val firstSong = list.first()
-
-    val queueItems = list.map { item ->
-      PlaybackItem.fromUri(
-        uri = item.uri.toString(),
-        title = item.title,
-        artist = item.artist,
-        mimeType = "audio/*",
-        artworkUri = item.albumArtUri?.toString(),
-        durationSeconds = item.durationMs.takeIf { it > 0L }?.div(1000L)?.toInt(),
-      )
-    }
-    val launchToken = PreparedPlaybackLaunchStore.stage(
-      items = queueItems,
+    MusicPlaybackLauncher.playSongs(
+      context = context,
+      songs = list,
       currentIndex = 0,
-      isExplicitQueue = true,
+      launchSource = if (shuffle) "music_shuffle" else "music_play_all",
     )
-
-    val intent = Intent(Intent.ACTION_VIEW, firstSong.uri).apply {
-      setClass(context, PlayerActivity::class.java)
-      addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-      putExtra("internal_launch", true)
-      putExtra(PlayerActivity.EXTRA_PREPARED_PLAYBACK_QUEUE, true)
-      putExtra(PlayerActivity.EXTRA_PREPARED_PLAYBACK_TOKEN, launchToken)
-      putExtra("playlist_index", 0)
-      putExtra("launch_source", if (shuffle) "music_shuffle" else "music_play_all")
-      putExtra("media_library_audio", true)
-      putExtra("is_audio", true)
-      putExtra("title", firstSong.title)
-    }
-    context.startActivity(intent)
   }
 
   fun createPlaylist(name: String) {

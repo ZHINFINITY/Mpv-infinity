@@ -2320,7 +2320,11 @@ class PlayerViewModel(
     _currentSkippableSegment.value = null
     _showSkipChipAuto.value = false
     skippedSegments.clear()
-    pendingIntroLookupTitle = currentMediaTitle.takeIf { it.isNotBlank() }
+    pendingIntroLookupTitle = null
+    currentMediaTitle = ""
+    lastAutoSelectedMediaTitle = null
+    videoHashJob?.cancel()
+    _videoHash.value = null
     _videoOpenAnimationState.update {
       it.copy(
         loadToken = it.loadToken + 1,
