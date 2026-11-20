@@ -15,6 +15,7 @@ MPV_CONFIG = (ROOT / "app/src/main/java/app/infinity/mpvz/preferences/MpvConfigO
 MEDIA3_SINK = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowVideoSink.kt").read_text(encoding="utf-8")
 MEDIA3_NATIVE = (ROOT / "app/src/main/cpp/media3flow_vulkan_jni.cpp").read_text(encoding="utf-8")
 CMAKE = (ROOT / "app/src/main/cpp/CMakeLists.txt").read_text(encoding="utf-8")
+BUILD_GRADLE = (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
 FLOW_GPU_CORE = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_gpu.c").read_text(encoding="utf-8")
 LOG_REPOSITORY = (ROOT / "app/src/main/java/app/infinity/mpvz/presentation/crash/DebugLogRepository.kt").read_text(encoding="utf-8")
 CRASH_ACTIVITY = (ROOT / "app/src/main/java/app/infinity/mpvz/presentation/crash/CrashActivity.kt").read_text(encoding="utf-8")
@@ -103,4 +104,7 @@ assert re.search(
 require(MPV_VIEW, 'PlaybackSession.setIntegrationOptionString("fongmi-diagnostic-control-file", optionValue)', "the native VO must receive the dedicated FongMi control file")
 capture_config = MPV_VIEW[MPV_VIEW.index("private fun configureMpvFlowCaptureControl"):MPV_VIEW.index("/** Arms the MPV VO")]
 assert "!BuildConfig.MPV_HAS_MPVFLOW" not in capture_config, "FongMi capture must not require the separate MPVFlow renderer"
+require(BUILD_GRADLE, "val includeMpvFlowFongmiDiagnostics = false", "the pinned runtime must not advertise uninstrumented FongMi capture controls")
+assert "mpvFlowFongmiDiagnosticCapture" not in BUILD_GRADLE, "an independent Gradle request must not enable unsupported native capture"
+require(PREPARE, "MPVFLOW_DEBUG_CAPTURE is unsupported with the MPVRx-pinned FongMi 95ec motion core", "capture support must remain fail-closed until the pinned runtime is instrumented")
 print("Native FongMi MPV and pre-FongMi Native Media3 diagnostic regression tests passed")
