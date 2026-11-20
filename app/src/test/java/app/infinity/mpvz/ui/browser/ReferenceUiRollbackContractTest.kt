@@ -208,8 +208,7 @@ private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float): Bitmap? = 
     // Capture reuses mutable scratch buffers and now runs on a worker dispatcher. Normalize the
     // sample callsite so older film/cadence contracts remain focused on their own changes.
     val smoothness = listOf(
-      """  val sampledFrost =
-    if (largeSurfaceVisible) maxOf(tuning.frost, GlassSurfacePolicy.RegularMinimumFrostDp) else tuning.frost
+      """  val sampledFrost = GlassCustomizationPolicy.sampledFrostStrength(tuning.frost, largeSurfaceVisible)
   val frostPasses = GlassCustomizationPolicy.frostPasses(sampledFrost)
   val frame = remember { mutableStateOf<LiquidGlassFrame?>(null) }
   val captureBuffers = remember { GlassCaptureBuffers() }

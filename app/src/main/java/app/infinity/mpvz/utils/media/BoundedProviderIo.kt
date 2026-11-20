@@ -22,6 +22,8 @@ internal object BoundedProviderIo {
   private val metadataQueries = BoundedLane("mpv-provider-metadata")
   private val legacyDataQueries = BoundedLane("mpv-provider-legacy-data")
   private val providerReads = BoundedLane("mpv-provider-read")
+  // Keep the sole worker alive; an idle-timeout race can leave an accepted
+  // cleanup queued without a worker to consume it.
   private val cleanupExecutor =
     ThreadPoolExecutor(
       1,
@@ -30,7 +32,7 @@ internal object BoundedProviderIo {
       TimeUnit.SECONDS,
       ArrayBlockingQueue<Runnable>(64),
       ThreadFactory { runnable -> Thread(runnable, "mpv-provider-cleanup").apply { isDaemon = true } },
-    ).apply { allowCoreThreadTimeOut(true) }
+    )
 
   fun cleanupAsync(operation: () -> Unit) {
     runCatching { cleanupExecutor.execute { runCatching(operation) } }
