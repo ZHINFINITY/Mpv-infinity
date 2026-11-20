@@ -1004,6 +1004,8 @@ object PlaybackSession : MPVLib.EventObserver {
     onGenerationReserved: ((Long) -> Unit)?,
   ): ResolvedLoadTransaction {
     var nativeCommitInvoked = false
+    var committedGeneration: Long? = null
+    var transactionFinished = false
     var previous: NetworkStreamRegistration? = null
     var previousAuxiliary = emptyList<NetworkStreamRegistration>()
     val performCommit = {
@@ -1026,35 +1028,48 @@ object PlaybackSession : MPVLib.EventObserver {
           activeNetworkStream = resolved.registration
           previousAuxiliary = auxiliaryNetworkStreams.values.toList()
           auxiliaryNetworkStreams.clear()
+          committedGeneration = generation
         }
         generation
       }
       nativeLock.withLock { commitNative() }
     }
     val finish: (Long) -> Long = { generation ->
-      if (generation < 0L) {
-        resolved.closeUnconsumedFd()
-        resolved.registration?.let(::releaseNetworkStream)
-        generation
-      } else {
-        _queue.update { queue ->
-          if (queue.currentItem?.stableId != item.stableId) queue else {
-            queue.copy(items = queue.items.toMutableList().apply { set(queue.currentIndex, item) })
+      if (!transactionFinished) {
+        if (generation < 0L) {
+          resolved.closeUnconsumedFd()
+          resolved.registration?.let(::releaseNetworkStream)
+        } else {
+          _queue.update { queue ->
+            if (queue.currentItem?.stableId != item.stableId) queue else {
+              queue.copy(items = queue.items.toMutableList().apply { set(queue.currentIndex, item) })
+            }
           }
+          val previousRegistration = previous
+          if (previousRegistration != null && previousRegistration != resolved.registration) {
+            releaseNetworkStream(previousRegistration)
+          }
+          previousAuxiliary.forEach(::releaseNetworkStream)
         }
-        val previousRegistration = previous
-        if (previousRegistration != null && previousRegistration != resolved.registration) {
-          releaseNetworkStream(previousRegistration)
-        }
-        previousAuxiliary.forEach(::releaseNetworkStream)
-        generation
+        transactionFinished = true
       }
+      generation
     }
     val cleanupOnFailure: () -> Unit = {
-      // Once native load was invoked, fd ownership is ambiguous; never close a
-      // potentially consumed/reused fd. Fenced pre-commit aborts are unambiguous.
-      if (!nativeCommitInvoked) resolved.closeUnconsumedFd()
-      resolved.registration?.let(::releaseNetworkStream)
+      if (!transactionFinished) {
+        val successfulGeneration = committedGeneration
+        if (successfulGeneration != null) {
+          // A dispatcher can report cancellation after its synchronous native commit finished.
+          // Preserve the active registration and release only the registrations it displaced.
+          finish(successfulGeneration)
+        } else {
+          // Once native load was invoked, fd ownership is ambiguous; never close a
+          // potentially consumed/reused fd. Fenced pre-commit aborts are unambiguous.
+          if (!nativeCommitInvoked) resolved.closeUnconsumedFd()
+          resolved.registration?.let(::releaseNetworkStream)
+          transactionFinished = true
+        }
+      }
     }
     return ResolvedLoadTransaction(performCommit, finish, cleanupOnFailure)
   }

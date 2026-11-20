@@ -75,6 +75,24 @@ class MpvRestartThreadingContractTest {
     assertTrue("post-init options need access before callbacks reopen", initialized < post && post < open)
   }
 
+  @Test fun cancelledNativeDispatchFinalizesCommittedProxyOwnership() {
+    val session = source("PlaybackSession")
+    val transaction = session.substringAfter("private fun prepareResolvedLoadTransaction(")
+      .substringBefore("\n  private fun load(")
+    assertTrue(transaction.contains("var committedGeneration: Long? = null"))
+    assertTrue(transaction.contains("committedGeneration = generation"))
+    assertTrue(transaction.contains("if (!transactionFinished)"))
+    val cleanup = transaction.substringAfter("val cleanupOnFailure: () -> Unit = {")
+      .substringBefore("return ResolvedLoadTransaction")
+    val committedBranch = cleanup.substringAfter("if (successfulGeneration != null) {")
+      .substringBefore("} else {")
+    val preCommitBranch = cleanup.substringAfter("} else {")
+    assertTrue(committedBranch.contains("finish(successfulGeneration)"))
+    assertFalse(committedBranch.contains("releaseNetworkStream"))
+    assertTrue(preCommitBranch.contains("resolved.registration?.let(::releaseNetworkStream)"))
+    assertTrue(preCommitBranch.contains("if (!nativeCommitInvoked) resolved.closeUnconsumedFd()"))
+  }
+
   @Test fun generationIsPublishedBeforeNativeLoadCanEmitCallbacks() {
     val session = source("PlaybackSession")
     val load = session.substringAfter("  private fun load(")
