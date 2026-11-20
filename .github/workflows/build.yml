@@ -83,7 +83,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git -C vulkan-headers rev-parse HEAD)" = "a4f8ada9f4f97c45b8c89c57997be9cebaae65d2"
-          test "$(awk '/^#define VK_HEADER_VERSION / { print $3 }' vulkan-headers/include/vulkan/vulkan_core.h)" = "309"
+          test "$(awk '/^#define VK_HEADER_VERSION / { print $3 }' vulkan-headers/include/vulkan/vulkan_core.h)" = "328"
           test -e /usr/lib/x86_64-linux-gnu/libvulkan.so
           mkdir -p "$RUNNER_TEMP/vulkan-sdk/lib/pkgconfig"
           cat > "$RUNNER_TEMP/vulkan-sdk/lib/pkgconfig/vulkan.pc" <<EOF
@@ -91,8 +91,8 @@ jobs:
           includedir=$GITHUB_WORKSPACE/vulkan-headers/include
           libdir=/usr/lib/x86_64-linux-gnu
           Name: Vulkan
-          Description: Pinned Vulkan 1.4.309 headers with the system loader
-          Version: 1.4.309
+          Description: Pinned Vulkan 1.4.328 headers with the system loader
+          Version: 1.4.328
           Libs: -L\${libdir} -lvulkan
           Cflags: -I\${includedir}
           EOF
@@ -123,7 +123,7 @@ jobs:
         run: |
           set -euo pipefail
           pkg-config --exists 'libplacebo >= 7.387.0'
-          test "$(pkg-config --modversion vulkan)" = "1.4.309"
+          test "$(pkg-config --modversion vulkan)" = "1.4.328"
           pkg-config --modversion libplacebo
 
       - name: Adapt only the temporary MPV 645 GPU motion test fixture
