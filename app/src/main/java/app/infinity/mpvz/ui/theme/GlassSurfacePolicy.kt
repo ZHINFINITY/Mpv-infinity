@@ -14,6 +14,8 @@ object GlassSurfacePolicy {
   const val MinHighlight = 0f
   const val MaxHighlight = 0.36f
   const val RegularMinimumFrostDp = 12f
+  /** Strength floor applied before converting the regular-pane frost to render passes. */
+  const val RegularMinimumFrostStrength = 0.5f
   /** Light ceiling: a bright backdrop may darken a sheet/popup this far, never into a slab. */
   const val RegularMaximumFilmAlpha = 0.50f
   /** Browser popups only, when no scene can be frosted (power/thermal): the content is unblurred. */

@@ -44,7 +44,7 @@ enum pl_dither_method {
     // of 16x16 (equal to a `lut_size` of 4).
     PL_DITHER_ORDERED_FIXED,
 
-    // Dither with white noise. This does not require a LUT and is fairly cheap
+    // Dither with white noise alone is static; temporal dithering requires an advancing frame index. Temporal variation requires temporal mode and an advancing frame index; white noise alone is static. This does not require a LUT and is fairly cheap
     // to compute. Unlike the other modes it doesn't show any repeating
     // patterns either spatially or temporally, but the downside is that this
     // is visually fairly jarring due to the presence of low frequencies in the

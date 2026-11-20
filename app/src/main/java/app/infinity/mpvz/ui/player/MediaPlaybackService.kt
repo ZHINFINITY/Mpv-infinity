@@ -500,6 +500,18 @@ class MediaPlaybackService :
         service.foregroundReady && !activityForeground && !service.handingBackToActivity
       } == true
 
+    internal fun republishDurationForGeneration(generation: Long, identity: MediaSessionItemIdentity, durationSeconds: Double) {
+      activeInstance?.let { service ->
+        service.serviceScope.launch {
+          if (PlaybackSession.state.value.generation != generation ||
+            service.mediaDurationIdentity != identity) return@launch
+          service.mediaDurationSeconds = durationSeconds
+          service.updateMediaSessionMetadata()
+          service.updateMediaSessionPlaybackState()
+          service.updateNotification()
+        }
+      }
+    }
     internal fun durationSecondsForItem(item: PlaybackItem?): Double? {
       item ?: return null
       val identity = MediaSessionItemIdentity(item.stableId, item.originalUri)
@@ -1492,12 +1504,25 @@ class MediaPlaybackService :
         sameItem = sameItem,
         preserveSameItemDuration = sameItem && isFiniteAudio,
       )
-    mediaDurationIdentity = identity
-    mediaDurationGeneration = sessionState.generation
-    mediaDurationSeconds =
+    val synchronizedDuration =
       resolved.takeIf { it > 0.0 }
         ?: item?.durationSeconds?.takeIf { it > 0 }?.toDouble()
         ?: 0.0
+    val durationChanged =
+      mediaDurationIdentity != identity ||
+        mediaDurationGeneration != sessionState.generation ||
+        mediaDurationSeconds != synchronizedDuration
+    mediaDurationIdentity = identity
+    mediaDurationGeneration = sessionState.generation
+    mediaDurationSeconds = synchronizedDuration
+    // The ordinary duration callback may arrive after this READY sync and
+    // legitimately no-op on the equal value. Publish here so MediaSession and
+    // the notification cannot retain the previous item's duration.
+    if (durationChanged) {
+      updateMediaSessionMetadata()
+      updateMediaSessionPlaybackState()
+      updateNotification()
+    }
   }
 
   private fun updateMediaDuration(

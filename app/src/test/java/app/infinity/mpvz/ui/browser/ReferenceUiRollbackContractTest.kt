@@ -54,6 +54,10 @@ class ReferenceUiRollbackContractTest {
     assertTrue(current.contains("val snapshot = immutableGlassSnapshot(bitmap)"))
     assertTrue(current.contains("bitmap.copy(Bitmap.Config.ARGB_8888, false)"))
     assertTrue(current.contains("pendingRetirements > MaxRetiredBitmapCount"))
+    assertTrue(current.contains("GlassCustomizationPolicy.sampledFrostStrength(tuning.frost, largeSurfaceVisible)"))
+    assertTrue(current.contains("val currentFrost by rememberUpdatedState(sampledFrost)"))
+    assertTrue(current.contains("val frostStrength = currentFrost"))
+    assertTrue(current.contains("frostGlassFrame(\n                  copiedBitmap,\n                  frostStrength,"))
     val guarded = """        // When video sampling is temporarily unavailable, the ambient video
         // presentation remains underneath this Compose layer. Do not cover it
         // with the theme's dark surface tint (which reads as a black control
@@ -204,12 +208,14 @@ private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float): Bitmap? = 
     // Capture reuses mutable scratch buffers and now runs on a worker dispatcher. Normalize the
     // sample callsite so older film/cadence contracts remain focused on their own changes.
     val smoothness = listOf(
-      """  val frostPasses = GlassCustomizationPolicy.frostPasses(tuning.frost)
+      """  val sampledFrost = GlassCustomizationPolicy.sampledFrostStrength(tuning.frost, largeSurfaceVisible)
+  val frostPasses = GlassCustomizationPolicy.frostPasses(sampledFrost)
   val frame = remember { mutableStateOf<LiquidGlassFrame?>(null) }
   val captureBuffers = remember { GlassCaptureBuffers() }
   DisposableEffect(Unit) { onDispose { captureBuffers.recycle() } }
   val ready by rememberUpdatedState(isReady)
   val playing by rememberUpdatedState(isPlaying)
+  val currentFrost by rememberUpdatedState(sampledFrost)
 """ to
         """  val frostPasses = GlassCustomizationPolicy.frostPasses(tuning.frost)
   val frame = remember { mutableStateOf<LiquidGlassFrame?>(null) }
@@ -218,6 +224,7 @@ private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float): Bitmap? = 
 """,
       """        }
         // Only the tiny UI copy is cropped/frosted. The actual video surface remains untouched.
+        val frostStrength = currentFrost
         val sampled = withContext(Dispatchers.Default) {
           captureBuffers.sampleMutex.withLock {
             val target = captureBuffers.acquire(dimensions.first, dimensions.second)
@@ -227,7 +234,7 @@ private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float): Bitmap? = 
               val frosted = copied?.let { copiedBitmap ->
                 frostGlassFrame(
                   copiedBitmap,
-                  tuning.frost,
+                  frostStrength,
                   captureBuffers.pixels,
                   captureBuffers.frostOutput,
                   captureBuffers.frostScratch,

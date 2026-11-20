@@ -363,16 +363,20 @@ private class VideoAmbientPipeline : AutoCloseable {
     }
   }
 
-  private fun publish(): VideoAmbientFrame {
-    encodeAmbientPixels(currentGrid, outputPixels)
-    outputBitmapIndex = outputBitmapIndex xor 1
-    val bitmap = outputBitmaps[outputBitmapIndex]
-    bitmap.setPixels(outputPixels, 0, DISPLAY_WIDTH, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT)
-    return VideoAmbientFrame(
-      frame = bitmap.asImageBitmap(),
-      base = colorFromLinear(currentBase),
-      accent = colorFromLinear(currentAccent),
-    )
+  private suspend fun publish(): VideoAmbientFrame {
+    withContext(Dispatchers.Default) {
+      encodeAmbientPixels(currentGrid, outputPixels)
+    }
+    return withContext(Dispatchers.Main.immediate) {
+      outputBitmapIndex = outputBitmapIndex xor 1
+      val bitmap = outputBitmaps[outputBitmapIndex]
+      bitmap.setPixels(outputPixels, 0, DISPLAY_WIDTH, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT)
+      VideoAmbientFrame(
+        frame = bitmap.asImageBitmap(),
+        base = colorFromLinear(currentBase),
+        accent = colorFromLinear(currentAccent),
+      )
+    }
   }
 
   private fun resetScene() {

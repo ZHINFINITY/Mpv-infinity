@@ -55,7 +55,7 @@ class PlayerLayoutPreviewInteractionTest {
     assertTrue(editor.contains("selectedButtons = selectedButtons + button"))
     assertTrue(disposeEffect.contains("latestSelectedButtons.joinToString(\",\")"))
     assertFalse(disposeEffect.contains("selectedButtons.joinToString(\",\")"))
-    assertTrue(disposeEffect.contains("if (prefToEdit.get() != serialized) prefToEdit.set(serialized)"))
+    assertTrue(disposeEffect.contains("if (latestHasLocalEdits && prefToEdit.get() != serialized) prefToEdit.set(serialized)"))
   }
 
   @Test

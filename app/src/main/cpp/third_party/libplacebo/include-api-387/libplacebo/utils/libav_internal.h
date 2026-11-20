@@ -356,8 +356,9 @@ PL_LIBAV_API void pl_map_hdr_metadata(struct pl_hdr_metadata *out,
         const AVHDRPlusColorTransformParams *pars = &data->dhp->params[0];
         if (pars->num_distribution_maxrgb_percentiles >
                 FF_ARRAY_ELEMS(pars->distribution_maxrgb) ||
-            pars->num_bezier_curve_anchors >
-                FF_ARRAY_ELEMS(pars->bezier_curve_anchors))
+            (pars->tone_mapping_flag == 1 &&
+             pars->num_bezier_curve_anchors >
+                 FF_ARRAY_ELEMS(pars->bezier_curve_anchors)))
             return;
 
         out->scene_max[0] = 10000 * av_q2d(pars->maxscl[0]);
@@ -789,13 +790,19 @@ PL_LIBAV_API void pl_avframe_set_repr(AVFrame *frame, struct pl_color_repr repr)
 PL_LIBAV_API void pl_avframe_set_profile(AVFrame *frame, struct pl_icc_profile profile)
 {
     const AVFrameSideData *sd;
-    av_frame_remove_side_data(frame, AV_FRAME_DATA_ICC_PROFILE);
-
-    if (!profile.len)
+    if (!profile.len) {
+        av_frame_remove_side_data(frame, AV_FRAME_DATA_ICC_PROFILE);
         return;
+    }
 
-    sd = av_frame_new_side_data(frame, AV_FRAME_DATA_ICC_PROFILE, profile.len);
-    memcpy(sd->data, profile.data, profile.len);
+    AVBufferRef *replacement = av_buffer_alloc(profile.len);
+    if (!replacement)
+        return;
+    memcpy(replacement->data, profile.data, profile.len);
+    av_frame_remove_side_data(frame, AV_FRAME_DATA_ICC_PROFILE);
+    sd = av_frame_new_side_data_from_buf(frame, AV_FRAME_DATA_ICC_PROFILE, replacement);
+    if (!sd)
+        av_buffer_unref(&replacement);
 }
 
 PL_LIBAV_API void pl_frame_from_avframe(struct pl_frame *out,
@@ -991,8 +998,9 @@ static bool pl_avdovi_rational_valid(AVRational value)
     return value.den && isfinite(av_q2d(value));
 }
 
-static bool pl_avdovi_metadata_valid(const AVDOVIMetadata *data, size_t size,
-                                     int color_depth)
+// RPU pivots use the base-layer bit-depth domain. FEL may reconstruct a higher-depth
+// output frame from that base layer; the mapping below normalizes pivots by bl_bit_depth.
+static bool pl_avdovi_metadata_valid(const AVDOVIMetadata *data, size_t size)
 {
     if (!data || size < sizeof(*data) ||
         !pl_avdovi_range_valid(data, data->header_offset,
@@ -1010,7 +1018,6 @@ static bool pl_avdovi_metadata_valid(const AVDOVIMetadata *data, size_t size,
     const AVDOVIDataMapping *mapping = av_dovi_get_mapping(data);
     const AVDOVIColorMetadata *color = av_dovi_get_color(data);
     if (header->bl_bit_depth < 8 || header->bl_bit_depth > 16 ||
-        (color_depth && header->bl_bit_depth != color_depth) ||
         (!header->disable_residual_flag &&
          (header->el_bit_depth < 8 || header->el_bit_depth > 16)) ||
         header->coef_log2_denom > 63 ||
@@ -1237,17 +1244,8 @@ PL_LIBAV_API bool pl_map_avframe_dovi_metadata(struct pl_color_space *color,
                                     _Alignof(AVDOVIMetadata)))
         return false;
 
-    const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(frame->format);
-    if (desc && (desc->flags & AV_PIX_FMT_FLAG_HWACCEL) &&
-        frame->hw_frames_ctx)
-    {
-        const AVHWFramesContext *hwfc =
-            (const AVHWFramesContext *) frame->hw_frames_ctx->data;
-        desc = hwfc ? av_pix_fmt_desc_get(hwfc->sw_format) : NULL;
-    }
-    int color_depth = desc && desc->nb_components ? desc->comp[0].depth : 0;
     const AVDOVIMetadata *metadata = (const AVDOVIMetadata *) sd->data;
-    if (!pl_avdovi_metadata_valid(metadata, sd->size, color_depth))
+    if (!pl_avdovi_metadata_valid(metadata, sd->size))
         return false;
 
     pl_map_avdovi_metadata(color, repr, dovi, metadata);
@@ -1403,6 +1401,8 @@ static bool pl_map_avframe_derived(pl_gpu gpu, struct pl_frame *out,
     const int flags = AV_HWFRAME_MAP_READ | AV_HWFRAME_MAP_DIRECT;
     struct pl_avframe_priv *priv = out->user_data;
     AVFrame *derived = av_frame_alloc();
+    if (!derived)
+        return false;
     derived->width = frame->width;
     derived->height = frame->height;
     derived->format = AV_PIX_FMT_DRM_PRIME;
@@ -1598,10 +1598,15 @@ PL_LIBAV_API bool pl_map_avframe_ex(pl_gpu gpu, struct pl_frame *out,
 
     struct pl_avframe_priv *priv = malloc(sizeof(*priv));
     if (!priv)
-        goto error;
+        return false;
+    *priv = (struct pl_avframe_priv) {0};
 
     pl_frame_from_avframe(out, frame);
     priv->avframe = av_frame_clone(frame);
+    if (!priv->avframe) {
+        free(priv);
+        return false;
+    }
     out->user_data = priv;
 
 #ifdef PL_HAVE_LAV_DOLBY_VISION
@@ -1672,8 +1677,11 @@ PL_LIBAV_API bool pl_map_avframe_ex(pl_gpu gpu, struct pl_frame *out,
             data[p].pixels = NULL;
         } else if (gpu->limits.callbacks) {
             // Use asynchronous upload if possible
-            data[p].callback = pl_avframe_free_cb;
-            data[p].priv = av_frame_clone(frame);
+            AVFrame *clone = av_frame_clone(frame);
+            if (clone) {
+                data[p].callback = pl_avframe_free_cb;
+                data[p].priv = clone;
+            }
         }
 
         if (!pl_upload_plane(gpu, &out->planes[p], &tex[p], &data[p])) {
@@ -1752,17 +1760,27 @@ PL_LIBAV_API bool pl_download_avframe(pl_gpu gpu,
             .row_pitch = out_frame->linesize[p],
             .ptr = out_frame->data[p],
             // Use synchronous transfer for the last plane
-            .callback = (p+1) < frame->num_planes ? pl_done_cb : NULL,
+            .callback = gpu->limits.callbacks && (p+1) < frame->num_planes
+                      ? pl_done_cb : NULL,
             .priv = &done[p],
         ));
 
-        if (!ok)
+        if (!ok) {
+            for (int i = 0; i < p; i++) {
+                if (!gpu->limits.callbacks || done[i])
+                    continue;
+                while (!done[i])
+                    pl_tex_poll(gpu, frame->planes[i].texture, UINT64_MAX);
+            }
             return false;
+        }
     }
 
-    for (int p = 0; p < frame->num_planes - 1; p++) {
-        while (!done[p])
-            pl_tex_poll(gpu, frame->planes[p].texture, UINT64_MAX);
+    if (gpu->limits.callbacks) {
+        for (int p = 0; p < frame->num_planes - 1; p++) {
+            while (!done[p])
+                pl_tex_poll(gpu, frame->planes[p].texture, UINT64_MAX);
+        }
     }
 
     return true;
@@ -1840,13 +1858,17 @@ PL_LIBAV_API int pl_get_buffer2(AVCodecContext *avctx, AVFrame *pic, int flags)
         planesize[p] = (uintptr_t) ptrs[p] - (uintptr_t) base;
 #endif
 
+    // Decide whether the default allocator is required before installing any
+    // GPU-backed planes; a partial GPU allocation cannot be handed to FFmpeg's
+    // fallback allocator as a fresh frame.
     for (int p = 0; p < planes; p++) {
         const size_t buf_size = planesize[p] + alignment[p];
-        if (buf_size > gpu->limits.max_mapped_size) {
-            av_frame_unref(pic);
+        if (buf_size > gpu->limits.max_mapped_size)
             goto fallback;
-        }
+    }
 
+    for (int p = 0; p < planes; p++) {
+        const size_t buf_size = planesize[p] + alignment[p];
         alloc = malloc(sizeof(*alloc));
         if (!alloc) {
             av_frame_unref(pic);

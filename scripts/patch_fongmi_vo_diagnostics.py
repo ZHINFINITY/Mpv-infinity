@@ -25,8 +25,17 @@ def replace_once(source: str, old: str, new: str, label: str) -> str:
 CAPTURE_HELPERS = r'''/* MPVFLOW_FONGMI_VO_SINGLE_OUTPUT_CAPTURE_V2 */
 static const char *fongmi_capture_backend(const struct priv *p)
 {
-    return p->ra_ctx && p->ra_ctx->fns && p->ra_ctx->fns->type
-        ? p->ra_ctx->fns->type : "unknown";
+    const char *backend = p->ra_ctx && p->ra_ctx->fns && p->ra_ctx->fns->type
+        ? p->ra_ctx->fns->type : NULL;
+    if (!backend)
+        return "unavailable";
+    if (!strcmp(backend, "vulkan") || !strcmp(backend, "vulkan-spirv"))
+        return "vulkan";
+    if (!strcmp(backend, "opencl") || !strcmp(backend, "opencl-qcom"))
+        return "opencl";
+    if (!strcmp(backend, "unknown"))
+        return "unknown";
+    return "unavailable";
 }
 
 static void fongmi_capture_settings(const struct priv *p, const char *reason,
@@ -43,7 +52,7 @@ static void fongmi_capture_settings(const struct priv *p, const char *reason,
         refusal = "diagnostic_planes_unavailable";
     snprintf(settings, settings_size,
         "{\"capture_mode\":\"fongmi_one_shot\",\"pair_limit\":1,"
-        "\"sample_limit\":1,\"resolution_limit\":[1920,1080],"
+        "\"sample_limit\":1,\"resolution_limit\":[1920,1920],"
         "\"source_dimension_limit\":[4096,4096],\"source_pixel_limit\":16777216,"
         "\"capture_pixel_limit\":2073600,"
         "\"max_bytes\":67108864,\"local_only\":true,"
@@ -111,7 +120,7 @@ static void fongmi_capture_poll_control(struct vo *vo)
     fclose(file);
     if (!have_line)
         return;
-    int fields = sscanf(line, "%31[^\t]\t%80[^\t]\t%4095[^\r\n]",
+    int fields = sscanf(line, "%31[^\t]\t%80[^\t\r\n]\t%4095[^\r\n]",
                         command, session_id, base_dir);
     if (fields < 2 || !fongmi_capture_safe_id(session_id))
         return;
@@ -151,7 +160,7 @@ static void fongmi_capture_arm(struct vo *vo, const struct pl_frame_mix *mix,
         return;
     p->fongmi_capture_pts0 = mpi0->pts;
     p->fongmi_capture_pts1 = mpi1->pts;
-    p->fongmi_capture_output_pts = mpi0->pts - mix->timestamps[pair[0]];
+    p->fongmi_capture_output_pts = mpi0->pts + alpha * (mpi1->pts - mpi0->pts);
     p->fongmi_capture_alpha = alpha;
     p->fongmi_capture_frame_id0 = frame_ids ? frame_ids[pair[0]] : 0;
     p->fongmi_capture_frame_id1 = frame_ids ? frame_ids[pair[1]] : 0;
@@ -229,7 +238,8 @@ static void fongmi_capture_finish(struct vo *vo)
     char settings[1024];
     snprintf(settings, sizeof(settings),
         "{\"capture_mode\":\"fongmi_one_shot\",\"pair_limit\":1,"
-        "\"sample_limit\":1,\"resolution_limit\":[1920,1080],\"max_bytes\":67108864,"
+        "\"sample_limit\":1,\"resolution_limit\":[1920,1920],"
+        "\"capture_pixel_limit\":2073600,\"max_bytes\":67108864,"
         "\"source_dimensions\":[%d,%d],\"captured_dimensions\":[%d,%d],"
         "\"route_frame_ids\":[%" PRIu64 ",%" PRIu64 "],"
         "\"plane_order\":[\"source0\",\"source1\",\"pre_confidence_warp\","
@@ -321,6 +331,9 @@ def transform_vo(source: str) -> tuple[str, bool]:
             "direct ? \"prepared_view_shader\" : \"prepared_view_texture\"",
             "fongmi_capture_source_frame_route(mix, pair)",
             "fongmi_capture_finish(vo)",
+            "strcmp(backend, \"vulkan-spirv\")",
+            "return \"unavailable\";",
+            "if (strcmp(fongmi_capture_backend(p), \"vulkan\"))",
             "active_route",
             "fongmi_diagnostic_actual_hdr_source_unsupported",
             "fongmi-diagnostic-control-file",

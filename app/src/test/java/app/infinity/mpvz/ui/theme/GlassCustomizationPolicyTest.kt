@@ -38,4 +38,15 @@ class GlassCustomizationPolicyTest {
     assertTrue(strong.maxOf { it and 255 } <= normal.maxOf { it and 255 })
     assertArrayEquals(original, source)
   }
+  @Test
+  fun regularPaneFrostFloorUsesStrengthBeforePassQuantization() {
+    val floor = GlassSurfacePolicy.RegularMinimumFrostStrength
+    assertEquals(floor, GlassCustomizationPolicy.sampledFrostStrength(0f, regularPaneVisible = true), 0f)
+    assertEquals(1f, GlassCustomizationPolicy.sampledFrostStrength(1f, regularPaneVisible = true), 0f)
+    assertEquals(0f, GlassCustomizationPolicy.sampledFrostStrength(0f, regularPaneVisible = false), 0f)
+    assertTrue(
+      GlassCustomizationPolicy.frostPasses(GlassCustomizationPolicy.sampledFrostStrength(1f, true)) >
+        GlassCustomizationPolicy.frostPasses(floor),
+    )
+  }
 }

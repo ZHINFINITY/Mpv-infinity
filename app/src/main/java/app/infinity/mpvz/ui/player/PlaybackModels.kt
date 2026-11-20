@@ -364,6 +364,23 @@ internal object PlaybackQueueReducer {
     }
   }
 
+  fun replaceCurrentItemIfUnchanged(
+    previous: PlaybackQueueState,
+    expectedItem: PlaybackItem?,
+    replacement: PlaybackItem,
+  ): PlaybackQueueState {
+    val currentItem = previous.currentItem
+    if (
+      currentItem != expectedItem ||
+      currentItem?.stableId != replacement.stableId
+    ) {
+      return previous
+    }
+    return previous.copy(
+      items = previous.items.toMutableList().apply { set(previous.currentIndex, replacement) },
+    )
+  }
+
   fun move(
     previous: PlaybackQueueState,
     from: Int,

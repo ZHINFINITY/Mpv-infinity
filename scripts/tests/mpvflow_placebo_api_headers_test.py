@@ -23,6 +23,17 @@ API_HEADERS = {
     391: PLACEBO / "include-api-391/libplacebo",
 }
 
+# Dolby Vision RPU pivots use the base-layer bit-depth domain; do not require
+# metadata's bit depth to match the coded color depth.
+API387_LIBAV_INTERNAL_SOURCE = (API_HEADERS[387] / "utils/libav_internal.h").read_text(encoding="utf-8")
+DOVI_VALIDATOR_SOURCE = API387_LIBAV_INTERNAL_SOURCE.split(
+    "static bool pl_avdovi_metadata_valid(", 1
+)[1].split("\n}\n", 1)[0]
+assert "header->bl_bit_depth < 8 || header->bl_bit_depth > 16" in DOVI_VALIDATOR_SOURCE
+assert "header->bl_bit_depth != color_depth" not in DOVI_VALIDATOR_SOURCE
+assert "RPU pivots use the base-layer bit-depth domain." in API387_LIBAV_INTERNAL_SOURCE
+assert "1.0f / (1 << header->bl_bit_depth)" in API387_LIBAV_INTERNAL_SOURCE
+
 
 def exported_apis(nm_output: str) -> list[int]:
     """Mirror the CMake symbol shape for representative nm output lines."""
