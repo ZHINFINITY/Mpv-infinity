@@ -7,36 +7,39 @@
 package app.infinity.mpvz.utils.media
 
 import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.BlockingQueue
 import java.util.concurrent.FutureTask
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.SynchronousQueue
 import java.util.concurrent.ThreadFactory
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.InternalCoroutinesApi
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 
 /** Bounded, cancellation-aware lanes for APIs that may block despite running on Dispatchers.IO. */
 internal object BoundedProviderIo {
+  internal enum class ReadStatus { COMPLETED, TIMED_OUT, SATURATED, FAILED }
+
+  internal data class ReadResult<T>(
+    val status: ReadStatus,
+    val value: T,
+    val error: Exception? = null,
+  )
+
   private val metadataQueries = BoundedLane("mpv-provider-metadata")
   private val legacyDataQueries = BoundedLane("mpv-provider-legacy-data")
-  private val providerReads = BoundedLane("mpv-provider-read")
-  // Keep the sole worker alive; an idle-timeout race can leave an accepted
-  // cleanup queued without a worker to consume it.
-  private val cleanupExecutor =
-    ThreadPoolExecutor(
-      1,
-      1,
-      30L,
-      TimeUnit.SECONDS,
-      ArrayBlockingQueue<Runnable>(64),
-      ThreadFactory { runnable -> Thread(runnable, "mpv-provider-cleanup").apply { isDaemon = true } },
-    )
+  // Two independent workers let one stuck provider read time out without poisoning every later read.
+  // A SynchronousQueue keeps total concurrency strictly bounded and reports saturation immediately.
+  private val providerReads = BoundedLane("mpv-provider-read", workerCount = 2)
+  private val cleanupLane = CleanupLane("mpv-provider-cleanup", workerCount = 2, queueCapacity = 64)
 
-  fun cleanupAsync(operation: () -> Unit) {
-    runCatching { cleanupExecutor.execute { runCatching(operation) } }
-  }
+  /** Returns false and reports the rejection when the bounded cleanup lane is saturated. */
+  fun cleanupAsync(operation: () -> Unit): Boolean = cleanupLane.submit(operation)
+
+  internal fun cleanupRejectionCount(): Long = cleanupLane.rejectionCount()
 
   suspend fun <T> query(
     timeoutMs: Long,
@@ -57,50 +60,112 @@ internal object BoundedProviderIo {
     fallback: T,
     onCancellation: () -> Unit = {},
     operation: () -> T,
-  ): T = providerReads.run(timeoutMs, fallback, onCancellation, operation)
+  ): T = readWithStatus(timeoutMs, fallback, onCancellation, operation).value
 
-  internal class BoundedLane(threadName: String) {
-    // Keep this single daemon worker alive: an expiring core worker can race a new
-    // SynchronousQueue submission and reject it while the old worker is exiting.
+  suspend fun <T> readWithStatus(
+    timeoutMs: Long,
+    fallback: T,
+    onCancellation: () -> Unit = {},
+    operation: () -> T,
+  ): ReadResult<T> = providerReads.runWithStatus(timeoutMs, fallback, onCancellation, operation)
+
+  internal class BoundedLane(
+    threadName: String,
+    workerCount: Int = 1,
+  ) {
     private val executor =
       ThreadPoolExecutor(
-        1,
-        1,
+        workerCount,
+        workerCount,
         30L,
         TimeUnit.SECONDS,
-        SynchronousQueue(),
+        SynchronousQueue<Runnable>(),
         ThreadFactory { runnable -> Thread(runnable, threadName).apply { isDaemon = true } },
       )
 
-    @OptIn(InternalCoroutinesApi::class)
     suspend fun <T> run(
       timeoutMs: Long,
       fallback: T,
-      onCancellation: () -> Unit,
+      onCancellation: () -> Unit = {},
       operation: () -> T,
-    ): T =
-      withTimeoutOrNull(timeoutMs.coerceAtLeast(1L)) {
-        suspendCancellableCoroutine { continuation ->
-          val task =
-            FutureTask<Unit> {
-              val result = try {
-                operation()
-              } catch (_: Exception) {
-                fallback
+    ): T = runWithStatus(timeoutMs, fallback, onCancellation, operation).value
+
+    @OptIn(InternalCoroutinesApi::class)
+    suspend fun <T> runWithStatus(
+      timeoutMs: Long,
+      fallback: T,
+      onCancellation: () -> Unit = {},
+      operation: () -> T,
+    ): ReadResult<T> {
+      val outcome =
+        withTimeoutOrNull(timeoutMs.coerceAtLeast(1L)) {
+          suspendCancellableCoroutine { continuation ->
+            val task =
+              FutureTask<Unit> {
+                val result =
+                  try {
+                    ReadResult(ReadStatus.COMPLETED, operation())
+                  } catch (error: Exception) {
+                    ReadResult(ReadStatus.FAILED, fallback, error)
+                  }
+                continuation.tryResume(result)?.let(continuation::completeResume)
+                Unit
               }
-              continuation.tryResume(result)?.let(continuation::completeResume)
-              Unit
+            continuation.invokeOnCancellation {
+              task.cancel(true)
+              cleanupAsync(onCancellation)
             }
-          continuation.invokeOnCancellation {
-            task.cancel(true)
-            cleanupAsync(onCancellation)
-          }
-          try {
-            executor.execute(task)
-          } catch (_: RejectedExecutionException) {
-            continuation.tryResume(fallback)?.let(continuation::completeResume)
+            try {
+              executor.execute(task)
+            } catch (_: RejectedExecutionException) {
+              continuation.tryResume(ReadResult(ReadStatus.SATURATED, fallback))
+                ?.let(continuation::completeResume)
+            }
           }
         }
-      } ?: fallback
+      return outcome ?: ReadResult(ReadStatus.TIMED_OUT, fallback)
+    }
+  }
+
+  /** Small fixed worker pool with a bounded queue; rejection is observable and counted. */
+  internal class CleanupLane(
+    threadName: String,
+    workerCount: Int,
+    queueCapacity: Int,
+  ) {
+    private val rejections = AtomicLong(0L)
+    private val failures = AtomicLong(0L)
+    private val queue: BlockingQueue<Runnable> =
+      if (queueCapacity == 0) SynchronousQueue() else ArrayBlockingQueue(queueCapacity)
+    private val executor =
+      ThreadPoolExecutor(
+        workerCount,
+        workerCount,
+        30L,
+        TimeUnit.SECONDS,
+        queue,
+        ThreadFactory { runnable -> Thread(runnable, threadName).apply { isDaemon = true } },
+      )
+
+    fun submit(operation: () -> Unit): Boolean =
+      try {
+        executor.execute {
+          try {
+            operation()
+          } catch (error: Exception) {
+            failures.incrementAndGet()
+            System.err.println("BoundedProviderIo cleanup operation failed: ${error.message}")
+          }
+        }
+        true
+      } catch (_: RejectedExecutionException) {
+        rejections.incrementAndGet()
+        System.err.println("BoundedProviderIo cleanup lane saturated; cleanup was not accepted")
+        false
+      }
+
+    fun rejectionCount(): Long = rejections.get()
+
+    internal fun failureCount(): Long = failures.get()
   }
 }

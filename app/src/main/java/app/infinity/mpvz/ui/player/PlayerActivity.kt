@@ -166,6 +166,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 import org.koin.android.ext.android.inject
@@ -201,6 +203,11 @@ internal fun preparePlaybackItemForLoad(
         ),
     )
   } ?: radioMimeType?.let { item.copy(mimeType = it) } ?: item
+
+internal object RuntimeScriptStagePolicy {
+  fun isUsable(targetIsFile: Boolean, copiedFromProvider: Boolean, cachedCopyAvailable: Boolean): Boolean =
+    targetIsFile && (copiedFromProvider || cachedCopyAvailable)
+}
 
 /**
  * Main player activity that handles video playback using the MPV library.
@@ -935,17 +942,17 @@ class PlayerActivity :
                   bindMpvSessionCallbacksOnMain()
                 }
                 if (!stillCurrent()) return null
-                val generation = mpvInterpolationNativeWork.execute {
-                  PlaybackSession.load(
-                    item = item,
-                    verifyNativePathAfterRestart = true,
-                    positionRestoreOverride = PlaybackPositionRestoreOverride(state.positionSeconds, paused = true),
-                    onGenerationReserved = { token ->
-                      loadGeneration = token
-                      mpvInterpolationReloadGeneration = token
-                      mpvAspectLoadRequestGeneration[token] = request
-                    },
-                    commit = { nativeLoad ->
+                val generation = PlaybackSession.loadWithBoundedProviderResolution(
+                  item = item,
+                  verifyNativePathAfterRestart = true,
+                  positionRestoreOverride = PlaybackPositionRestoreOverride(state.positionSeconds, paused = true),
+                  onGenerationReserved = { token ->
+                    loadGeneration = token
+                    mpvInterpolationReloadGeneration = token
+                    mpvAspectLoadRequestGeneration[token] = request
+                  },
+                  commit = { nativeLoad ->
+                    mpvInterpolationNativeWork.execute {
                       if (!stillCurrent()) -1L
                       else nativeLoad().also { token ->
                         if (token >= 0L) {
@@ -953,9 +960,9 @@ class PlayerActivity :
                           mpvInterpolationReloadGeneration = token
                         }
                       }
-                    },
-                  )
-                }
+                    }
+                  },
+                )
                 return generation.takeIf { it >= 0L }
               }
               override suspend fun awaitAndRestore(state: MpvInterpolationRestartState, generation: Long): Boolean {
@@ -1565,7 +1572,7 @@ class PlayerActivity :
 
   private data class ExternalM3uPreflight(
     val generation: Long,
-    val sourceUri: String,
+    val sourceKey: String,
     val result: M3UParseResult,
   )
 
@@ -1584,6 +1591,7 @@ class PlayerActivity :
 
   private val mpvAssetPreparationGeneration = AtomicLong(0L)
   private val mpvScriptAssetGeneration = AtomicLong(0L)
+  private val mpvScriptAssetLoadMutex = Mutex()
   private val subtitleFontAssetGeneration = AtomicLong(0L)
   private var mpvAssetPreparationJob: Job? = null
   private var mpvCorePreparationJob: Deferred<String?>? = null
@@ -1684,7 +1692,7 @@ class PlayerActivity :
         BoundedProviderIo.query(
           timeoutMs = M3UParser.PROVIDER_QUERY_TIMEOUT_MS,
           fallback = null,
-        ) { getDisplayNameFromUri(contentUri) }
+        ) { getDisplayNameFromUri(contentUri.normalizeScheme()) }
       }
     return providerName?.takeIf { it.isNotBlank() }
       ?: fallback.takeIf { it.isNotBlank() }
@@ -1748,7 +1756,7 @@ class PlayerActivity :
     if (!classificationAttempted) return
     val result = parsed ?: M3UParseResult.Error("M3U preflight timed out")
     if (generation != m3uPreflightGeneration) return
-    preflightM3uParse = ExternalM3uPreflight(generation, playableUri, result)
+    preflightM3uParse = ExternalM3uPreflight(generation, M3UParser.sourceCacheKey(playableUri), result)
     if (result is M3UParseResult.Success && result.items.isNotEmpty() &&
       M3URoutingPolicy.route(result) == M3URoute.MUSIC &&
       !M3UParser.shouldPlayHlsDirectly(result)
@@ -1840,17 +1848,16 @@ class PlayerActivity :
           val handoffPlayableUri = currentPlayableUri?.takeIf { it.isNotBlank() }
           val handoffQueueStableId = currentQueueItem?.stableId
           val handoffQueueOriginalUri = currentQueueItem?.originalUri
-          val handoffQueueIndex = PlaybackSession.queue.value.currentIndex
-          val isCurrentHandoffRequest = {
-            activeEngineMode == outgoingEngine &&
-              isCurrentEngineHandoffRequest(
-                handoffRequestGeneration,
-                handoffMediaIdentifier,
-                handoffPlayableUri,
-                handoffQueueStableId,
-                handoffQueueOriginalUri,
-              )
+          val isCurrentHandoffIdentity = {
+            isCurrentEngineHandoffRequest(
+              handoffRequestGeneration,
+              handoffMediaIdentifier,
+              handoffPlayableUri,
+              handoffQueueStableId,
+              handoffQueueOriginalUri,
+            )
           }
+          val isCurrentHandoffRequest = { activeEngineMode == outgoingEngine && isCurrentHandoffIdentity() }
           val currentNativeVideoHint = currentQueueItem?.stableId == nativeVideoHintMediaId
           val effectiveEngine =
             when {
@@ -1988,12 +1995,20 @@ class PlayerActivity :
                   nativeFirstFrame.first { it }
                   true
                 } == true
-                if (!isCurrentHandoffRequest() || activeEngineMode != PlaybackEngineMode.NATIVE) {
+                if (!PlaybackEngineHandoffPolicy.canRestoreMpvAfterNativeFailure(
+                    currentRequestIdentity = isCurrentHandoffIdentity(),
+                    nativeEngineOwnsRenderer = activeEngineMode == PlaybackEngineMode.NATIVE,
+                  )
+                ) {
                   return@launch
                 }
                 if (!rendered) {
                   nativeEngineOrNull()?.stop()
-                  if (isCurrentHandoffRequest()) {
+                  if (PlaybackEngineHandoffPolicy.canRestoreMpvAfterNativeFailure(
+                      currentRequestIdentity = isCurrentHandoffIdentity(),
+                      nativeEngineOwnsRenderer = activeEngineMode == PlaybackEngineMode.NATIVE,
+                    )
+                  ) {
                     activeEngineMode = PlaybackEngineMode.MPV
                     viewModel.setNativeEngineActive(false)
                     PlaybackSession.setPropertyBoolean("mute", false)
@@ -2013,6 +2028,28 @@ class PlayerActivity :
                 binding.player.visibility = View.GONE
               }
             } else if (mpvInitialized) {
+              if (!isCurrentHandoffIdentity()) return@collect
+              val queueAtCommit = PlaybackSession.queue.value
+              val queueItem = queueAtCommit.currentItem
+              if (queueItem?.stableId != handoffQueueStableId ||
+                queueItem?.originalUri != handoffQueueOriginalUri
+              ) {
+                Log.i(TAG, "Engine handoff aborted because the current queue item changed before commit")
+                return@collect
+              }
+              val queueIndexAtCommit = queueAtCommit.currentIndex
+              val queueItemAtIndex = queueAtCommit.items.getOrNull(queueIndexAtCommit)
+              val expectedPlaylistUri = queueItem?.originalUri
+                ?.let { Uri.parse(NetworkPlaybackUri.normalize(it)).normalizeScheme().toString() }
+              val handoffIndex = PlaybackEngineHandoffPolicy.resolveQueueIndex(
+                currentIndex = queueIndexAtCommit,
+                expectedStableId = handoffQueueStableId,
+                currentStableId = queueItemAtIndex?.stableId,
+                expectedOriginalUri = handoffQueueOriginalUri,
+                currentOriginalUri = queueItemAtIndex?.originalUri,
+                expectedPlaylistUri = expectedPlaylistUri,
+                currentPlaylistUri = playlist.getOrNull(queueIndexAtCommit)?.normalizeScheme()?.toString(),
+              )
               activeEngineMode = PlaybackEngineMode.MPV
               viewModel.setNativeEngineActive(false)
               forceMpvAudioTrackAutoOnNextLoad = outgoingEngine == PlaybackEngineMode.NATIVE
@@ -2030,10 +2067,7 @@ class PlayerActivity :
               nativeEngineOrNull()?.stop()
               // This is a renderer handoff, not a user-selected queue change. Avoid the normal
               // loader's outgoing-item stop/report path, which can race the new MPV load.
-              val queueItem = currentQueueItem
               queueItem?.torrentFileIndex?.let { intent.putExtra("torrent_file_index", it) }
-              val handoffIndex = handoffQueueIndex
-                .takeIf { it in playlist.indices }
               val isTorrentHandoff =
                 activeTorrentSourceUri != null ||
                   queueItem?.torrentFileIndex != null ||
@@ -2407,9 +2441,7 @@ class PlayerActivity :
           return@collect
         }
         val addedScripts = newScripts - previousScripts
-        addedScripts.forEach { scriptName ->
-          loadScriptAtRuntime(scriptName)
-        }
+        if (addedScripts.isNotEmpty()) loadScriptsAtRuntime(addedScripts.toList())
         previousScripts = newScripts
       }
     }
@@ -2417,10 +2449,10 @@ class PlayerActivity :
     lifecycleScope.launch {
       advancedPreferences.enableLuaScripts.changes().drop(1).collect { enabled ->
         if (enabled) {
-          advancedPreferences.selectedLuaScripts.get().forEach { scriptName ->
-            loadScriptAtRuntime(scriptName)
-          }
-          if (advancedPreferences.selectedLuaScripts.get().isEmpty()) {
+          val selectedScripts = advancedPreferences.selectedLuaScripts.get()
+          if (selectedScripts.isNotEmpty()) {
+            loadScriptsAtRuntime(selectedScripts.toList())
+          } else {
             viewModel.showToast("Scripts enabled")
           }
         } else {
@@ -5035,27 +5067,37 @@ class PlayerActivity :
     if (!isMpvAssetPreparationCurrent(ownerToken, generation, generationState)) return false
 
     val publisher = MpvAssetSetPublisher(filesDir, File(filesDir, ".mpv-startup-staging"))
-    var stageRoot: File? = null
-    var retainStage = false
-    try {
-      val stage = publisher.newStage(ownerToken, generation)
-      stageRoot = stage
-      if (!isMpvAssetPreparationCurrent(ownerToken, generation, generationState)) return false
-      val pending = PendingMpvAssetPreferenceUpdates()
-      if (!prepare(stage, pending)) return false
-      if (!isMpvAssetPreparationCurrent(ownerToken, generation, generationState)) return false
-      return publishMpvAssetStage(publisher, stage, ownerToken, generation, generationState, pending, publishPaths)
-    } catch (error: MpvAssetSetPublishException) {
-      retainStage = error.retainStage
-      Log.e(
-        TAG,
-        "MPV asset-set publish failed${if (retainStage) "; recovery stage retained at ${stageRoot?.absolutePath}" else ""}",
-        error,
-      )
-      return false
-    } finally {
-      if (!retainStage) stageRoot?.deleteRecursively()
+    for (attempt in 0..1) {
+      var stageRoot: File? = null
+      var retainStage = false
+      var retryRevisionConflict = false
+      try {
+        val stage = publisher.newStage(ownerToken, generation)
+        stageRoot = stage
+        if (!isMpvAssetPreparationCurrent(ownerToken, generation, generationState)) return false
+        val pending = PendingMpvAssetPreferenceUpdates()
+        if (!prepare(stage, pending)) return false
+        if (!isMpvAssetPreparationCurrent(ownerToken, generation, generationState)) return false
+        if (publishMpvAssetStage(publisher, stage, ownerToken, generation, generationState, pending, publishPaths)) {
+          return true
+        }
+        retryRevisionConflict =
+          attempt == 0 && isMpvAssetPreparationCurrent(ownerToken, generation, generationState)
+        if (retryRevisionConflict) Log.i(TAG, "MPV assets changed during staging; retrying once from the current set")
+      } catch (error: MpvAssetSetPublishException) {
+        retainStage = error.retainStage
+        Log.e(
+          TAG,
+          "MPV asset-set publish failed${if (retainStage) "; recovery stage retained at ${stageRoot?.absolutePath}" else ""}",
+          error,
+        )
+        return false
+      } finally {
+        if (!retainStage) stageRoot?.deleteRecursively()
+      }
+      if (!retryRevisionConflict) return false
     }
+    return false
   }
 
   private fun publishMpvAssetStage(
@@ -5410,70 +5452,108 @@ class PlayerActivity :
     target.writeText(content)
   }
 
-  /**
-   * Loads a specific Lua script at runtime without restarting the player.
-   * Finds the script in the user's MPV directory, copies it to internal storage,
-   * and commands MPV to load it.
-   */
-  private fun loadScriptAtRuntime(scriptName: String) {
+  /** Stages and loads a selection as one generation so parallel selections cannot supersede one another. */
+  private fun loadScriptsAtRuntime(scriptNames: List<String>) {
     if (!mpvInitialized || isFinishing) return
 
+    val requestedScripts =
+      scriptNames
+        .map(String::trim)
+        .filter { it.isNotBlank() && File(it).name == it && it != "." && it != ".." }
+        .distinct()
+    if (requestedScripts.isEmpty()) return
     val mpvConfStorageUri = advancedPreferences.mpvConfStorageUri.get()
     if (mpvConfStorageUri.isBlank()) return
 
     val ownerToken = playbackOwnerToken
-    val generation = mpvScriptAssetGeneration.incrementAndGet()
     lifecycleScope.launch(Dispatchers.IO) {
-      runCatching {
-        var scriptFound = false
-        val published =
-          runStagedMpvAssetUpdate(
-            generation,
-            generationState = mpvScriptAssetGeneration,
-            publishPaths = listOf("scripts", "script-modules", "script-opts"),
-          ) { assetRoot, _ ->
-            val tree = openPersistedTreeDocument(this@PlayerActivity, mpvConfStorageUri)
-              ?: return@runStagedMpvAssetUpdate false
-            val rootChildren = listTreeFilesSafely(tree)
-            val scriptsSubdir = findSubdirCaseInsensitive(tree, "scripts", rootChildren)
-            val scriptsDir = scriptsSubdir ?: tree
-            File(assetRoot, "scripts").mkdirs()
-            syncScriptSupportDirectories(scriptsSubdir, assetRoot)
-            syncScriptOpts(tree, rootChildren, assetRoot)
+      mpvScriptAssetLoadMutex.withLock {
+        val generation = mpvScriptAssetGeneration.incrementAndGet()
+        runCatching {
+          var stagedScriptNames = emptyList<String>()
+          val published =
+            runStagedMpvAssetUpdate(
+              generation,
+              generationState = mpvScriptAssetGeneration,
+              publishPaths = listOf("scripts", "script-modules", "script-opts"),
+            ) { assetRoot, _ ->
+              val tree = openPersistedTreeDocument(this@PlayerActivity, mpvConfStorageUri)
+                ?: return@runStagedMpvAssetUpdate false
+              val rootChildren = listTreeFilesSafely(tree)
+              val scriptsSubdir = findSubdirCaseInsensitive(tree, "scripts", rootChildren)
+              val scriptsDir = scriptsSubdir ?: tree
+              val stagedScriptsDir = File(assetRoot, "scripts").apply { mkdirs() }
+              syncScriptSupportDirectories(scriptsSubdir, assetRoot)
+              syncScriptOpts(tree, rootChildren, assetRoot)
 
-            val scriptFile =
-              listTreeFilesSafely(scriptsDir).firstOrNull { it.name == scriptName }
-            if (scriptFile != null) {
-              val targetFile = File(File(assetRoot, "scripts"), scriptName)
-              copyDocumentToFileIfNeeded(scriptFile, targetFile)
-              scriptFound = true
-            }
-            true
-          }
-        if (!published || !scriptFound) return@launch
-
-        withContext(Dispatchers.Main) {
-          PlaybackActivityOwner.runIfOwner(ownerToken, false) {
-            if (!canIssueMpvCommands()) {
-              false
-            } else {
-              PlaybackSession.command("load-script", File(filesDir, "scripts/$scriptName").absolutePath)
-              viewModel.showToast("Loaded script: $scriptName")
+              val stagedNames = mutableListOf<String>()
+              for (scriptName in requestedScripts) {
+                val targetFile = File(stagedScriptsDir, scriptName)
+                var copiedFromProvider = false
+                var cachedCopyAvailable = targetFile.isFile
+                val cachedBackup =
+                  targetFile.takeIf { it.isFile }?.let { cachedFile ->
+                    val backup = File(File(assetRoot, ".runtime-script-cache"), scriptName)
+                    backup.also {
+                      backup.parentFile?.mkdirs()
+                    }
+                    runCatching { cachedFile.copyTo(backup, overwrite = true) }
+                      .getOrNull()
+                      ?.takeIf { it.isFile }
+                  }
+                val scriptFile = listTreeFilesSafely(scriptsDir).firstOrNull { it.name == scriptName }
+                if (scriptFile != null && (targetFile.isFile.not() || cachedBackup != null)) {
+                  val copyResult = runCatching { copyDocumentToFileIfNeeded(scriptFile, targetFile) }
+                  if (copyResult.isFailure) {
+                    Log.w(TAG, "Unable to refresh runtime script $scriptName", copyResult.exceptionOrNull())
+                    targetFile.delete()
+                    cachedCopyAvailable = cachedBackup?.let { backup ->
+                      runCatching { backup.copyTo(targetFile, overwrite = true) }.isSuccess
+                    } == true
+                    if (!cachedCopyAvailable) targetFile.delete()
+                  } else if (copyResult.getOrDefault(false)) {
+                    copiedFromProvider = true
+                    cachedCopyAvailable = false
+                  }
+                }
+                if (!RuntimeScriptStagePolicy.isUsable(targetFile.isFile, copiedFromProvider, cachedCopyAvailable)) {
+                  return@runStagedMpvAssetUpdate false
+                }
+                stagedNames += scriptName
+              }
+              stagedScriptNames = stagedNames
               true
             }
+          if (!published || stagedScriptNames.isEmpty()) return@withLock
+
+          withContext(Dispatchers.Main) {
+            PlaybackActivityOwner.runIfOwner(ownerToken, false) {
+              if (!canIssueMpvCommands() || mpvScriptAssetGeneration.get() != generation) {
+                false
+              } else {
+                stagedScriptNames.forEach { scriptName ->
+                  PlaybackSession.command("load-script", File(filesDir, "scripts/$scriptName").absolutePath)
+                }
+                viewModel.showToast(
+                  if (stagedScriptNames.size == 1) "Loaded script: ${stagedScriptNames.single()}"
+                  else "Loaded scripts: ${stagedScriptNames.joinToString()}",
+                )
+                true
+              }
+            }
           }
-        }
-      }.onFailure { error ->
-        if (error is CancellationException) throw error
-        Log.e(TAG, "Error loading script at runtime: $scriptName", error)
-        withContext(Dispatchers.Main) {
-          PlaybackActivityOwner.runIfOwner(ownerToken, false) {
-            android.widget.Toast.makeText(
-              this@PlayerActivity,
-              "Failed to load script: ${error.message}",
-              android.widget.Toast.LENGTH_LONG,
-            ).show()
-            true
+        }.onFailure { error ->
+          if (error is CancellationException) throw error
+          Log.e(TAG, "Error loading runtime scripts: ${requestedScripts.joinToString()}", error)
+          withContext(Dispatchers.Main) {
+            PlaybackActivityOwner.runIfOwner(ownerToken, false) {
+              android.widget.Toast.makeText(
+                this@PlayerActivity,
+                "Failed to load script: ${error.message}",
+                android.widget.Toast.LENGTH_LONG,
+              ).show()
+              true
+            }
           }
         }
       }
@@ -6260,7 +6340,7 @@ class PlayerActivity :
     runCatching {
       contentResolver
         .query(
-          uri,
+          uri.normalizeScheme(),
           arrayOf(MediaStore.MediaColumns.DISPLAY_NAME),
           null,
           null,
@@ -6279,7 +6359,7 @@ class PlayerActivity :
    * @return A playable URI string, or null if unable to resolve
    */
   private fun getPlayableUri(intent: Intent): String? {
-    val sourceUri = extractUriFromIntent(intent)
+    val sourceUri = extractUriFromIntent(intent)?.normalizeScheme()
     sourceUri
       ?.toString()
       ?.takeIf { source -> isTorrentSource(source, intent.type) }
@@ -8340,7 +8420,7 @@ class PlayerActivity :
           val expandedDynamicM3u =
             expandM3uForRequest &&
               loadDynamicM3uPlaylist(
-                uriString = originalUri ?: playableUri,
+                uriString = playableUri,
                 sourceIntent = sourceIntent,
                 requestGeneration = requestGeneration,
               )
@@ -8766,7 +8846,7 @@ class PlayerActivity :
     }
     ensureCurrentMediaRequest(requestGeneration)
     val generation =
-      PlaybackSession.load(
+      PlaybackSession.loadWithBoundedProviderResolution(
         item = playbackItem,
         restoreSavedPosition = restoreSavedPosition,
         positionRestoreOverride = positionRestoreOverride,
@@ -11284,7 +11364,7 @@ class PlayerActivity :
           httpClient = networkHttpClient,
         )
       uriString.startsWith("content://", ignoreCase = true) || uriString.startsWith("file://", ignoreCase = true) ->
-        M3UParser.parseFromUri(this, Uri.parse(uriString))
+        M3UParser.parseFromUri(this, Uri.parse(uriString).normalizeScheme())
       else -> {
         val file = File(uriString)
         if (!file.isFile) return M3UParseResult.Error("Playlist file not found")
@@ -11308,7 +11388,9 @@ class PlayerActivity :
     // here to reuse its result and avoid a second network/provider read.
     m3uPreflightJob?.join()
     val cachedPreflight =
-      preflightM3uParse?.takeIf { it.generation == m3uPreflightGeneration && it.sourceUri == uriString }
+      preflightM3uParse?.takeIf {
+        it.generation == m3uPreflightGeneration && it.sourceKey == M3UParser.sourceCacheKey(uriString)
+      }
     val parseResult =
       when (val cachedResult = cachedPreflight?.result) {
         is M3UParseResult.Success -> cachedResult

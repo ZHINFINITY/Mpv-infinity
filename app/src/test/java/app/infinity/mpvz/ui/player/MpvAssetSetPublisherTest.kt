@@ -78,4 +78,88 @@ class MpvAssetSetPublisherTest {
       root.deleteRecursively()
     }
   }
+
+  @Test
+  fun stalePathCannotOverwriteNewerAssetsButUnchangedPathsMayStillPublish() {
+    val root = Files.createTempDirectory("mpv-assets-revision-test").toFile()
+    try {
+      val live = File(root, "live").apply { mkdirs() }
+      File(live, "scripts/current.lua").apply { parentFile.mkdirs(); writeText("old") }
+      val publisher = MpvAssetSetPublisher(live, File(root, "stages"))
+      val stale = publisher.newStage(ownerToken = 43L, generation = 1L)
+      File(stale, "scripts/current.lua").writeText("stale")
+      File(stale, "input.conf").writeText("unrelated")
+      val current = publisher.newStage(ownerToken = 43L, generation = 2L)
+      File(current, "scripts/current.lua").writeText("newer")
+
+      assertTrue(publisher.publish(current, isCurrent = { true }, paths = listOf("scripts")))
+      assertFalse(publisher.publish(stale, isCurrent = { true }, paths = listOf("scripts")))
+      assertTrue(publisher.publish(stale, isCurrent = { true }, paths = listOf("input.conf")))
+      assertEquals("newer", File(live, "scripts/current.lua").readText())
+      assertEquals("unrelated", File(live, "input.conf").readText())
+    } finally {
+      root.deleteRecursively()
+    }
+  }
+
+  @Test
+  fun directManagedPathMutationFencesOlderStagesWithoutBlockingUnrelatedPaths() {
+    val root = Files.createTempDirectory("mpv-assets-direct-mutation-test").toFile()
+    try {
+      val live = File(root, "live").apply { mkdirs() }
+      File(live, "scripts/current.lua").apply { parentFile.mkdirs(); writeText("old") }
+      val publisher = MpvAssetSetPublisher(live, File(root, "stages"))
+      val stale = publisher.newStage(ownerToken = 45L, generation = 1L)
+      File(stale, "scripts/current.lua").writeText("stale")
+      File(stale, "input.conf").writeText("unrelated")
+
+      MpvAssetSetPublisher.withLivePathMutation(live, listOf("scripts")) {
+        File(live, "scripts/current.lua").writeText("custom-button")
+      }
+
+      assertFalse(publisher.publish(stale, isCurrent = { true }, paths = listOf("scripts")))
+      assertTrue(publisher.publish(stale, isCurrent = { true }, paths = listOf("input.conf")))
+      assertEquals("custom-button", File(live, "scripts/current.lua").readText())
+      assertEquals("unrelated", File(live, "input.conf").readText())
+    } finally {
+      root.deleteRecursively()
+    }
+  }
+
+  @Test
+  fun rollbackAttemptsEveryBackupRestoreAfterOneRestoreFails() {
+    val root = Files.createTempDirectory("mpv-assets-rollback-all-test").toFile()
+    try {
+      val live = File(root, "live").apply { mkdirs() }
+      File(live, "mpv.conf").writeText("old-mpv")
+      File(live, "input.conf").writeText("old-input")
+      val publisher = MpvAssetSetPublisher(live, File(root, "stages")) { from, to ->
+        val isStageInputInstall = from.name == "input.conf" &&
+          from.parentFile?.name?.startsWith("mpv-assets-owner-") == true &&
+          to == File(live, "input.conf")
+        val isMpvRestore = from.parentFile?.name == ".rollback" &&
+          from.name == "mpv.conf" && to == File(live, "mpv.conf")
+        if (isStageInputInstall) throw IOException("injected install failure")
+        if (isMpvRestore) throw IOException("injected restore failure")
+        to.parentFile?.let { if (!it.exists()) it.mkdirs() }
+        if (!from.renameTo(to)) throw IOException("unable to move $from to $to")
+      }
+      val stage = publisher.newStage(ownerToken = 44L, generation = 1L)
+      File(stage, "mpv.conf").writeText("new-mpv")
+      File(stage, "input.conf").writeText("new-input")
+
+      try {
+        publisher.publish(stage, isCurrent = { true }, paths = listOf("mpv.conf", "input.conf"))
+        throw AssertionError("expected incomplete rollback")
+      } catch (expected: MpvAssetSetPublishException) {
+        assertTrue(expected.retainStage)
+      }
+
+      assertEquals("old-input", File(live, "input.conf").readText())
+      assertFalse(File(live, "mpv.conf").exists())
+      assertTrue(File(stage, ".rollback/mpv.conf").isFile)
+    } finally {
+      root.deleteRecursively()
+    }
+  }
 }

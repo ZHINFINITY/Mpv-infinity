@@ -41,4 +41,48 @@ class PlaybackEngineHandoffPolicyTest {
       ),
     )
   }
+
+  @Test
+  fun nativeTimeoutRestoresMpvOnlyForTheSameLiveRequestAndRendererOwner() {
+    assertTrue(PlaybackEngineHandoffPolicy.canRestoreMpvAfterNativeFailure(true, true))
+    assertFalse(PlaybackEngineHandoffPolicy.canRestoreMpvAfterNativeFailure(false, true))
+    assertFalse(PlaybackEngineHandoffPolicy.canRestoreMpvAfterNativeFailure(true, false))
+  }
+
+  @Test
+  fun resolvesTheCurrentQueueIndexOnlyWhenEveryIdentityStillMatches() {
+    assertTrue(
+      PlaybackEngineHandoffPolicy.resolveQueueIndex(
+        currentIndex = 1,
+        expectedStableId = "queue-a",
+        currentStableId = "queue-a",
+        expectedOriginalUri = "content://original/a",
+        currentOriginalUri = "content://original/a",
+        expectedPlaylistUri = "content://original/a",
+        currentPlaylistUri = "content://original/a",
+      ) == 1,
+    )
+    assertFalse(
+      PlaybackEngineHandoffPolicy.resolveQueueIndex(
+        currentIndex = 0,
+        expectedStableId = "queue-a",
+        currentStableId = "queue-b",
+        expectedOriginalUri = "content://original/a",
+        currentOriginalUri = "content://original/b",
+        expectedPlaylistUri = "content://original/a",
+        currentPlaylistUri = "content://original/b",
+      ) != null,
+    )
+    assertFalse(
+      PlaybackEngineHandoffPolicy.resolveQueueIndex(
+        currentIndex = 1,
+        expectedStableId = "queue-a",
+        currentStableId = "queue-a",
+        expectedOriginalUri = "content://original/a",
+        currentOriginalUri = "content://original/a",
+        expectedPlaylistUri = "content://original/a",
+        currentPlaylistUri = "content://original/b",
+      ) != null,
+    )
+  }
 }

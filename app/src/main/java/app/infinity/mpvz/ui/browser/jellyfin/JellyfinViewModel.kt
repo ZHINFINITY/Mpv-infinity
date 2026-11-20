@@ -238,7 +238,7 @@ class JellyfinViewModel(
       invalidateListRequests()
       loadHomeDashboard(active)
     } else {
-      loadLibraryItems(active, library, resetPagination = true)
+      reloadLibraryItems(active, library)
     }
   }
 
@@ -249,8 +249,7 @@ class JellyfinViewModel(
       loadHomeDashboard(active)
       loadDashboardJob?.join()
     } else {
-      loadLibraryItems(active, library, resetPagination = true)
-      loadItemsJob?.join()
+      reloadLibraryItems(active, library)?.join()
     }
   }
 
@@ -620,7 +619,7 @@ class JellyfinViewModel(
     _uiState.update { it.copy(sortBy = sortBy, sortOrder = sortOrder) }
     val active = _uiState.value.activeServer ?: return
     val library = _uiState.value.openLibrary ?: return
-    loadLibraryItems(active, library, resetPagination = true)
+    reloadLibraryItems(active, library)
   }
 
   fun toggleUnplayedOnly() {
@@ -628,7 +627,7 @@ class JellyfinViewModel(
     _uiState.update { it.copy(isUnplayedOnly = newFilter) }
     val active = _uiState.value.activeServer ?: return
     val library = _uiState.value.openLibrary ?: return
-    loadLibraryItems(active, library, resetPagination = true)
+    reloadLibraryItems(active, library)
   }
 
   fun navigateToItem(item: JellyfinItem) {
@@ -691,7 +690,7 @@ class JellyfinViewModel(
     _uiState.update { it.copy(selectedGenreFilter = genre) }
     val active = _uiState.value.activeServer ?: return
     val library = _uiState.value.openLibrary ?: return
-    loadLibraryItems(active, library, resetPagination = true)
+    reloadLibraryItems(active, library)
   }
 
   fun navigateBack(): Boolean {
@@ -1003,6 +1002,19 @@ class JellyfinViewModel(
       else -> "Movie,Series"
     }
 
+  private fun reloadLibraryItems(
+    server: JellyfinServer,
+    library: JellyfinLibraryView,
+  ): Job? {
+    val state = _uiState.value
+    if (state.searchQuery.isNotBlank()) {
+      performSearch(state.searchQuery, debounceMs = 0L, startIndex = 0)
+      return searchJob
+    }
+    loadLibraryItems(server, library, resetPagination = true)
+    return loadItemsJob
+  }
+
   private fun loadLibraryItems(
     server: JellyfinServer,
     library: JellyfinLibraryView,
@@ -1155,6 +1167,8 @@ class JellyfinViewModel(
     val searchCategory = requestedState.searchCategory
     val sortBy = requestedState.sortBy
     val sortOrder = requestedState.sortOrder
+    val isUnplayedOnly = requestedState.isUnplayedOnly
+    val selectedGenreFilter = requestedState.selectedGenreFilter
     val currentItems = if (offset == 0) emptyList() else requestedState.currentItems
     _uiState.update {
       it.copy(
@@ -1185,6 +1199,8 @@ class JellyfinViewModel(
             includeItemTypes = includeTypes,
             sortBy = sortBy,
             sortOrder = sortOrder,
+            isPlayed = if (isUnplayedOnly) false else null,
+            genres = selectedGenreFilter,
             startIndex = offset,
             limit = 100,
           )

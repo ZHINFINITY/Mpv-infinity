@@ -18,6 +18,7 @@ import app.infinity.mpvz.data.network.proxy.HlsStreamingProxy
 import app.infinity.mpvz.data.network.proxy.NetworkStreamingProxy
 import app.infinity.mpvz.domain.network.NetworkPlaybackUri
 import app.infinity.mpvz.preferences.MpvConfigOverridePolicy
+import app.infinity.mpvz.utils.media.BoundedProviderIo
 import app.infinity.mpvz.utils.media.RadioStreamProbe
 import `is`.xyz.mpv.MPVLib
 import `is`.xyz.mpv.MPVNode
@@ -36,10 +37,13 @@ import kotlinx.coroutines.withTimeoutOrNull
 import java.util.ArrayDeque
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArraySet
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 
@@ -340,15 +344,30 @@ object PlaybackSession : MPVLib.EventObserver {
     val durationSeconds: Double?,
   )
 
-  private val mutableDurationSamples = MutableSharedFlow<DurationSample>(replay = 1, extraBufferCapacity = 4)
+  private val mutableDurationSamples =
+    MutableSharedFlow<DurationSample>(replay = 1, extraBufferCapacity = 4, onBufferOverflow = BufferOverflow.DROP_OLDEST)
   val durationSamples: SharedFlow<DurationSample> = mutableDurationSamples.asSharedFlow()
 
-  private fun publishDurationSample(durationSeconds: Double?) {
-    val snapshot = _state.value
-    val item = snapshot.currentItem ?: queue.value.currentItem ?: return
-    mutableDurationSamples.tryEmit(
-      DurationSample(snapshot.generation, item.stableId, item.originalUri, durationSeconds),
-    )
+  private fun publishDurationSample(durationSeconds: Double?) = nativeLock.withLock {
+    publishDurationSampleLocked(durationSeconds)
+  }
+
+  private fun publishDurationSampleLocked(durationSeconds: Double?) {
+    val state = _state.value
+    val loaded = loadedPlaybackItem ?: return
+    val selected = _queue.value.currentItem
+    if (!PlaybackDurationPolicy.isCurrentLoadedItem(
+        loadedGeneration = loadedGeneration,
+        loadedStableId = loaded.stableId,
+        loadedOriginalUri = loaded.originalUri,
+        stateGeneration = state.generation,
+        stateStableId = state.currentItem?.stableId,
+        stateOriginalUri = state.currentItem?.originalUri,
+        selectedStableId = selected?.stableId,
+        selectedOriginalUri = selected?.originalUri,
+      )
+    ) return
+    mutableDurationSamples.tryEmit(DurationSample(loadedGeneration, loaded.stableId, loaded.originalUri, durationSeconds))
   }
 
   data class BackgroundVideoTrackSelection(val mediaId: String, val trackId: Int)
@@ -865,8 +884,56 @@ object PlaybackSession : MPVLib.EventObserver {
     commit: ((() -> Long) -> Long)? = null,
     verifyNativePathAfterRestart: Boolean = false,
     onGenerationReserved: ((Long) -> Unit)? = null,
+  ): Long =
+    loadResolved(
+      item,
+      resolvePlayableUri(item),
+      restoreSavedPosition,
+      positionRestoreOverride,
+      initialPositionSeconds,
+      flattenEditions,
+      disableWebExtraction,
+      commit,
+      verifyNativePathAfterRestart,
+      onGenerationReserved,
+    )
+
+  suspend fun loadWithBoundedProviderResolution(
+    item: PlaybackItem,
+    restoreSavedPosition: Boolean = false,
+    positionRestoreOverride: PlaybackPositionRestoreOverride? = null,
+    initialPositionSeconds: Double? = null,
+    flattenEditions: Boolean = false,
+    disableWebExtraction: Boolean = app.infinity.mpvz.utils.media.RadioStreamProbe.cachedAudioMimeType(item.playableUri, item.headers) != null,
+    commit: ((() -> Long) -> Long)? = null,
+    verifyNativePathAfterRestart: Boolean = false,
+    onGenerationReserved: ((Long) -> Unit)? = null,
+  ): Long =
+    loadResolved(
+      item,
+      resolvePlayableUriBounded(item),
+      restoreSavedPosition,
+      positionRestoreOverride,
+      initialPositionSeconds,
+      flattenEditions,
+      disableWebExtraction,
+      commit,
+      verifyNativePathAfterRestart,
+      onGenerationReserved,
+    )
+
+  private fun loadResolved(
+    item: PlaybackItem,
+    resolved: ResolvedPlayable,
+    restoreSavedPosition: Boolean,
+    positionRestoreOverride: PlaybackPositionRestoreOverride?,
+    initialPositionSeconds: Double?,
+    flattenEditions: Boolean,
+    disableWebExtraction: Boolean,
+    commit: ((() -> Long) -> Long)?,
+    verifyNativePathAfterRestart: Boolean,
+    onGenerationReserved: ((Long) -> Unit)?,
   ): Long {
-    val resolved = resolvePlayableUri(item)
     var nativeCommitInvoked = false
     return try {
       var previous: NetworkStreamRegistration? = null
@@ -1776,6 +1843,7 @@ object PlaybackSession : MPVLib.EventObserver {
   private fun publishTimelinePropertiesLocked() {
     TIMELINE_PROPERTIES.forEach { property ->
       val value = MPVLib.getPropertyDouble(property)
+      if (property == "duration") publishDurationSampleLocked(value)
       propInt.emit(property, value?.toInt())
       propLong.emit(property, value?.toLong())
       propDouble.emit(property, value)
@@ -2134,6 +2202,103 @@ object PlaybackSession : MPVLib.EventObserver {
     if (item.playableUri.startsWith("content://")) return ResolvedPlayable(item.playableUri)
     if (item.originalUri.startsWith("content://")) return ResolvedPlayable(item.originalUri)
     return ResolvedPlayable(item.playableUri)
+  }
+
+  private suspend fun resolvePlayableUriBounded(item: PlaybackItem): ResolvedPlayable {
+    val reference =
+      NetworkPlaybackUri.parse(item.playableUri)
+        ?: item.networkSource?.let { source ->
+          NetworkPlaybackUri.parse(NetworkPlaybackUri.create(source.connectionId, source.relativePath))
+        }
+    if (reference != null) {
+      val proxy = NetworkStreamingProxy.getInstance()
+      val streamId = "playback-${streamSequence.incrementAndGet()}"
+      val uri =
+        proxy.registerStream(
+          streamId = streamId,
+          connectionId = reference.connectionId,
+          filePath = reference.path.value,
+          mimeType = item.mimeType ?: "application/octet-stream",
+        )
+      return ResolvedPlayable(uri, NetworkStreamRegistration(proxy = proxy, streamId = streamId))
+    }
+
+    if (M3uPlaybackPolicy.shouldProxyHls(item.playableUri, item.mimeType)) {
+      val hlsProxy = HlsStreamingProxy.getInstance()
+      val streamId = "hls-${streamSequence.incrementAndGet()}"
+      val userAgent = PlaybackHttpHeaders.userAgent(item.headers)
+      val uri =
+        hlsProxy.registerStream(
+          streamId = streamId,
+          sourceUrl = item.playableUri,
+          headers = item.headers,
+          userAgent = userAgent,
+        )
+      return ResolvedPlayable(uri, NetworkStreamRegistration(hlsProxy = hlsProxy, streamId = streamId))
+    }
+
+    val context = applicationContext
+    if (item.playableUri.startsWith("fd://") && item.originalUri.startsWith("content://")) {
+      val resolved = context?.let { openContentUriBounded(item.originalUri, it) }
+        ?: error("Unable to reopen content URI for playback")
+      return ResolvedPlayable(resolved, ownedFd = resolved.fdNumberOrNull())
+    }
+
+    if (context != null) {
+      val candidates = sequenceOf(item.playableUri, item.originalUri)
+        .filter { it.startsWith("content://") }
+        .distinct()
+      for (candidate in candidates) {
+        val resolved = openContentUriBounded(candidate, context) ?: continue
+        return ResolvedPlayable(resolved, ownedFd = resolved.fdNumberOrNull())
+      }
+    }
+    if (item.playableUri.startsWith("content://")) return ResolvedPlayable(item.playableUri)
+    if (item.originalUri.startsWith("content://")) return ResolvedPlayable(item.originalUri)
+    return ResolvedPlayable(item.playableUri)
+  }
+
+  private suspend fun openContentUriBounded(uri: String, context: Context): String? {
+    val opened = AtomicReference<String?>(null)
+    val cancelled = AtomicBoolean(false)
+    val outcome =
+      BoundedProviderIo.readWithStatus(
+        timeoutMs = 4_000L,
+        fallback = null,
+        onCancellation = {
+          cancelled.set(true)
+          opened.getAndSet(null)?.closeOwnedFdUri()
+        },
+      ) {
+        val resolved =
+          Uri.parse(NetworkPlaybackUri.normalize(uri)).normalizeScheme().openContentFd(
+            context,
+            shouldAbort = { cancelled.get() || Thread.currentThread().isInterrupted },
+          )
+        opened.set(resolved)
+        if (cancelled.get() || Thread.currentThread().isInterrupted) {
+          opened.getAndSet(null)?.closeOwnedFdUri()
+          null
+        } else {
+          resolved
+        }
+      }
+    return when (outcome.status) {
+      BoundedProviderIo.ReadStatus.COMPLETED -> {
+        opened.compareAndSet(outcome.value, null)
+        outcome.value
+      }
+      BoundedProviderIo.ReadStatus.TIMED_OUT -> error("Timed out opening content URI for playback")
+      BoundedProviderIo.ReadStatus.SATURATED -> error("Content provider I/O is saturated; retry playback")
+      BoundedProviderIo.ReadStatus.FAILED -> throw outcome.error ?: IllegalStateException("Content URI open failed")
+    }
+  }
+
+  private fun String.fdNumberOrNull(): Int? =
+    takeIf { it.startsWith("fd://") }?.removePrefix("fd://")?.toIntOrNull()
+
+  private fun String.closeOwnedFdUri() {
+    fdNumberOrNull()?.let { fd -> runCatching { android.os.ParcelFileDescriptor.adoptFd(fd).close() } }
   }
 
   private fun releaseActiveNetworkStream() {

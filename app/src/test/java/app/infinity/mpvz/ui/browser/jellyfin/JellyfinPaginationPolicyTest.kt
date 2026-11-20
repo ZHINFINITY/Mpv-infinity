@@ -61,6 +61,27 @@ class JellyfinPaginationPolicyTest {
     assertTrue(loadLibrary.contains("JellyfinPaginationPolicy.hasMore("))
     assertTrue(loadLibrary.contains("pageSize = 100"))
   }
+  @Test fun libraryReloadPreservesActiveSearchAndFilters() {
+    val root = File("src/main/java").takeIf { it.exists() } ?: File("app/src/main/java")
+    val viewModel = File(root, "app/infinity/mpvz/ui/browser/jellyfin/JellyfinViewModel.kt").readText()
+    val reload = viewModel.substringAfter("private fun reloadLibraryItems(").substringBefore("private fun loadLibraryItems(")
+    val search = viewModel.substringAfter("fun performSearch(").substringBefore("// Media Details")
+    val loadMore = viewModel.substringAfter("fun loadMoreItems()").substringBefore("fun retryFailedPage()")
+    val refreshSuspend = viewModel.substringAfter("suspend fun refreshSuspend()").substringBefore("fun loadLibraries(")
+
+    assertTrue(reload.contains("state.searchQuery.isNotBlank()"))
+    assertTrue(reload.contains("performSearch(state.searchQuery, debounceMs = 0L, startIndex = 0)"))
+    assertTrue(refreshSuspend.contains("reloadLibraryItems(active, library)?.join()"))
+    assertTrue(search.contains("isPlayed = if (isUnplayedOnly) false else null"))
+    assertTrue(search.contains("genres = selectedGenreFilter"))
+    assertTrue(search.contains("startIndex = offset"))
+    assertTrue(search.contains("JellyfinPaginationPolicy.nextStartIndex(offset, queryResult.items.size)"))
+    assertTrue(loadMore.contains("performSearch(state.searchQuery, debounceMs = 0L, startIndex = state.startIndex)"))
+    assertTrue(viewModel.substringAfter("fun setSort(").substringBefore("fun toggleUnplayedOnly()").contains("reloadLibraryItems(active, library)"))
+    assertTrue(viewModel.substringAfter("fun toggleUnplayedOnly()").substringBefore("fun navigateToItem(").contains("reloadLibraryItems(active, library)"))
+    assertTrue(viewModel.substringAfter("fun setGenreFilter(").substringBefore("fun navigateBack()").contains("reloadLibraryItems(active, library)"))
+  }
+
   @Test fun newerListOrSearchRequestRejectsStalePublication() {
     val owner = JellyfinListRequestOwner()
     val first = owner.begin()

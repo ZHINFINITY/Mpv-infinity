@@ -37,10 +37,29 @@ internal class MpvAssetSetPublisher(
     )
 
     private val publicationLock = Any()
+    private val publishedRevisions = mutableMapOf<String, Long>()
+    private val stagedRevisions = mutableMapOf<String, Map<String, Long>>()
+
+    /** Serializes direct live-asset writes with stage publication and fences older snapshots. */
+    fun <T> withLivePathMutation(liveRoot: File, paths: List<String>, operation: () -> T): T =
+      synchronized(publicationLock) {
+        require(paths.isNotEmpty() && paths.distinct().size == paths.size && paths.all { it in assetPaths }) {
+          "Only unique managed MPV asset paths may be mutated"
+        }
+        try {
+          operation()
+        } finally {
+          paths.forEach { path ->
+            val key = File(liveRoot, path).absolutePath
+            publishedRevisions[key] = (publishedRevisions[key] ?: 0L) + 1L
+          }
+        }
+      }
   }
 
   /** Allocates a per-owner/per-generation root and copies the currently published set into it. */
   fun newStage(ownerToken: Long, generation: Long): File = synchronized(publicationLock) {
+    stagedRevisions.keys.removeAll { !File(it).exists() }
     if (!stagingParent.exists() && !stagingParent.mkdirs()) {
       throw IOException("Unable to create MPV staging parent: $stagingParent")
     }
@@ -48,6 +67,7 @@ internal class MpvAssetSetPublisher(
     if (!root.mkdir()) throw IOException("Unable to create MPV asset stage: $root")
     try {
       for (path in assetPaths) copyIfPresent(File(liveRoot, path), File(root, path))
+      stagedRevisions[root.absolutePath] = assetPaths.associateWith(::currentRevision)
       root
     } catch (failure: Exception) {
       root.deleteRecursively()
@@ -69,6 +89,9 @@ internal class MpvAssetSetPublisher(
       "Only unique managed MPV asset paths may be published"
     }
     if (!isCurrent()) return@synchronized false
+    val stageRevision = stagedRevisions[stageRoot.absolutePath]
+      ?: throw IllegalArgumentException("Stage snapshot is no longer available")
+    if (paths.any { stageRevision[it] != currentRevision(it) }) return@synchronized false
 
     val backupRoot = File(stageRoot, ".rollback")
     if (!backupRoot.mkdir()) throw IOException("Unable to create rollback directory: $backupRoot")
@@ -90,6 +113,11 @@ internal class MpvAssetSetPublisher(
         }
       }
       if (!isCurrent()) throw StalePreparation()
+      paths.forEach { path ->
+        val key = livePathKey(path)
+        publishedRevisions[key] = currentRevision(path) + 1L
+      }
+      stagedRevisions.remove(stageRoot.absolutePath)
       true
     } catch (stale: StalePreparation) {
       rollbackOrRetain(installed, backedUp, backupRoot, stale)
@@ -109,22 +137,44 @@ internal class MpvAssetSetPublisher(
     val rollbackFailure = runCatching { rollback(installed, backedUp, backupRoot) }.exceptionOrNull()
     if (rollbackFailure != null) {
       originalFailure.addSuppressed(rollbackFailure)
+      (installed + backedUp).distinct().forEach { path ->
+        val key = livePathKey(path)
+        publishedRevisions[key] = currentRevision(path) + 1L
+      }
       throw MpvAssetSetPublishException(retainStage = true, cause = originalFailure)
     }
   }
 
   private fun rollback(installed: List<String>, backedUp: List<String>, backupRoot: File) {
+    val failures = mutableListOf<Exception>()
     installed.asReversed().forEach { path ->
-      val live = File(liveRoot, path)
-      if (live.exists() && !live.deleteRecursively() && live.exists()) {
-        throw IOException("Unable to remove partially published asset: $live")
+      try {
+        val live = File(liveRoot, path)
+        if (live.exists() && !live.deleteRecursively() && live.exists()) {
+          throw IOException("Unable to remove partially published asset: $live")
+        }
+      } catch (failure: Exception) {
+        failures += failure
       }
     }
     backedUp.asReversed().forEach { path ->
-      val backup = File(backupRoot, path)
-      if (backup.exists()) move(backup, File(liveRoot, path))
+      try {
+        val backup = File(backupRoot, path)
+        if (backup.exists()) move(backup, File(liveRoot, path))
+      } catch (failure: Exception) {
+        failures += failure
+      }
+    }
+    if (failures.isNotEmpty()) {
+      val rollbackFailure = IOException("One or more MPV assets could not be restored")
+      failures.forEach(rollbackFailure::addSuppressed)
+      throw rollbackFailure
     }
   }
+
+  private fun livePathKey(path: String): String = File(liveRoot, path).absolutePath
+
+  private fun currentRevision(path: String): Long = publishedRevisions[livePathKey(path)] ?: 0L
 
   private fun copyIfPresent(source: File, destination: File) {
     if (!source.exists()) return

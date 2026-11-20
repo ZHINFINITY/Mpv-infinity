@@ -7,6 +7,9 @@
 package app.infinity.mpvz.ui.player
 
 internal object PlaybackEngineHandoffPolicy {
+  fun canRestoreMpvAfterNativeFailure(currentRequestIdentity: Boolean, nativeEngineOwnsRenderer: Boolean): Boolean =
+    currentRequestIdentity && nativeEngineOwnsRenderer
+
   fun isCurrent(
     expectedGeneration: Long,
     currentGeneration: Long,
@@ -24,4 +27,23 @@ internal object PlaybackEngineHandoffPolicy {
       expectedPlayableUri == currentPlayableUri &&
       expectedQueueStableId == currentQueueStableId &&
       expectedQueueOriginalUri == currentQueueOriginalUri
+
+  fun resolveQueueIndex(
+    currentIndex: Int,
+    expectedStableId: String?,
+    currentStableId: String?,
+    expectedOriginalUri: String?,
+    currentOriginalUri: String?,
+    expectedPlaylistUri: String?,
+    currentPlaylistUri: String?,
+  ): Int? =
+    currentIndex.takeIf {
+      it >= 0 &&
+        expectedStableId != null &&
+        expectedOriginalUri != null &&
+        expectedPlaylistUri != null &&
+        expectedStableId == currentStableId &&
+        expectedOriginalUri == currentOriginalUri &&
+        expectedPlaylistUri == currentPlaylistUri
+    }
 }

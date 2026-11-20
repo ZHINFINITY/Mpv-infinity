@@ -4,6 +4,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 PLAYER = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/PlayerActivity.kt").read_text()
+VIEW_MODEL = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/PlayerViewModel.kt").read_text()
 
 
 def section(start, end):
@@ -58,8 +59,9 @@ assert "runStagedMpvAssetUpdate(generation)" in section(
     "  private fun scheduleDeferredUserMpvAssetRefresh()", "  private fun syncSubtitleFontsFromPreferenceFolder(assetRoot: File)"
 )
 assert "runStagedMpvAssetUpdate(" in section(
-    "  private fun loadScriptAtRuntime(scriptName: String)", "  // ==================== Helpers ===================="
+    "  private fun loadScriptsAtRuntime(scriptNames: List<String>)", "  // ==================== Helpers ===================="
 )
+assert "MpvAssetSetPublisher.withLivePathMutation(appContext.filesDir, listOf(\"scripts\"))" in VIEW_MODEL
 assert "syncScriptSupportDirectories(scriptsSubdir, assetRoot)" in PLAYER
 assert "syncScriptOpts(tree, rootChildren, assetRoot)" in PLAYER
 print("MPV staged asset contracts passed")

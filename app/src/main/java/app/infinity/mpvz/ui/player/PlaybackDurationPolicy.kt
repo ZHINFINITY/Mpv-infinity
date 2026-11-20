@@ -25,6 +25,24 @@ internal object PlaybackDurationPolicy {
       sampleStableId == currentStableId &&
       sampleOriginalUri == currentOriginalUri
 
+  fun isCurrentLoadedItem(
+    loadedGeneration: Long,
+    loadedStableId: String?,
+    loadedOriginalUri: String?,
+    stateGeneration: Long,
+    stateStableId: String?,
+    stateOriginalUri: String?,
+    selectedStableId: String?,
+    selectedOriginalUri: String?,
+  ): Boolean =
+    loadedGeneration > 0L &&
+      loadedGeneration == stateGeneration &&
+      loadedStableId != null &&
+      loadedStableId == stateStableId &&
+      loadedStableId == selectedStableId &&
+      loadedOriginalUri == stateOriginalUri &&
+      loadedOriginalUri == selectedOriginalUri
+
   fun resolve(
     previousDurationSeconds: Double,
     observedDurationSeconds: Double?,

@@ -42,6 +42,15 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.Callback
 import okhttp3.Response
 
+internal inline fun <T> withOptionalPageRead(block: () -> T): T? =
+  try {
+    block()
+  } catch (cancelled: CancellationException) {
+    throw cancelled
+  } catch (_: Exception) {
+    null
+  }
+
 data class YtdlpPlaylistEntry(
   val id: String?,
   val url: String,
@@ -589,7 +598,8 @@ object YtdlpManager {
     } catch (_: Exception) {
       return null
     }
-    response.use { current ->
+    return withOptionalPageRead {
+      response.use { current ->
       currentCoroutineContext().ensureActive()
       if (current.code in 300..399) {
         val location = current.header("Location") ?: return null
@@ -620,6 +630,7 @@ object YtdlpManager {
         resolvePageUrl(candidate, finalUrl, depth + 1, visited, budget)?.let { return it }
       }
       return null
+      }
     }
   }
 

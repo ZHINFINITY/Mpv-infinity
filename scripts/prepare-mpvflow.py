@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 
@@ -34,6 +35,40 @@ PLACEBO_GLSLANG_LIBRARY_LOOKUP = "cxx.find_library('glslang', required: required
 ANDROID_PLACEBO_GLSLANG_LIBRARY_LOOKUP = "cxx.find_library('glslang', required: required, static: static, dirs: vulkan_lib_dirs)"
 MPV_CLONE_FEATURE = "features += {'clone': cc.has_header_symbol('sched.h', 'clone', args: '-D_GNU_SOURCE')}"
 MPV_ANDROID_CLONE_FEATURE = "features += {'clone': host_machine.system() != 'android' and cc.has_header_symbol('sched.h', 'clone', args: '-D_GNU_SOURCE')}"
+RENDERER_HOOK_PROBE = """
+# MPVFLOW_HAVE_RENDERER_HOOK
+if features.get('libplacebo', false) and cc.has_header_symbol('libplacebo/shaders/custom.h', 'pl_shader_custom') and cc.has_header_symbol('libplacebo/shaders.h', 'pl_shader_is_compute')
+    add_project_arguments('-DMPVFLOW_HAVE_RENDERER_HOOK=1', language: 'c')
+endif
+"""
+
+
+def insert_project_arguments_before_first_target(meson: str, block: str) -> str:
+    """Insert project-wide Meson arguments before any build target, replacing old appended copies."""
+    normalized = block.strip()
+    marker = normalized.splitlines()[0]
+    if marker in meson:
+        start = meson.index(marker)
+        end_marker = meson.find("\nendif", start)
+        if end_marker < 0:
+            raise SystemExit("Existing renderer-hook probe is incomplete")
+        end = end_marker + len("\nendif")
+        while end < len(meson) and meson[end] == "\n":
+            end += 1
+        meson = meson[:start] + meson[end:]
+        if marker in meson:
+            raise SystemExit("Multiple renderer-hook probes found in MPV Meson source")
+
+    target = re.search(
+        r"(?m)^[ \t]*(?:library|shared_library|static_library|both_libraries|shared_module|executable|custom_target|run_target|alias_target|jar)\s*\(",
+        meson,
+    )
+    if target is None:
+        raise SystemExit("Unable to locate the first MPV Meson build target")
+    insertion = target.start()
+    return meson[:insertion] + normalized + "\n\n" + meson[insertion:]
+
+
 NV_OPTICAL_FORMAT_MARKER = "/* MPVFLOW_NV_OPTICAL_FLOW_SFIXED5_FORMAT */"
 VULKAN_OPT_EXTENSION_LIST = "    const char *opt_extensions[] = {\n"
 ANDROID_AHB_EXTENSIONS = (
@@ -988,14 +1023,8 @@ def main() -> None:
     # mpvflow_gpu.c is compiled by MPV's Meson target, not the app CMake
     # target. Enable the hook only when the selected libplacebo exposes both
     # APIs; otherwise mpvflow_gpu.c intentionally retains its safe stub.
-    renderer_hook_probe = """
-# MPVFLOW_HAVE_RENDERER_HOOK
-if features.get('libplacebo', false) and cc.has_header_symbol('libplacebo/shaders/custom.h', 'pl_shader_custom') and cc.has_header_symbol('libplacebo/shaders.h', 'pl_shader_is_compute')
-    add_project_arguments('-DMPVFLOW_HAVE_RENDERER_HOOK=1', language: 'c')
-endif
-"""
-    if '# MPVFLOW_HAVE_RENDERER_HOOK' not in meson:
-        meson += renderer_hook_probe
+    renderer_hook_probe = RENDERER_HOOK_PROBE
+    meson = insert_project_arguments_before_first_target(meson, renderer_hook_probe)
     vulkan_context = enable_android_external_memory_extensions(
         vulkan_context_path.read_text()
     )
@@ -1078,8 +1107,7 @@ endif
     )
     # Dependency setup reloads Meson from disk; preserve the capability-gated
     # renderer-hook probe on the final content we publish.
-    if '# MPVFLOW_HAVE_RENDERER_HOOK' not in meson:
-        meson += renderer_hook_probe
+    meson = insert_project_arguments_before_first_target(meson, renderer_hook_probe)
     if mapper_marker not in hwdec_header_path.read_text() or "# MPVFLOW_AIMAGE_VULKAN_MAPPER" not in meson:
         raise SystemExit("Android MediaCodec/Vulkan mapper patch was not fully applied")
 

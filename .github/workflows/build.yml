@@ -54,6 +54,7 @@ jobs:
         run: |
           python3 scripts/tests/media3flow_gpu_shader_test.py
           python3 scripts/tests/mpv_asset_staging_contract_test.py
+          python3 scripts/tests/mpvflow_meson_probe_test.py
 
       - name: Generate build metadata
         shell: bash

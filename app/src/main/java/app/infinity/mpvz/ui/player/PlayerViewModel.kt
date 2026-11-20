@@ -148,6 +148,26 @@ enum class AutoCropState {
   ERROR,
 }
 
+internal object CustomButtonScriptInstancePolicy {
+  private val processToken = UUID.randomUUID().toString()
+  private val instanceSequence = AtomicLong(0L)
+
+  fun versionToken(generation: Long): String = "$processToken-instance-$generation-${instanceSequence.incrementAndGet()}"
+}
+
+internal object CustomButtonScriptFilePolicy {
+  private val generatedName =
+    Regex(
+      """^custombuttons-(lua|js)-\d+-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\.(lua|js)(?:\.tmp)?$""",
+    )
+
+  fun isManaged(fileName: String, targetNames: Set<String>): Boolean {
+    if (fileName in targetNames) return true
+    val match = generatedName.matchEntire(fileName) ?: return false
+    return match.groupValues[1] == match.groupValues[2]
+  }
+}
+
 @Suppress("TooManyFunctions")
 class PlayerViewModel(
   private val hostedInBrowser: Boolean = false,
@@ -2510,27 +2530,33 @@ class PlayerViewModel(
 
           customButtonFilesMutex.withLock {
             if (!isCurrentCustomButtonSetup(generation)) throw CancellationException("Superseded custom-button setup")
-            if (!scriptsDir.exists()) scriptsDir.mkdirs()
+            MpvAssetSetPublisher.withLivePathMutation(appContext.filesDir, listOf("scripts")) {
+              if (!scriptsDir.exists()) scriptsDir.mkdirs()
+            }
 
             scriptBodies.forEach { (language, bodyBuilder) ->
               if (!isCurrentCustomButtonSetup(generation)) throw CancellationException("Superseded custom-button setup")
               val rawScriptContent = bodyBuilder.toString()
-              if (rawScriptContent.isBlank()) return@forEach
-              val target = customButtonScriptTargetsByLanguage[language] ?: return@forEach
-              val scriptVersion = rawScriptContent.md5()
-              val scriptContent = buildCustomButtonsScript(rawScriptContent, scriptVersion, target)
-              val extension = target.fileName.substringAfterLast('.', "lua")
-              val uniqueId = UUID.randomUUID().toString()
-              val temporaryFile = File(scriptsDir, "custombuttons-${language.name.lowercase()}-$generation-$uniqueId.$extension.tmp")
-              generatedFiles += temporaryFile
-              temporaryFile.writeText(scriptContent)
-              if (!isCurrentCustomButtonSetup(generation)) throw CancellationException("Superseded custom-button setup")
-              val scriptFile = File(scriptsDir, "custombuttons-${language.name.lowercase()}-$generation-$uniqueId.$extension")
-              if (!temporaryFile.renameTo(scriptFile)) throw java.io.IOException("Could not publish generated ${target.fileName}")
-              generatedFiles.remove(temporaryFile)
-              generatedFiles += scriptFile
-              generatedPaths[language] = scriptFile.absolutePath
-              generatedVersions[language] = scriptVersion
+              val target = customButtonScriptTargetsByLanguage[language]
+              if (rawScriptContent.isNotBlank() && target != null) {
+                MpvAssetSetPublisher.withLivePathMutation(appContext.filesDir, listOf("scripts")) {
+                  if (!isCurrentCustomButtonSetup(generation)) throw CancellationException("Superseded custom-button setup")
+                  val scriptVersion = CustomButtonScriptInstancePolicy.versionToken(generation)
+                  val scriptContent = buildCustomButtonsScript(rawScriptContent, scriptVersion, target)
+                  val extension = target.fileName.substringAfterLast('.', "lua")
+                  val uniqueId = UUID.randomUUID().toString()
+                  val temporaryFile = File(scriptsDir, "custombuttons-${language.name.lowercase()}-$generation-$uniqueId.$extension.tmp")
+                  generatedFiles += temporaryFile
+                  temporaryFile.writeText(scriptContent)
+                  if (!isCurrentCustomButtonSetup(generation)) throw CancellationException("Superseded custom-button setup")
+                  val scriptFile = File(scriptsDir, "custombuttons-${language.name.lowercase()}-$generation-$uniqueId.$extension")
+                  if (!temporaryFile.renameTo(scriptFile)) throw java.io.IOException("Could not publish generated ${target.fileName}")
+                  generatedFiles.remove(temporaryFile)
+                  generatedFiles += scriptFile
+                  generatedPaths[language] = scriptFile.absolutePath
+                  generatedVersions[language] = scriptVersion
+                }
+              }
             }
 
             if (!isCurrentCustomButtonSetup(generation)) throw CancellationException("Superseded custom-button setup")
@@ -2602,9 +2628,13 @@ class PlayerViewModel(
             android.util.Log.e("PlayerViewModel", "Error setting up custom buttons", e)
           }
         } finally {
-          generatedFiles.forEach { file ->
-            if (customButtonScriptsSnapshot.paths.values.none { it == file.absolutePath }) {
-              runCatching { file.delete() }
+          if (generatedFiles.isNotEmpty()) {
+            MpvAssetSetPublisher.withLivePathMutation(appContext.filesDir, listOf("scripts")) {
+              generatedFiles.forEach { file ->
+                if (customButtonScriptsSnapshot.paths.values.none { it == file.absolutePath }) {
+                  runCatching { file.delete() }
+                }
+              }
             }
           }
         }
@@ -2719,13 +2749,15 @@ class PlayerViewModel(
   }
 
   private fun deleteCustomButtonsScriptFiles(activePaths: Set<String> = emptySet()) {
-    runCatching {
-      val activeNames = activePaths.map { File(it).name }.toSet()
-      val scriptsDir = File(appContext.filesDir, "scripts")
-      val targetNames = customButtonScriptTargets.map { it.fileName }.toSet()
-      scriptsDir.listFiles()?.forEach { file ->
-        if ((file.name in targetNames || file.name.startsWith("custombuttons-")) && file.name !in activeNames) {
-          file.delete()
+    MpvAssetSetPublisher.withLivePathMutation(appContext.filesDir, listOf("scripts")) {
+      runCatching {
+        val activeNames = activePaths.map { File(it).name }.toSet()
+        val scriptsDir = File(appContext.filesDir, "scripts")
+        val targetNames = customButtonScriptTargets.map { it.fileName }.toSet()
+        scriptsDir.listFiles()?.forEach { file ->
+          if (CustomButtonScriptFilePolicy.isManaged(file.name, targetNames) && file.name !in activeNames) {
+            file.delete()
+          }
         }
       }
     }
