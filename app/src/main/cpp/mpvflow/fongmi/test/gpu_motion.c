@@ -935,12 +935,15 @@ static void synthesis_policy(pl_gpu gpu)
         readback(gpu, target, output);
         float value = output[((HEIGHT / 2) * WIDTH + 50) * 4];
         assert(isfinite(value));
+        printf("synthesis policy case=%d midpoint=%.3f\n", test, value);
+        fflush(stdout);
         if (test == 1) {
-            assert(value > 0.10f && value < 0.14f);
+            // No direction has uniqueness; the color conflict also exceeds the aperture gate.
+            // At this midpoint both source frames are black, so synthesis must fall back to 0.
+            assert(fabs(value) < 0.001f);
         } else {
             assert(fabs(value - (test == 0 ? 1 : 0)) < 0.001);
         }
-        printf("synthesis policy case=%d midpoint=%.3f\n", test, value);
         for (int input = 0; input < 5; input++)
             pl_tex_destroy(gpu, &inputs[input]);
     }
