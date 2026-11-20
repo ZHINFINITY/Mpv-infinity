@@ -190,6 +190,12 @@ object PlaybackSession : MPVLib.EventObserver {
     }
   }
 
+  private data class ResolvedLoadTransaction(
+    val performCommit: () -> Long,
+    val finish: (Long) -> Long,
+    val cleanupOnFailure: () -> Unit,
+  )
+
   /**
    * Video decoding is intentionally disabled while Android has no render surface. Keep the track
    * id process-wide so Activity recreation (for example notification re-entry) cannot lose it.
@@ -905,11 +911,11 @@ object PlaybackSession : MPVLib.EventObserver {
     initialPositionSeconds: Double? = null,
     flattenEditions: Boolean = false,
     disableWebExtraction: Boolean = app.infinity.mpvz.utils.media.RadioStreamProbe.cachedAudioMimeType(item.playableUri, item.headers) != null,
-    commit: ((() -> Long) -> Long)? = null,
+    commit: (suspend ((() -> Long) -> Long))? = null,
     verifyNativePathAfterRestart: Boolean = false,
     onGenerationReserved: ((Long) -> Unit)? = null,
   ): Long =
-    loadResolved(
+    loadResolvedWithSuspendingCommit(
       item,
       resolvePlayableUriBounded(item),
       restoreSavedPosition,
@@ -934,36 +940,98 @@ object PlaybackSession : MPVLib.EventObserver {
     verifyNativePathAfterRestart: Boolean,
     onGenerationReserved: ((Long) -> Unit)?,
   ): Long {
-    var nativeCommitInvoked = false
+    val transaction = prepareResolvedLoadTransaction(
+      item,
+      resolved,
+      restoreSavedPosition,
+      positionRestoreOverride,
+      initialPositionSeconds,
+      flattenEditions,
+      disableWebExtraction,
+      verifyNativePathAfterRestart,
+      onGenerationReserved,
+    )
     return try {
-      var previous: NetworkStreamRegistration? = null
-      var previousAuxiliary = emptyList<NetworkStreamRegistration>()
-      val performCommit = {
-        val commitNative = {
-          nativeCommitInvoked = true
-          val generation =
-            load(
-              playableUri = if (resolved.ownedFd != null) resolved.uri.replaceFirst("fd://", "fdclose://") else resolved.uri,
-              item = item,
-              restoreSavedPosition = restoreSavedPosition,
-              positionRestoreOverride = positionRestoreOverride,
-              initialPositionSeconds = initialPositionSeconds,
-              flattenEditions = flattenEditions,
-              disableWebExtraction = disableWebExtraction,
-              verifyNativePathAfterRestart = verifyNativePathAfterRestart,
-              onGenerationReserved = onGenerationReserved,
-            )
-          if (generation >= 0L) {
-            previous = activeNetworkStream
-            activeNetworkStream = resolved.registration
-            previousAuxiliary = auxiliaryNetworkStreams.values.toList()
-            auxiliaryNetworkStreams.clear()
-          }
-          generation
+      val generation = commit?.invoke(transaction.performCommit) ?: transaction.performCommit()
+      transaction.finish(generation)
+    } catch (error: Throwable) {
+      transaction.cleanupOnFailure()
+      throw error
+    }
+  }
+
+  private suspend fun loadResolvedWithSuspendingCommit(
+    item: PlaybackItem,
+    resolved: ResolvedPlayable,
+    restoreSavedPosition: Boolean,
+    positionRestoreOverride: PlaybackPositionRestoreOverride?,
+    initialPositionSeconds: Double?,
+    flattenEditions: Boolean,
+    disableWebExtraction: Boolean,
+    commit: (suspend ((() -> Long) -> Long))?,
+    verifyNativePathAfterRestart: Boolean,
+    onGenerationReserved: ((Long) -> Unit)?,
+  ): Long {
+    val transaction = prepareResolvedLoadTransaction(
+      item,
+      resolved,
+      restoreSavedPosition,
+      positionRestoreOverride,
+      initialPositionSeconds,
+      flattenEditions,
+      disableWebExtraction,
+      verifyNativePathAfterRestart,
+      onGenerationReserved,
+    )
+    return try {
+      val generation = commit?.invoke(transaction.performCommit) ?: transaction.performCommit()
+      transaction.finish(generation)
+    } catch (error: Throwable) {
+      transaction.cleanupOnFailure()
+      throw error
+    }
+  }
+
+  private fun prepareResolvedLoadTransaction(
+    item: PlaybackItem,
+    resolved: ResolvedPlayable,
+    restoreSavedPosition: Boolean,
+    positionRestoreOverride: PlaybackPositionRestoreOverride?,
+    initialPositionSeconds: Double?,
+    flattenEditions: Boolean,
+    disableWebExtraction: Boolean,
+    verifyNativePathAfterRestart: Boolean,
+    onGenerationReserved: ((Long) -> Unit)?,
+  ): ResolvedLoadTransaction {
+    var nativeCommitInvoked = false
+    var previous: NetworkStreamRegistration? = null
+    var previousAuxiliary = emptyList<NetworkStreamRegistration>()
+    val performCommit = {
+      val commitNative = {
+        nativeCommitInvoked = true
+        val generation =
+          load(
+            playableUri = if (resolved.ownedFd != null) resolved.uri.replaceFirst("fd://", "fdclose://") else resolved.uri,
+            item = item,
+            restoreSavedPosition = restoreSavedPosition,
+            positionRestoreOverride = positionRestoreOverride,
+            initialPositionSeconds = initialPositionSeconds,
+            flattenEditions = flattenEditions,
+            disableWebExtraction = disableWebExtraction,
+            verifyNativePathAfterRestart = verifyNativePathAfterRestart,
+            onGenerationReserved = onGenerationReserved,
+          )
+        if (generation >= 0L) {
+          previous = activeNetworkStream
+          activeNetworkStream = resolved.registration
+          previousAuxiliary = auxiliaryNetworkStreams.values.toList()
+          auxiliaryNetworkStreams.clear()
         }
-        nativeLock.withLock { commitNative() }
+        generation
       }
-      val generation = commit?.invoke(performCommit) ?: performCommit()
+      nativeLock.withLock { commitNative() }
+    }
+    val finish: (Long) -> Long = { generation ->
       if (generation < 0L) {
         resolved.closeUnconsumedFd()
         resolved.registration?.let(::releaseNetworkStream)
@@ -981,13 +1049,14 @@ object PlaybackSession : MPVLib.EventObserver {
         previousAuxiliary.forEach(::releaseNetworkStream)
         generation
       }
-    } catch (error: Throwable) {
+    }
+    val cleanupOnFailure: () -> Unit = {
       // Once native load was invoked, fd ownership is ambiguous; never close a
       // potentially consumed/reused fd. Fenced pre-commit aborts are unambiguous.
       if (!nativeCommitInvoked) resolved.closeUnconsumedFd()
       resolved.registration?.let(::releaseNetworkStream)
-      throw error
     }
+    return ResolvedLoadTransaction(performCommit, finish, cleanupOnFailure)
   }
 
   private fun load(
