@@ -1776,7 +1776,7 @@ PL_LIBAV_API bool pl_download_avframe(pl_gpu gpu,
 
         if (!ok) {
             for (int i = 0; i < p; i++) {
-                if (done[i])
+                if (!gpu->limits.callbacks || done[i])
                     continue;
                 while (!done[i])
                     pl_tex_poll(gpu, frame->planes[i].texture, UINT64_MAX);
@@ -1785,9 +1785,11 @@ PL_LIBAV_API bool pl_download_avframe(pl_gpu gpu,
         }
     }
 
-    for (int p = 0; p < frame->num_planes - 1; p++) {
-        while (!done[p])
-            pl_tex_poll(gpu, frame->planes[p].texture, UINT64_MAX);
+    if (gpu->limits.callbacks) {
+        for (int p = 0; p < frame->num_planes - 1; p++) {
+            while (!done[p])
+                pl_tex_poll(gpu, frame->planes[p].texture, UINT64_MAX);
+        }
     }
 
     return true;

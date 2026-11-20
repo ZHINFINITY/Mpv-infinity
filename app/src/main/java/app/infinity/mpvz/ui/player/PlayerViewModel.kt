@@ -1832,6 +1832,8 @@ class PlayerViewModel(
 
   @Volatile
   private var customButtonScriptsSnapshot = CustomButtonScriptsSnapshot(0L, emptyMap(), emptyMap())
+  @Volatile
+  private var customButtonsSetupComplete = false
 
   private val customButtonsScriptPaths: Map<CustomButtonScriptLanguage, String>
     get() = customButtonScriptsSnapshot.paths
@@ -2143,7 +2145,11 @@ class PlayerViewModel(
     scheduleAmbientUpdate(0)
     startMpvStateCollectors()
     isMpvReadyForCustomButtons = true
-    reloadCustomButtonsScript("mpv_core_initialized")
+    if (customButtonsSetupComplete || customButtonsSetupJob?.isActive == true) {
+      reloadCustomButtonsScript("mpv_core_initialized")
+    } else {
+      setupCustomButtons()
+    }
     startAndroidSystemInfoBridge()
   }
 
@@ -2460,6 +2466,7 @@ class PlayerViewModel(
 
   private fun setupCustomButtons() {
     customButtonsSetupJob?.cancel()
+    customButtonsSetupComplete = false
     val generation = synchronized(customButtonScriptsLock) {
       customButtonSetupGeneration.incrementAndGet().also { nextGeneration ->
         customButtonScriptsSnapshot = CustomButtonScriptsSnapshot(nextGeneration, emptyMap(), emptyMap())
@@ -2621,6 +2628,8 @@ class PlayerViewModel(
               }
             }
           }
+          if (!isCurrentCustomButtonSetup(generation)) throw CancellationException("Superseded custom-button setup")
+          customButtonsSetupComplete = true
         } catch (cancelled: CancellationException) {
           throw cancelled
         } catch (e: Exception) {

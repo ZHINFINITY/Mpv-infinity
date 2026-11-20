@@ -688,6 +688,8 @@ prepare.validate_libplacebo_suboptimal_recovery(fongmi_patched_wsi_source)
 assert "uint64_t generation;\n    atomic_bool flow_diagnostics;" in fongmi_patched_wsi_source
 assert "bool recreate = p->suboptimal || p->needs_recreate || width_changed || height_changed;" in fongmi_patched_wsi_source
 assert "vk_present_submit(history, timing.presentID, begin, res);" in fongmi_patched_wsi_source
+assert fongmi_patched_wsi_source.count("pl_clock_t flow_queue_lock_end = flow_queue_lock_start ? pl_clock_now() : 0;") == 1
+assert fongmi_patched_wsi_source.count("pl_clock_t flow_present_start = flow_queue_lock_start ? pl_clock_now() : 0;") == 1
 bad_fongmi_resize = fongmi_wsi_source.replace("width_changed || height_changed", "false", 1)
 try:
     prepare.validate_libplacebo_suboptimal_recovery(bad_fongmi_resize)

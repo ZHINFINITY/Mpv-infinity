@@ -673,9 +673,9 @@ static void flow_report_created_swapchain(struct priv *p)
         "    pl_clock_t flow_queue_lock_start = atomic_load_explicit(&p->flow_diagnostics, memory_order_relaxed)\n"
         "        ? pl_clock_now() : 0;\n"
         "    vk->lock_queue(vk->queue_ctx, pool->qf, qidx);\n"
-        "    pl_clock_t flow_present_start = flow_queue_lock_start ? pl_clock_now() : 0;\n"
+        "    pl_clock_t flow_queue_lock_end = flow_queue_lock_start ? pl_clock_now() : 0;\n"
         "    if (flow_queue_lock_start)\n"
-        "        flow_report_wsi_call(p, FLOW_WSI_PRESENT_QUEUE_LOCK, \"present_queue_lock\", flow_queue_lock_start, flow_present_start, VK_SUCCESS);\n",
+        "        flow_report_wsi_call(p, FLOW_WSI_PRESENT_QUEUE_LOCK, \"present_queue_lock\", flow_queue_lock_start, flow_queue_lock_end, VK_SUCCESS);\n",
         "present queue-lock timing",
     )
     swapchain_c = replace_once(

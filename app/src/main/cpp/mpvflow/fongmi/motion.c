@@ -1459,11 +1459,13 @@ static bool render_motion(struct mp_motion *m,
     bool synthesis_ok = destination->params.renderable
         ? dispatch(m, destination, &(struct pl_custom_shader) {
         .description = "motion compensated interpolation",
+        .header = synthesis_header,
         .body = synthesis_body,
         .descriptors = desc, .num_descriptors = 5,
         .variables = vars, .num_variables = 4,
     }) : dispatch_storage(m, destination, &(struct pl_custom_shader) {
         .description = "motion compensated interpolation",
+        .header = synthesis_header,
         .body = synthesis_body,
         .descriptors = desc, .num_descriptors = 5,
         .variables = vars, .num_variables = 4,

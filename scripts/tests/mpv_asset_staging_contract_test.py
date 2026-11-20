@@ -20,6 +20,17 @@ publish = section("  private fun publishMpvAssetStage(", "  private fun isMpvAss
 assert "PlaybackActivityOwner.runIfOwner(ownerToken, false)" in publish
 assert "val published = publisher.publish(" in publish and "          stageRoot," in publish
 assert publish.index("val published = publisher.publish(") < publish.index("commitPendingMpvAssetPreferenceUpdates(pending)")
+assert "pending.userAssetDirectoryUri == advancedPreferences.mpvConfStorageUri.get()" in publish
+startup_user_assets = section(
+    "  private fun prepareUserMpvAssetsForStartup(", "  private fun currentUserMpvAssetSelection("
+)
+assert "val mpvConfStorageUri = advancedPreferences.mpvConfStorageUri.get()" in startup_user_assets
+assert "syncFromUserMpvDirectory(assetRoot, pending, mpvConfStorageUri)" in startup_user_assets
+assert "mpvConfStorageUri = mpvConfStorageUri" in startup_user_assets
+deferred_user_assets = section(
+    "  private fun scheduleDeferredUserMpvAssetRefresh()", "  private fun syncSubtitleFontsFromPreferenceFolder(assetRoot: File)"
+)
+assert "pending.userAssetDirectoryUri = mpvConfStorageUri" in deferred_user_assets
 assert "override fun getFilesDir(): File = assetRoot" in section(
     "  private fun syncBundledAssetsIfNeeded(", "  private fun scheduleDeferredSubtitleFontsSync()"
 )

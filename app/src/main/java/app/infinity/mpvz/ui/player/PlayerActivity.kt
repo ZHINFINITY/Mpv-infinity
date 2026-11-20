@@ -1588,6 +1588,7 @@ class PlayerActivity :
     var inputConf: String? = null,
     var bundledAssetsVersion: Long? = null,
     var userAssetSelection: String? = null,
+    var userAssetDirectoryUri: String? = null,
     var startDeferredUserMpvAssetRefresh: Boolean = false,
   )
 
@@ -4709,7 +4710,9 @@ class PlayerActivity :
     pending: PendingMpvAssetPreferenceUpdates,
   ) {
     val syncPreferences = getSharedPreferences(MPV_ASSET_SYNC_PREFERENCES, MODE_PRIVATE)
-    val currentSelection = currentUserMpvAssetSelection()
+    val mpvConfStorageUri = advancedPreferences.mpvConfStorageUri.get()
+    pending.userAssetDirectoryUri = mpvConfStorageUri
+    val currentSelection = currentUserMpvAssetSelection(mpvConfStorageUri = mpvConfStorageUri)
     val storedSelection = syncPreferences.getString(USER_MPV_ASSET_SELECTION, null)
     val cacheReady = hasLaunchReadyUserMpvAssetCache(assetRoot)
     val canAdoptExistingCache =
@@ -4724,8 +4727,9 @@ class PlayerActivity :
       return
     }
 
-    syncFromUserMpvDirectory(assetRoot, pending)
+    syncFromUserMpvDirectory(assetRoot, pending, mpvConfStorageUri)
     pending.userAssetSelection = currentUserMpvAssetSelection(
+      mpvConfStorageUri = mpvConfStorageUri,
       mpvConfContent = pending.mpvConf ?: advancedPreferences.mpvConf.get(),
       inputConfContent = pending.inputConf ?: advancedPreferences.inputConf.get(),
     )
@@ -4733,13 +4737,14 @@ class PlayerActivity :
   }
 
   private fun currentUserMpvAssetSelection(
+    mpvConfStorageUri: String = advancedPreferences.mpvConfStorageUri.get(),
     mpvConfContent: String = advancedPreferences.mpvConf.get(),
     inputConfContent: String = advancedPreferences.inputConf.get(),
   ): String {
     val selectedScripts = advancedPreferences.selectedLuaScripts.get().sorted().joinToString("\u0000")
     return buildString {
       append("v1|uri=")
-      append(advancedPreferences.mpvConfStorageUri.get())
+      append(mpvConfStorageUri)
       append("|lua=")
       append(advancedPreferences.enableLuaScripts.get())
       append("|scripts=")
@@ -4825,8 +4830,8 @@ class PlayerActivity :
   private fun syncFromUserMpvDirectory(
     assetRoot: File,
     pending: PendingMpvAssetPreferenceUpdates,
+    mpvConfStorageUri: String,
   ) {
-    val mpvConfStorageUri = advancedPreferences.mpvConfStorageUri.get()
     val tree =
       if (mpvConfStorageUri.isNotBlank()) {
         openPersistedTreeDocument(this, mpvConfStorageUri)
@@ -5125,7 +5130,10 @@ class PlayerActivity :
     publishPaths: List<String>,
   ): Boolean =
     PlaybackActivityOwner.runIfOwner(ownerToken, false) {
-      if (!isMpvAssetGenerationCurrent(generation, generationState)) {
+      val userAssetDirectoryIsCurrent =
+        pending.userAssetDirectoryUri == null ||
+          pending.userAssetDirectoryUri == advancedPreferences.mpvConfStorageUri.get()
+      if (!isMpvAssetGenerationCurrent(generation, generationState) || !userAssetDirectoryIsCurrent) {
         false
       } else {
         val published = publisher.publish(
@@ -5236,9 +5244,12 @@ class PlayerActivity :
           val generation = mpvAssetPreparationGeneration.incrementAndGet()
           val published =
             runStagedMpvAssetUpdate(generation) { assetRoot, pending ->
-              syncFromUserMpvDirectory(assetRoot, pending)
+              val mpvConfStorageUri = advancedPreferences.mpvConfStorageUri.get()
+              pending.userAssetDirectoryUri = mpvConfStorageUri
+              syncFromUserMpvDirectory(assetRoot, pending, mpvConfStorageUri)
               syncSubtitleFontsFromPreferenceFolder(assetRoot)
               pending.userAssetSelection = currentUserMpvAssetSelection(
+                mpvConfStorageUri = mpvConfStorageUri,
                 mpvConfContent = pending.mpvConf ?: advancedPreferences.mpvConf.get(),
                 inputConfContent = pending.inputConf ?: advancedPreferences.inputConf.get(),
               )

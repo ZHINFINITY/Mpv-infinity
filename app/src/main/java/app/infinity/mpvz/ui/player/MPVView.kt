@@ -848,8 +848,10 @@ class MPVView(
         acceptedInterpolationConfiguration = if (result == 0) {
           mpvFlowFrameInterpolationEnabled to mpvFlowTargetFps
         } else {
-          // Do not advertise a target hint when native rejected the option.
+          // Do not retain or advertise a target hint when native rejects the option.
           mpvFlowFrameInterpolationEnabled = false
+          interpolationOutputFrameRate = null
+          PlaybackSession.setSurfaceFrameRateHintHz(null)
           null
         }
         "motion_interpolation_rc=$result target_fps=$targetFps"
