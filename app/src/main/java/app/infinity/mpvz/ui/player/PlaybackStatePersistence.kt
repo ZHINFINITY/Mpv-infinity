@@ -17,7 +17,7 @@ internal const val DEFAULT_PLAYBACK_STATE_SUB_SPEED = 1.0
 internal fun secondarySubtitleDelayForRestore(
   savedDelayMs: Int,
   primaryDelayMs: Int,
-): Int = savedDelayMs.takeIf { it >= 0 } ?: primaryDelayMs
+): Int = savedDelayMs.takeIf { it != -1 } ?: primaryDelayMs
 
 internal fun secondarySubtitleSpeedForRestore(
   savedSpeed: Double,
