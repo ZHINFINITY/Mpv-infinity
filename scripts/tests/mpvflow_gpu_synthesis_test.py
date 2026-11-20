@@ -47,7 +47,6 @@ def embedded_synthesis_shader(source: str | None = None) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--require-vulkan", action="store_true")
-    parser.add_argument("--decision-mode", action="store_true")
     parser.add_argument("--soft-blend-baseline-revision", help="prove Soft Blend threshold fixtures fail this git revision")
     parser.add_argument("--baseline-revision", help="also prove the full-frame regressions fail this git revision")
     parser.add_argument("--aperture-baseline-revision", help="prove the tied-outline regression fails this git revision")
@@ -97,7 +96,13 @@ def main() -> None:
             environment["VK_ICD_FILENAMES"] = str(icds[0])
 
         def run(program: Path, spirv: Path, flags: tuple[str, ...], label: str, failure: str | None = None) -> None:
-            result = subprocess.run([str(program), str(spirv), *flags], capture_output=True, text=True, env=environment)
+            # Drop the obsolete third fixture slot retained in older tuples.
+            args = tuple(flags)
+            if len(args) >= 4:
+                if args[2] != "0":
+                    raise SystemExit(f"Unexpected obsolete synthesis fixture slot: {args}")
+                args = args[:2] + args[3:]
+            result = subprocess.run([str(program), str(spirv), *args], capture_output=True, text=True, env=environment)
             if failure is None:
                 if result.returncode:
                     raise SystemExit(f"Pixel oracle failed ({label}):\n" + result.stdout + result.stderr)
@@ -110,9 +115,6 @@ def main() -> None:
         production = compile_variant(shader_source, "production")
         for flags, label in ((("0", "0"), "default-off production"), (("1", "0"), "opt-in soft blend"), (("1", "1"), "opt-in continuous soft blend")):
             run(normal, production, flags, label)
-        if args.decision_mode:
-            decision_shader = shader_source.replace("#version 450\n", "#version 450\n#define MPVFLOW_CAPTURE_DECISIONS 1\n", 1)
-            run(normal, compile_variant(decision_shader, "decisions"), ("0", "0", "1"), "decision-mask capture")
         run(large, production, ("0", "0"), "whole-frame 4x upscaling / 32px motion")
         run(large, production, ("0", "0", "0", "bounds"), "constant-translation smooth support boundaries")
         rescue_anchor = "bool oneSidedRescue=cycleSamplesFinite&&min(valid0,valid1)>0.75&&f.w>=0.20&&f.z<=0.05&&max(cycleError0,cycleError1)<1.0;"
@@ -149,8 +151,8 @@ def main() -> None:
         # source blend. The occlusion oracle must reject this (old/new red
         # ghosts), rather than merely checking that output is nonuniform.
         source_only = shader_source
-        soft_output = "outc=FLOW_RESULT(mix(fallback,visibilityWarped,softWarpTrust),boundaryConflict?12:0,confidence,boundaryConflict?captureReason:0);"
-        source_output = "outc=FLOW_RESULT(mix(texelFetch(frame0,p,0),texelFetch(frame1,p,0),pc.timestep),0,confidence,0);"
+        soft_output = "outc=mix(fallback,visibilityWarped,softWarpTrust);"
+        source_output = "outc=mix(texelFetch(frame0,p,0),texelFetch(frame1,p,0),pc.timestep);"
         if source_only.count(soft_output) != 1 or source_only.count("outc=warped;") != 1:
             raise SystemExit("Source-only occlusion mutant anchors are missing or duplicated")
         source_only = source_only.replace(soft_output, source_output, 1).replace(
@@ -221,7 +223,7 @@ def main() -> None:
         def field_shader(text: str) -> str:
             # Execute the ACTUAL helper, not a Python reconstruction. Changing
             # confidence must not move coordinates or expose the coarse lattice.
-            text = text.replace("void main(){ FLOW_BEGIN", "void unusedSynthesisMain(){ FLOW_BEGIN", 1)
+            text = text.replace("void main(){", "void unusedSynthesisMain(){", 1)
             return text + "\nvoid main(){ ivec2 p=ivec2(gl_GlobalInvocationID.xy),sz=imageSize(outTex); if(any(greaterThanEqual(p,sz)))return; vec2 q=clamp((vec2(p)+0.5)*vec2(pc.cfg.zw)/vec2(sz)-0.5,vec2(0.0),vec2(pc.cfg.zw-1)); float v=flowAtBilinear(q,0).x/8.0; imageStore(outTex,p,vec4(v,v,v,1.0)); }\n"
 
         run(large, compile_variant(field_shader(shader_source), "continuous_field"), ("0", "0", "0", "field"), "continuous field across asymmetric grid confidence")

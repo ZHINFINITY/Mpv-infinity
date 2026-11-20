@@ -77,7 +77,6 @@ class Arm64WorkflowTest(unittest.TestCase):
             "b89c10e1bdd5d7742ca576ebad94a906ddca91e8",
             "c1529642089bfebfc928a1c1664638a7a5d219ba",
             "restore-keys:",
-            "patch_fongmi_motion_jelly.py",
             "jelly-test-",
             "jelly-preview-",
         ):

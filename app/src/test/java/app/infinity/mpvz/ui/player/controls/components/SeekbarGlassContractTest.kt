@@ -2,6 +2,7 @@ package app.infinity.mpvz.ui.player.controls.components
 
 import java.io.File
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -40,9 +41,15 @@ class SeekbarGlassContractTest {
     val musicLibrary = source("ui/browser/music/MusicLibraryViewModel.kt")
     val playSong = musicLibrary.substringAfter("fun playSong(").substringBefore("fun playAllSongs(")
     val playAll = musicLibrary.substringAfter("fun playAllSongs(").substringBefore("fun createPlaylist(")
-    val duration = "durationSeconds = item.durationMs.takeIf { it > 0L }?.div(1000L)?.toInt()"
-    assertTrue(playSong.contains(duration))
-    assertTrue(playAll.contains(duration))
+    assertTrue(playSong.contains("MusicPlaybackLauncher.playSongs"))
+    assertTrue(playAll.contains("MusicPlaybackLauncher.playSongs"))
+    val musicLauncher = source("ui/browser/music/MusicPlaybackLauncher.kt")
+    assertTrue(musicLauncher.contains("MusicQueueLaunchStore.stage(songs, selectedIndex, launchSource)"))
+    assertTrue(musicLauncher.contains("Intent(context, MusicPlayerActivity::class.java)"))
+    assertTrue(musicLauncher.contains("songs.any { isAudiobookSong(it) }"))
+    assertTrue(musicLauncher.contains("PreparedPlaybackLaunchStore.stage("))
+    val musicQueue = source("ui/browser/music/MusicPlaybackSession.kt")
+    assertTrue(musicQueue.contains("putLong(MUSIC_METADATA_DURATION_MS, durationMs)"))
 
     val appearance = source("preferences/AppearancePreferences.kt")
     assertTrue(appearance.contains("getBoolean(\"show_seekbar_outer_container\", false)"))

@@ -20,11 +20,6 @@ on:
         options:
           - arm64-v8a
           - all
-      skip_unrelated_capture_test:
-        description: Skip the capture-I/O test only when verifying a focused APK change
-        required: false
-        default: false
-        type: boolean
 
 permissions:
   contents: read
@@ -300,12 +295,7 @@ jobs:
           else
             python3 scripts/tests/fongmi_paired_color_mask_test.py
           fi
-          if [[ "${{ inputs.skip_unrelated_capture_test }}" == "true" ]]; then
-            echo "Skipping only the capture-I/O test confirmed to fail on the unchanged base"
-            MPVFLOW_SKIP_CAPTURE_IO_TEST=1 MPVFLOW_REQUIRE_VULKAN_PIXEL_TEST=1 ./scripts/test-mpvflow-core.sh
-          else
-            MPVFLOW_REQUIRE_VULKAN_PIXEL_TEST=1 ./scripts/test-mpvflow-core.sh
-          fi
+          MPVFLOW_REQUIRE_VULKAN_PIXEL_TEST=1 ./scripts/test-mpvflow-core.sh
       - name: Build debug APK
         run: |
           chmod +x ./gradlew

@@ -706,6 +706,8 @@ object PlaybackSession : MPVLib.EventObserver {
     pendingStopClearQueue = false
     releaseActiveNetworkStreamLocked()
     releaseAuxiliaryNetworkStreamsLocked()
+    propString.clearMediaMetadata()
+    runCatching { MPVLib.setPropertyString("force-media-title", "") }
     updateState {
       it.copy(
         phase = PlaybackPhase.IDLE,
@@ -2317,7 +2319,9 @@ object PlaybackSession : MPVLib.EventObserver {
     }
     if (item.playableUri.startsWith("content://")) return ResolvedPlayable(item.playableUri)
     if (item.originalUri.startsWith("content://")) return ResolvedPlayable(item.originalUri)
-    return ResolvedPlayable(item.playableUri)
+    // Queue snapshots may retain raw local paths. Uri.parse(path) treats `#` as a fragment,
+    // so convert only at the load boundary and keep the durable queue identity unchanged.
+    return ResolvedPlayable(PlaybackUriPolicy.playableUriString(item.playableUri))
   }
 
   private suspend fun resolvePlayableUriBounded(item: PlaybackItem): ResolvedPlayable {

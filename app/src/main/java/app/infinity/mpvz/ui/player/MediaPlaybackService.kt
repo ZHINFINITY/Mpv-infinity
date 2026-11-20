@@ -3082,6 +3082,7 @@ class MediaPlaybackService :
     capturedSnapshot: PlaybackStateSnapshot,
   ) {
     if (identifier.isBlank() || capturedSnapshot.mediaIdentifier != identifier) return
+    if (!shouldPersistVideoPlaybackState(capturedSnapshot)) return
 
     try {
       PlaybackStateSaveCoordinator.persistIfNewest(
@@ -3124,8 +3125,11 @@ class MediaPlaybackService :
     oldState: PlaybackStateEntity?,
   ): PlaybackStateSnapshot? {
     if (identifier.isBlank()) return null
+    val queueState = PlaybackSession.queue.value
+    val stateItem = queueState.items.firstOrNull { it.stableId == identifier }
+      ?: queueState.currentItem?.takeIf { it.stableId == identifier }
     val recentlyPlayedUri =
-      PlaybackSession.queue.value.currentItem
+      queueState.currentItem
         ?.takeIf { it.stableId == identifier }
         ?.originalUri
         ?.takeIf { it.isNotBlank() }
@@ -3171,6 +3175,7 @@ class MediaPlaybackService :
       audioDelayMs = audioDelay?.let { (it * PLAYBACK_STATE_MILLISECONDS_TO_SECONDS).toInt() } ?: oldState?.audioDelay ?: 0,
       externalSubtitles = oldState?.externalSubtitles.orEmpty(),
       externalSubtitlesAreKnown = false,
+      isAudioPlayback = stateItem?.usesDedicatedAudioState() == true,
     )
   }
 

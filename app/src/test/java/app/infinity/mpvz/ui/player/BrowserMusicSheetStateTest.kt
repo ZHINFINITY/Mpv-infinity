@@ -118,6 +118,22 @@ class BrowserMusicSheetStateTest {
   }
 
   @Test
+  fun backgroundStopLandsAtPendingAnchorWithoutLeavingAnInvisibleSheet() = withSheet(manualFrames = true) { sheet, _, _ ->
+    sheet.expand()
+    assertEquals(MusicSheetPhase.Settling, sheet.phase)
+    sheet.settleForBackground()
+    assertEquals(MusicSheetPhase.Expanded, sheet.phase)
+    assertEquals(1f, sheet.progress, 0f)
+
+    sheet.collapse()
+    assertEquals(MusicSheetPhase.Settling, sheet.phase)
+    sheet.settleForBackground()
+    assertEquals(MusicSheetPhase.Collapsed, sheet.phase)
+    assertEquals(0f, sheet.progress, 0f)
+    assertFalse(MusicSheetInputPolicy.isOnScreen(sheet.isShowing, sheet.progress))
+  }
+
+  @Test
   fun sessionEndingDropsTheSheetImmediately() = withSheet { sheet, _, _ ->
     sheet.expand()
     sheet.updateAvailability(false)

@@ -489,6 +489,7 @@ fun PlayerControls(
         isBuffering = nativeSnapshot.isBuffering,
         isLocalSource = isLocalNativeSource,
         hasRenderedFirstFrame = nativeSnapshot.hasRenderedFirstFrame,
+        isPlaying = nativeSnapshot.isPlaying,
       ),
     )
   val bufferingState =

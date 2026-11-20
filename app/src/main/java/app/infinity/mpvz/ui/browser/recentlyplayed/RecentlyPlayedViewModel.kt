@@ -23,6 +23,8 @@ import app.infinity.mpvz.database.repository.VideoMetadataCacheRepository
 import app.infinity.mpvz.domain.media.model.Video
 import app.infinity.mpvz.domain.recentlyplayed.repository.RecentlyPlayedRepository
 import app.infinity.mpvz.preferences.AdvancedPreferences
+import app.infinity.mpvz.ui.browser.music.MusicLibraryScanner
+import app.infinity.mpvz.ui.browser.music.MusicSong
 import app.infinity.mpvz.utils.history.RecentlyPlayedOps
 import app.infinity.mpvz.utils.history.clearWatchHistory
 import app.infinity.mpvz.utils.history.visibleRecentlyPlayedItems
@@ -462,6 +464,26 @@ class RecentlyPlayedViewModel(
         runCatching { recentlyPlayedRepository.deleteByFilePath(video.path) }
         null
       }
+    }
+
+  suspend fun resolveRecentAudioSong(video: Video): MusicSong =
+    withContext(Dispatchers.IO) {
+      MusicLibraryScanner.resolveSongByPath(
+        context = getApplication(),
+        path = video.path.ifBlank { video.uri.toString() },
+        fallbackTitle = video.title,
+      ) ?: MusicSong(
+        id = video.id,
+        title = video.title.ifBlank { video.displayName },
+        artist = "Unknown Artist",
+        album = "Unknown Album",
+        albumId = 0L,
+        durationMs = video.duration,
+        path = video.path,
+        uri = video.uri,
+        dateAdded = video.dateAdded,
+        size = video.size,
+      )
     }
 
   private fun formatDuration(durationMs: Long): String {

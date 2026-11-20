@@ -68,9 +68,28 @@ class VideoBackgroundResumeWiringTest {
     assertInOrder(
       restore,
       "PlayerLifecyclePolicy.shouldRebuildRendererAfterBackground(stoppedForMs, audioMedia)",
-      "val surfaceReady = isNativeEngineActive() || player.isSurfaceReady",
+      "requestRendererRebuildAfterBackground()",
+      "viewModel.setAmbientLifecycleActive(true)",
+    )
+    val rebuildRequest = body("private fun requestRendererRebuildAfterBackground()")
+    assertInOrder(
+      rebuildRequest,
+      "pendingRendererRebuildAfterBackground = true",
+      "if (nativeActive) setNativeVideoSurfaceVisible(true)",
+      "val surfaceReady = if (nativeActive) isNativeVideoSurfaceReady() else player.isSurfaceReady",
       "PlayerLifecyclePolicy.shouldWaitForSurfaceBeforeRebuild(surfaceReady)",
       "rebuildRendererAfterLongBackground()",
+    )
+    assertTrue(body("private fun configureNativeEngineIfNeeded").contains("configureNativeVideoSurfaceCallback()"))
+    val nativeSurface = body("private fun configureNativeVideoSurfaceCallback()")
+    assertTrue(nativeSurface.contains("surfaceView.holder.surface.isValid"))
+    val nativeSurfaceReady = body("private fun onNativeVideoSurfaceAvailable()")
+    assertInOrder(
+      nativeSurfaceReady,
+      "!ownsPlaybackSession() || !isNativeEngineActive() || !isNativeVideoSurfaceReady()",
+      "if (!pendingRendererRebuildAfterBackground) return@post",
+      "rebuildRendererAfterLongBackground()",
+      "restoreForegroundResumePositionIfNeeded()",
     )
     // Short background stays: reattach the Native surface or re-enable MPV video, then seek back.
     assertInOrder(
@@ -204,7 +223,7 @@ class VideoBackgroundResumeWiringTest {
       "mediaLoadInProgress = mediaLoadJob?.isActive == true",
       "val hasPlayableSource = !currentPlayableUri.isNullOrBlank() || !intent?.dataString.isNullOrBlank()",
       "if (shouldRecoverNative && hasPlayableSource)",
-      "rebuildRendererAfterLongBackground()",
+      "requestRendererRebuildAfterBackground()",
       "return true",
     )
   }

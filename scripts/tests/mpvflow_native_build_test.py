@@ -2,8 +2,6 @@
 """Guard the Android MPVFlow native compiler and Vulkan build configuration."""
 from __future__ import annotations
 
-import re
-
 import importlib.util
 import json
 from pathlib import Path
@@ -53,9 +51,6 @@ STRING_RESOURCES = ROOT / "app/src/main/res/values/strings.xml"
 FFMPEG_SHA = "f2c5162b7c4b3e8835de270ff78cecc524decad1"
 FFMPEG_REPOSITORY = "https://github.com/FongMi/FFmpeg.git"
 VULKAN_HEADERS_SHA = "a4f8ada9f4f97c45b8c89c57997be9cebaae65d2"
-VULKAN_MAPPER_PATCH = ROOT / "app/src/main/cpp/mpvflow/mpvflow-aimagereader-vulkan.patch"
-VULKAN_MAPPER_DIR = ROOT / "app/src/main/cpp/mpvflow/mediacodec-vulkan"
-VO_PATCH = ROOT / "app/src/main/cpp/mpvflow/mpvflow-vo-gpu-next.patch"
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -96,45 +91,6 @@ assert 'pl_var_vec2("motion_size")' in fongmi_motion
 assert "mp_motion_render_sources_to" in fongmi_motion and "scaled_source_pair" in fongmi_test
 assert "mp_motion_" not in media3_native, "Native Media3 must remain on its pre-FongMi MPVFlow implementation"
 assert "mpvflow_gpu_synthesize_with_policy_to_texture(" in media3_native
-vo_patch = VO_PATCH.read_text(encoding="utf-8")
-assert "flow_release_frame(fp->vo, fp, true);" in vo_patch
-patch_hunks = re.split(r"(?m)(?=^@@ )", vo_patch)
-unmap_hunk = next((hunk for hunk in patch_hunks if hunk.startswith("@@") and "static void unmap_frame" in hunk.splitlines()[0]), "")
-discard_hunk = next((hunk for hunk in patch_hunks if hunk.startswith("@@") and "static void discard_frame" in hunk.splitlines()[0]), "")
-assert "flow_release_frame(fp->vo, fp, true);" in unmap_hunk, (
-    "MPVFlow must release prepared source textures on terminal unmap"
-)
-assert "flow_release_frame(fp->vo, fp, true);" in discard_hunk, (
-    "MPVFlow must release prepared source textures when a source frame is discarded"
-)
-release_frame = vo_patch.split("+static void flow_release_frame(", 1)[1].split("\n+}", 1)[0]
-assert "if (discard) flow_release_pair_for_frame(p, fp->frame_id);" in release_frame
-assert "if (discard && fp->flow_source)" in release_frame and "if (discard && fp->flow_input)" in release_frame
-assert "flow_prepare_input(fp->vo, &fp->native_frame, mpi, fp);" in vo_patch
-for marker in (
-    "mpvflow_gpu_renderer_hook_supported", "mpvflow_gpu_renderer_hook_begin",
-    "flow_compute_fusion_fallback", "flow_cached_synthesis_hook",
-    "flow_renderer_fusion_disabled", "params->num_hooks == 0",
-    "synthesis_rate_limited_cached", "temporal_identity_valid",
-):
-    assert marker in vo_patch, f"MPV renderer-fusion integration missing {marker!r}"
-prepare_source = PREPARE.read_text(encoding="utf-8")
-for marker in (
-    "MPVFLOW_HAVE_RENDERER_HOOK",
-    "features.get('libplacebo', false)",
-    "pl_shader_custom",
-    "pl_shader_is_compute",
-    "cc.has_header_symbol('libplacebo/shaders/custom.h', 'pl_shader_custom', dependencies: libplacebo)",
-    "cc.has_header_symbol('libplacebo/shaders.h', 'pl_shader_is_compute', dependencies: libplacebo)",
-):
-    assert marker in prepare_source, f"MPV Meson renderer hook must be capability-gated: missing {marker!r}"
-assert "add_project_arguments('-DMPVFLOW_HAVE_RENDERER_HOOK=1', language: 'c')" in prepare_source, (
-    "MPV Meson renderer hook must use the C project-arguments API"
-)
-assert "c_args += ['-DMPVFLOW_HAVE_RENDERER_HOOK=1']" not in prepare_source, (
-    "renderer hook must not use an undefined Meson c_args variable"
-)
-
 cmake_config = (ROOT / "app/src/main/cpp/CMakeLists.txt").read_text(encoding="utf-8")
 runtime_packager = (ROOT / "scripts/package-mpv-runtime-aar.py").read_text(encoding="utf-8")
 assert "mpvflow/fongmi/motion.c" not in cmake_config, "FongMi motion must not be linked into Native Media3"
@@ -210,40 +166,8 @@ spec = importlib.util.spec_from_file_location("prepare_mpvflow", PREPARE)
 assert spec and spec.loader, "could not load MPVFlow preparation module"
 prepare = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(prepare)
-options_fixture = """
-void pl_options_add_hook(pl_options opts, const struct pl_hook *hook)
-{
-    PL_ARRAY_APPEND(opts, p->hooks, hook);
-    opts->params.hooks = p->hooks.elem;
-}
-void pl_options_insert_hook(pl_options opts, const struct pl_hook *hook, int idx)
-{
-    PL_ARRAY_INSERT_AT(opts, p->hooks, idx, hook);
-    opts->params.hooks = p->hooks.elem;
-}
-void pl_options_remove_hook_at(pl_options opts, int idx)
-{
-    PL_ARRAY_REMOVE_AT(p->hooks, idx);
-    opts->params.hooks = p->hooks.elem;
-}
-"""
-patched_options = prepare.publish_libplacebo_hook_count(options_fixture)
-assert patched_options.count("opts->params.num_hooks = p->hooks.num;") == 3
-assert patched_options.count(prepare.PLACEBO_OPTIONS_HOOK_COUNT_MARKER) == 3
-assert prepare.publish_libplacebo_hook_count(patched_options) == patched_options
-try:
-    prepare.publish_libplacebo_hook_count(options_fixture.replace("PL_ARRAY_INSERT_AT", "PL_ARRAY_INSERT"))
-except SystemExit as error:
-    assert "hook helper changed" in str(error)
-else:
-    raise AssertionError("hook-count adapter accepted an unverified upstream helper")
 gpu_source = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_gpu.c").read_text(encoding="utf-8")
 gpu_header = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_gpu.h").read_text(encoding="utf-8")
-assert "const int output_w = (int) state->source0->params.w;" in gpu_source
-assert "const int output_h = (int) state->source0->params.h;" in gpu_source
-assert ".output_w = output_w," in gpu_source and ".output_h = output_h," in gpu_source
-assert "result.rect.x1 - result.rect.x0 != output_w" in gpu_source
-assert "result.rect.y1 - result.rect.y0 != output_h" in gpu_source
 for marker in (
     "MPVFLOW_GPU_PASS_PAIR_GATE_FIRST = 1u << 7",
     "MPVFLOW_GPU_PASS_PAIR_GATE_REDUCE = 1u << 8",
@@ -257,34 +181,10 @@ for marker in (
     "*status = MPVFLOW_GPU_UNSUPPORTED_SHADER",
 ):
     assert marker in gpu_source, f"pair-gate shader setup failure must remain diagnosable: missing {marker!r}"
-capture_define = "#define MPVFLOW_DEBUG_CAPTURE 1\n"
-capture_default = prepare.configure_debug_capture_source(gpu_source, enabled=False)
-assert capture_define not in capture_default, "default MPV source preparation must not enable debug capture"
 prepare_source = PREPARE.read_text(encoding="utf-8")
-assert 'debug_capture_enabled = os.environ.get("MPVFLOW_DEBUG_CAPTURE") == "1"' in prepare_source
-assert "MPVFLOW_DEBUG_CAPTURE is unsupported with the pinned FongMi 645 motion core" in prepare_source
-assert "Enabled bounded one-shot FongMi diagnostics for this debug runtime" not in prepare_source
-assert "FongMi one-shot diagnostics disabled; leaving motion/VO sources uninstrumented" in prepare_source
-capture_debug = prepare.configure_debug_capture_source(gpu_source, enabled=True)
-assert capture_debug.count(capture_define) == 1, "debug capture define must be injected exactly once"
-assert capture_debug.index("*/") < capture_debug.index(capture_define) < capture_debug.index("#include"), "debug capture define must follow the SPDX notice"
-assert prepare.configure_debug_capture_source(capture_debug, enabled=True) == capture_debug, "debug capture source preparation must be idempotent"
-assert prepare.configure_debug_capture_source(capture_debug, enabled=False) == capture_default, "disabling debug capture must restore the default source"
-cmake_native = (ROOT / "app/src/main/cpp/CMakeLists.txt").read_text(encoding="utf-8")
-assert "target_compile_definitions(media3flow_vulkan PRIVATE\n        $<$<CONFIG:Debug>:MPVFLOW_DEBUG_CAPTURE=1>)" in cmake_native, "Media3 Vulkan capture define must be Debug-only"
-app_build = (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
-assert "val includeMpvFlowFongmiDiagnostics = false" in app_build
-assert 'project.findProperty("mpvFlowFongmiDiagnosticCapture")?.toString() == "true"' not in app_build
-assert 'buildConfigField("boolean", "MPV_HAS_FONGMI_DIAGNOSTICS", "false")' in app_build
-assert 'buildConfigField("boolean", "MPV_JELLY_MASK_PREVIEW", "false")' in app_build
-assert 'create("jellyPreview")' in app_build
-jelly_preview_type = app_build.split('create("jellyPreview")', 1)[1].split("\n    }", 1)[0]
-assert 'applicationIdSuffix = ".debug"' in jelly_preview_type
-assert 'matchingFallbacks += listOf("debug")' in jelly_preview_type
-assert 'buildConfigField("boolean", "MPV_JELLY_MASK_PREVIEW", "true")' in jelly_preview_type
-assert 'resValue("string", "app_name", "Mpv∞-Jelly Blend Test")' in jelly_preview_type
+assert "MPVFLOW_DEBUG_CAPTURE" not in prepare_source
 
-old_dependency = "vulkan = dependency('vulkan', version: '>= 1.4.309', required: vulkan_opt)"
+old_dependency = "vulkan = dependency('vulkan', version: '>= 1.3.238', required: vulkan_opt)"
 new_dependency = "vulkan = dependency('vulkan', required: vulkan_opt)"
 header_check = "cc.has_header_symbol('vulkan/vulkan_core.h', 'VK_VERSION_1_3', dependencies: vulkan)"
 meson = f"before\n{old_dependency}\n{header_check}\nafter\n"
@@ -345,8 +245,8 @@ assert patched_mailbox_context.index("pl_params.present_mode = p->opts->swap_mod
 assert prepare.enable_mailbox_suboptimal_tolerance(patched_mailbox_context) == patched_mailbox_context, (
     "mailbox suboptimal preparation must be safe to repeat"
 )
-assert "pl_params.allow_suboptimal =\n        pl_params.allow_suboptimal ||\n        pl_params.present_mode == VK_PRESENT_MODE_MAILBOX_KHR;" in patched_mailbox_context, (
-    "the effective Mailbox request must preserve prior suboptimal policy while enabling tolerance"
+assert "pl_params.allow_suboptimal =\n        pl_params.present_mode == VK_PRESENT_MODE_MAILBOX_KHR;" in patched_mailbox_context, (
+    "only the effective Mailbox request may opt into suboptimal tolerance; FIFO and other modes remain false"
 )
 for bad_mailbox_context in (
     "no Vulkan swap-mode override here\n",
@@ -366,13 +266,9 @@ qcom_vulkan_context = """\
     VkPhysicalDeviceZeroInitializeWorkgroupMemoryFeaturesKHR zero_init_feature = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ZERO_INITIALIZE_WORKGROUP_MEMORY_FEATURES_KHR,
     };
-    VkPhysicalDeviceWorkgroupMemoryExplicitLayoutFeaturesKHR explicit_mem_layout_feature = {
-        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_WORKGROUP_MEMORY_EXPLICIT_LAYOUT_FEATURES_KHR,
-        .pNext = &zero_init_feature,
-    };
     VkPhysicalDeviceOpticalFlowFeaturesNV optical_flow_feature = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPTICAL_FLOW_FEATURES_NV,
-        .pNext = &explicit_mem_layout_feature,
+        .pNext = &zero_init_feature,
         .opticalFlow = true,
     };
 """
@@ -384,15 +280,10 @@ for marker in (
     "VkPhysicalDeviceImageProcessing2FeaturesQCOM",
     "textureBlockMatch = true",
     "textureBlockMatch2 = true",
-    ".pNext = &explicit_mem_layout_feature,",
     "&image_processing_feature",
     "MPVFLOW_QCOM_IMAGE_PROCESSING_FEATURES",
 ):
     assert marker in patched_qcom_context, f"MPV QCOM enablement patch is missing {marker!r}"
-assert patched_qcom_context.count("&explicit_mem_layout_feature") >= 3, (
-    "QCOM feature-chain fallbacks must preserve MPV645's explicit-memory-layout node"
-)
-assert "#ifdef VK_QCOM_image_processing2\n        .pNext = &image_processing2_feature,\n#else\n        .pNext = &explicit_mem_layout_feature,\n#endif\n" in patched_qcom_context
 assert prepare.enable_qcom_image_processing(patched_qcom_context) == patched_qcom_context
 for bad_qcom_context in (
     "no optional extension list or feature chain\n",
@@ -461,39 +352,6 @@ for bad_timer_source in (
     else:
         raise AssertionError("unexpected libplacebo timer-ring layout must fail closed")
 
-wsi_header = "PL_API bool pl_vulkan_swapchain_suboptimal(pl_swapchain sw);\n"
-patched_wsi_header = prepare.add_libplacebo_swapchain_diagnostics_api(wsi_header)
-assert "PL_API bool pl_vulkan_swapchain_set_diagnostics(pl_swapchain sw, bool enabled);" in patched_wsi_header
-assert "PL_API bool pl_vulkan_swapchain_get_diagnostics(" in patched_wsi_header
-assert "int *created_mode, int *requested_depth" in patched_wsi_header
-assert prepare.add_libplacebo_swapchain_diagnostics_api(patched_wsi_header) == patched_wsi_header
-legacy_wsi_header = wsi_header + "PL_API bool pl_vulkan_swapchain_set_diagnostics(pl_swapchain sw, bool enabled);\n"
-upgraded_wsi_header = prepare.add_libplacebo_swapchain_diagnostics_api(legacy_wsi_header)
-assert upgraded_wsi_header.count("PL_API bool pl_vulkan_swapchain_set_diagnostics(") == 1
-assert "PL_API bool pl_vulkan_swapchain_get_diagnostics(" in upgraded_wsi_header
-for bad_wsi_header in ("no swapchain declaration here\n", wsi_header + wsi_header):
-    try:
-        prepare.add_libplacebo_swapchain_diagnostics_api(bad_wsi_header)
-    except SystemExit:
-        pass
-    else:
-        raise AssertionError("unexpected libplacebo Vulkan API changes must fail closed")
-stub_source = "bool pl_vulkan_swapchain_suboptimal(pl_swapchain sw)\n{\n    pl_unreachable();\n}\n"
-patched_stub_source = prepare.add_libplacebo_swapchain_diagnostics_stub(stub_source)
-assert "bool pl_vulkan_swapchain_set_diagnostics(pl_swapchain sw, bool enabled)" in patched_stub_source
-assert "bool pl_vulkan_swapchain_get_diagnostics(" in patched_stub_source
-assert prepare.add_libplacebo_swapchain_diagnostics_stub(patched_stub_source) == patched_stub_source
-legacy_stub_source = stub_source + "bool pl_vulkan_swapchain_set_diagnostics(pl_swapchain sw, bool enabled)\n{\n    pl_unreachable();\n}\n"
-upgraded_stub_source = prepare.add_libplacebo_swapchain_diagnostics_stub(legacy_stub_source)
-assert upgraded_stub_source.count("bool pl_vulkan_swapchain_set_diagnostics(") == 1
-assert "bool pl_vulkan_swapchain_get_diagnostics(" in upgraded_stub_source
-for bad_stub_source in ("unrecognized no-Vulkan stubs\n", stub_source + stub_source):
-    try:
-        prepare.add_libplacebo_swapchain_diagnostics_stub(bad_stub_source)
-    except SystemExit:
-        pass
-    else:
-        raise AssertionError("unexpected libplacebo no-Vulkan stubs must fail closed")
 formats_source = (
     'static const struct vk_format vk_formats[] = {\n'
     '    {VK_FORMAT_R16G16_SINT,           REGFMT("rg16i",    2, 16, SINT)},\n'
@@ -673,100 +531,6 @@ for bad_wsi_recovery in (
         pass
     else:
         raise AssertionError("unexpected pinned WSI recovery changes must fail closed")
-patched_wsi_source = prepare.instrument_libplacebo_swapchain(wsi_source)
-prepare.validate_libplacebo_suboptimal_recovery(patched_wsi_source)
-direct_submit_block = (
-    "    int qidx = cmd->qindex;\n"
-    "    if (!CMD_SUBMIT(&cmd)) {\n"
-    "        pl_mutex_unlock(&p->lock);\n"
-    "        return false;\n"
-    "    }\n"
-)
-vk_tex_hold_block = (
-    "    int qidx;\n"
-    "    bool held = vk_tex_hold(gpu, pl_vulkan_hold_params(\n"
-    "        .tex = current->images.elem[idx],\n"
-    "    ), &p->frames_in_flight, &qidx);\n"
-    "    if (!held) {\n"
-    "        pl_mutex_unlock(&p->lock);\n"
-    "        return false;\n"
-    "    }\n"
-)
-assert wsi_source.count(direct_submit_block) == 1
-vk_tex_hold_wsi_source = wsi_source.replace(direct_submit_block, vk_tex_hold_block, 1)
-patched_vk_tex_hold_wsi_source = prepare.instrument_libplacebo_swapchain(vk_tex_hold_wsi_source)
-prepare.validate_libplacebo_suboptimal_recovery(patched_vk_tex_hold_wsi_source)
-assert 'FLOW_WSI_COMMAND_SUBMIT, "vk_tex_hold"' in patched_vk_tex_hold_wsi_source
-assert patched_vk_tex_hold_wsi_source.index("pl_clock_t flow_submit_start") < patched_vk_tex_hold_wsi_source.index(
-    "bool held = vk_tex_hold("
-), "vk_tex_hold host timing must start before the wrapper call"
-hold_call_pos = patched_vk_tex_hold_wsi_source.index("bool held = vk_tex_hold(")
-hold_report_pos = patched_vk_tex_hold_wsi_source.index('FLOW_WSI_COMMAND_SUBMIT, "vk_tex_hold"')
-hold_failure_pos = patched_vk_tex_hold_wsi_source.index("if (!held)", hold_call_pos)
-assert hold_call_pos < hold_report_pos < hold_failure_pos, (
-    "vk_tex_hold timing must report the host call result before preserving its original failure handling"
-)
-assert prepare.instrument_libplacebo_swapchain(patched_vk_tex_hold_wsi_source) == patched_vk_tex_hold_wsi_source
-fongmi_wsi_source = wsi_source.replace(
-    "    bool has_swapchain_maintenance1;\n    struct pl_color_repr color_repr;",
-    "    bool has_swapchain_maintenance1;\n    uint64_t generation;\n    struct pl_color_repr color_repr;",
-    1,
-).replace(
-    "    if (p->suboptimal || p->needs_recreate || width_changed || height_changed)\n"
-    "        ok = vk_sw_recreate(sw, *width, *height);",
-    "    bool recreate = p->suboptimal || p->needs_recreate || width_changed || height_changed;\n"
-    "    if (ok && recreate)\n        ok = vk_sw_recreate(sw, *width, *height);",
-    1,
-).replace(
-    "    vk->lock_queue(vk->queue_ctx, pool->qf, qidx);\n"
-    "    VkResult res = vk->QueuePresentKHR(queue, &pinfo);\n"
-    "    vk->unlock_queue(vk->queue_ctx, pool->qf, qidx);",
-    "    vk->lock_queue(vk->queue_ctx, pool->qf, qidx);\n"
-    "    uint64_t begin = timing.presentID ? present_time(sw) : 0;\n"
-    "    VkResult res = vk->QueuePresentKHR(queue, &pinfo);\n"
-    "    vk_present_submit(history, timing.presentID, begin, res);\n"
-    "    vk->unlock_queue(vk->queue_ctx, pool->qf, qidx);",
-    1,
-)
-prepare.validate_libplacebo_suboptimal_recovery(fongmi_wsi_source)
-fongmi_patched_wsi_source = prepare.instrument_libplacebo_swapchain(fongmi_wsi_source)
-prepare.validate_libplacebo_suboptimal_recovery(fongmi_patched_wsi_source)
-assert "uint64_t generation;\n    atomic_bool flow_diagnostics;" in fongmi_patched_wsi_source
-assert "bool recreate = p->suboptimal || p->needs_recreate || width_changed || height_changed;" in fongmi_patched_wsi_source
-assert "vk_present_submit(history, timing.presentID, begin, res);" in fongmi_patched_wsi_source
-assert fongmi_patched_wsi_source.count("pl_clock_t flow_queue_lock_end = flow_queue_lock_start ? pl_clock_now() : 0;") == 1
-assert fongmi_patched_wsi_source.count("pl_clock_t flow_present_start = flow_queue_lock_start ? pl_clock_now() : 0;") == 1
-bad_fongmi_resize = fongmi_wsi_source.replace("width_changed || height_changed", "false", 1)
-try:
-    prepare.validate_libplacebo_suboptimal_recovery(bad_fongmi_resize)
-except SystemExit:
-    pass
-else:
-    raise AssertionError("FongMi resize recovery must fail closed if size-change handling is lost")
-bad_instrumented_recovery = patched_wsi_source.replace(
-    "bool flow_retry_recreate_ok = vk_sw_recreate(sw, 0, 0);",
-    "bool flow_retry_recreate_ok = false;",
-    1,
-)
-try:
-    prepare.validate_libplacebo_suboptimal_recovery(bad_instrumented_recovery)
-except SystemExit:
-    pass
-else:
-    raise AssertionError("repeated preparation must fail closed if timed out-of-date recreation is lost")
-for recovery_marker in (
-    "if (p->suboptimal && !p->params.allow_suboptimal)\n        recreate = true;",
-    "case VK_SUBOPTIMAL_KHR:\n            p->suboptimal = true;\n            // fall through\n        case VK_SUCCESS:",
-    "case VK_ERROR_OUT_OF_DATE_KHR:\n        // We can silently ignore this error, since the next start_frame will\n        // recreate the swapchain automatically.\n        return true;",
-    "if (p->suboptimal || p->needs_recreate || width_changed || height_changed)\n        ok = vk_sw_recreate(sw, *width, *height);",
-):
-    assert recovery_marker in patched_wsi_source, f"pinned WSI recovery changed: {recovery_marker!r}"
-assert "case VK_ERROR_OUT_OF_DATE_KHR: {" in patched_wsi_source
-assert "bool flow_retry_recreate_ok = vk_sw_recreate(sw, 0, 0);" in patched_wsi_source
-assert "if (!flow_retry_recreate_ok) {" in patched_wsi_source and "continue;" in patched_wsi_source, (
-    "the timed instrumentation must preserve out-of-date recreation failure handling and retry"
-)
-
 def should_recreate_on_start(current: bool, needs_recreate: bool, suboptimal: bool, allow_suboptimal: bool) -> bool:
     recreate = not current or needs_recreate
     if suboptimal and not allow_suboptimal:
@@ -784,80 +548,6 @@ def should_recreate_on_resize(suboptimal: bool, needs_recreate: bool, width_chan
 assert should_recreate_on_resize(False, False, True, False), "surface width changes must still recreate under Mailbox"
 assert should_recreate_on_resize(False, False, False, True), "surface height changes must still recreate under Mailbox"
 assert should_recreate_on_resize(True, False, False, False), "explicit resize must clear a tolerated suboptimal swapchain"
-
-for marker in (
-    "atomic_bool flow_diagnostics",
-    "VkPresentModeKHR flow_created_present_mode",
-    "uint32_t flow_created_image_count",
-    "flow_created_info_valid, flow_created_info_reported",
-    "flow_report_created_swapchain(p);",
-    "create_min_images=%u",
-    "actual_images=%u",
-    "uint32_t flow_surface_min_image_count, flow_surface_max_image_count",
-    "surface_min_images=%u surface_max_images=%u",
-    "p->flow_surface_min_image_count = caps.minImageCount;",
-    "p->flow_surface_max_image_count = caps.maxImageCount;",
-    "event=wsi_swapchain_created",
-    'FLOW_WSI_ACQUIRE, "vkAcquireNextImageKHR"',
-    'FLOW_WSI_FENCE_WAIT, "present_fence_wait"',
-    'FLOW_WSI_PRESENT, "vkQueuePresentKHR"',
-    "bool pl_vulkan_swapchain_set_diagnostics(pl_swapchain sw, bool enabled)",
-    "bool pl_vulkan_swapchain_get_diagnostics(",
-):
-    assert marker in patched_wsi_source, f"libplacebo WSI diagnostic instrumentation is missing {marker!r}"
-assert "metric=host_call_duration_not_scanout" in patched_wsi_source
-assert "if (!atomic_load_explicit(&p->flow_diagnostics, memory_order_relaxed))" in patched_wsi_source
-assert "bool first_sample = !p->flow_diag_last_report[stage];" in patched_wsi_source
-assert "if (window_s < 5.0 && !first_sample && !low_frequency_stage)" in patched_wsi_source, (
-    "WSI timings must emit their first sample, then remain rate-limited rather than log per frame"
-)
-low_frequency_stage_body = patched_wsi_source.split("bool low_frequency_stage = ", 1)[1].split(";", 1)[0]
-assert "FLOW_WSI_IMAGE_INIT" not in low_frequency_stage_body, (
-    "per-frame vk_sw_image_init timings must be retained as five-second aggregates, not emitted per call"
-)
-assert 'FLOW_WSI_IMAGE_INIT, "vk_sw_image_init"' in patched_wsi_source, (
-    "vk_sw_image_init timing must remain measured in the periodic aggregate"
-)
-assert "acquire_semaphore_signal=%s" not in patched_wsi_source, (
-    "vkAcquireNextImageKHR returning VK_SUCCESS does not prove its semaphore has signaled at host return"
-)
-assert patched_wsi_source.index("p->flow_created_present_mode = sinfo.presentMode;") < patched_wsi_source.index(
-    "flow_report_created_swapchain(p);"
-), "the created swapchain mode must be stored before it is reported"
-assert patched_wsi_source.index("p->flow_created_image_count = num_images;") < patched_wsi_source.index(
-    "flow_report_created_swapchain(p);"
-), "actual image count must be stored before the created swapchain is reported"
-assert patched_wsi_source.index("p->flow_surface_min_image_count = caps.minImageCount;") < patched_wsi_source.index(
-    "// Check for hidden/invisible window"
-), "surface image-count limits must be captured at the shared caps_ready path"
-diagnostic_setter = patched_wsi_source.split(
-    "bool pl_vulkan_swapchain_set_diagnostics(pl_swapchain sw, bool enabled)", 1
-)[1]
-assert "if (enabled)\n        flow_report_created_swapchain(p);" in diagnostic_setter, (
-    "enabling diagnostics after creation must report the effective swapchain mode"
-)
-assert prepare.instrument_libplacebo_swapchain(patched_wsi_source) == patched_wsi_source
-for call in (
-    "vk->AcquireNextImageKHR(vk->dev, p->current->swapchain, UINT64_MAX,",
-    "vk->WaitForFences(vk->dev, 1, pfence, VK_TRUE, UINT64_MAX)",
-):
-    assert patched_wsi_source.count(call) == wsi_source.count(call) == 1, (
-        f"WSI instrumentation must preserve the original infinite-timeout API call: {call}"
-    )
-assert "VK_TRUE, UINT64_MAX" in patched_wsi_source and "vk->ResetFences(vk->dev, 1, pfence);" in patched_wsi_source, (
-    "WSI instrumentation must preserve the original present-fence wait/reset sequence"
-)
-for bad_wsi_source in (
-    "unrecognized Vulkan swapchain source\n",
-    wsi_source + "\n" + wsi_source,
-    vk_tex_hold_wsi_source.replace("bool held = vk_tex_hold(", "bool held = vk_tex_hold_unrecognized(", 1),
-):
-    try:
-        prepare.instrument_libplacebo_swapchain(bad_wsi_source)
-    except SystemExit:
-        pass
-    else:
-        raise AssertionError("unexpected libplacebo swapchain implementation must fail closed")
 
 build = BUILD.read_text(encoding="utf-8")
 prepare_source = PREPARE.read_text(encoding="utf-8")
@@ -897,44 +587,30 @@ assert 'qcom_log(qcom->gpu, PL_LOG_INFO,\n             "MPVFLOW_DIAGNOSTIC event
 )
 assert 'FONGMI_PATCH = VENDOR / "fongmi/mpv-fongmi-android.patch"' not in prepare_source
 assert '"--input", str(FONGMI_PATCH)' not in prepare_source
-assert '"mpvflow-vo-gpu-next.patch"' in prepare_source
-assert '"mpvflow-aimagereader-vulkan.patch"' in prepare_source
-assert 'retry_marker = "if (map_result == RA_HWDEC_MAP_RETRY) {"' in prepare_source
-assert 'if retry_marker not in gpu_video_source:' in prepare_source
-assert "mapper_meson_sources = (" in prepare_source
-assert '"#define RA_HWDEC_MAP_RETRY (-2)" not in hwdec_header_path.read_text' in prepare_source
-assert 'not all(source in meson for source in mapper_meson_sources)' in prepare_source
-assert '"# MPVFLOW_AIMAGE_VULKAN_MAPPER"' not in prepare_source
-retry_patch = VULKAN_MAPPER_PATCH.read_text(encoding="utf-8")
-assert "video/out/gpu/video.c" in retry_patch and "unref_current_image(p);" in retry_patch
-assert "video/out/gpu/hwdec.c" not in retry_patch and "video/out/vo_gpu_next.c" not in retry_patch
+assert '"mpvflow-vo-gpu-next.patch"' not in prepare_source
+assert '"mpvflow-aimagereader-vulkan.patch"' not in prepare_source
 assert '"video/out/gpu_next/motion.c"' in prepare_source
-assert 'scripts/patch_fongmi_motion_diagnostics.py' not in prepare_source
-assert 'scripts/patch_fongmi_vo_diagnostics.py' not in prepare_source
 assert 'subprocess.run([sys.executable, str(patcher), str(mpv_dir)], cwd=ROOT, check=True)' not in prepare_source
-assert "MPVFLOW_DEBUG_CAPTURE is unsupported with the pinned FongMi 645 motion core" in prepare_source
 assert '"motion-interpolation", OPT_INT(motion_fps)' in prepare_source
 assert '"video/out/hwdec/hwdec_aimagereader_vk_direct.c"' in prepare_source
 assert '"motion-interpolation-info", mp_property_motion_info' in prepare_source
 assert 'mp.get_property_native("motion-interpolation-info")' in prepare_source
 assert "validate_fongmi_frame_priv_members(vo)" in prepare_source
-assert '"struct ra_hwdec *hwdec;"' in prepare_source
-assert '"struct ra_hwdec *el_hwdec;"' in prepare_source
-assert '"bool hwdec_preloaded;"' not in prepare_source
 assert '"bool retry = result == RA_HWDEC_MAP_RETRY;"' in prepare_source
 assert '"fp->source->failed = ret != RA_HWDEC_MAP_RETRY;"' in prepare_source
 assert "Pinned FongMi VO is missing the transient hwdec-map retry/ownership contract" in prepare_source
 assert "vulkan_context = enable_mailbox_suboptimal_tolerance(vulkan_context)" in prepare_source, (
     "the measured mailbox suboptimal fix must be applied by the pinned MPV preparation pipeline"
 )
-assert "mpvflow_gpu.c" in prepare_source, "MPVFlow renderer source must be staged into the runtime"
+assert "mpvflow_gpu.c" not in prepare_source, "MPV runtime preparation must not stage the retired Flow renderer"
 assert "FONGMI_PATCH" not in prepare_source, "MPV runtime must compile the pinned FongMi source directly"
-assert "mpvflow_gpu.c" in prepare_source, "MPVFlow renderer source must be staged into the runtime"
+assert "mpvflow_gpu.c" not in prepare_source, "MPV runtime preparation must not stage the retired Flow renderer"
 prepare_call = 'python3 "$ROOT/scripts/prepare-mpvflow.py" --mpv-dir "$BUILDSCRIPTS/deps/mpv" --libplacebo-dir "$BUILDSCRIPTS/deps/libplacebo"'
 assert prepare_call in build, "the native build must patch pinned libplacebo before compilation"
 workflow_source = (ROOT / ".github/workflows/mpvflow-debug-arm64.yml").read_text(encoding="utf-8")
-assert "scripts/patch_fongmi_motion_diagnostics.py" not in workflow_source
-assert "scripts/patch_fongmi_vo_diagnostics.py" not in workflow_source
+assert "MPVFLOW_DEBUG_CAPTURE" not in workflow_source
+assert "MPVFLOW_JELLY" not in workflow_source
+assert "jelly_test" not in workflow_source and "jelly_preview" not in workflow_source
 native_cmake = (ROOT / "app/src/main/cpp/CMakeLists.txt").read_text(encoding="utf-8")
 assert "target_compile_options(media3flow_vulkan PRIVATE -fvisibility=hidden)" in native_cmake
 assert "target_link_options(media3flow_vulkan PRIVATE -Wl,--strip-all)" in native_cmake
@@ -1045,9 +721,6 @@ assert flow_surface_initialize.index("initialized = sinkInitialized") < flow_sur
 assert build.index("./include/ci.sh install") < build.index(prepare_call) < build.index("./include/ci.sh build"), (
     "the libplacebo search-path correction must run after dependency checkout and before native builds"
 )
-assert build.index("./include/ci.sh build") < build.index('API391_HEADER_ROOT="$ROOT/app/mpvflow-generated/libplacebo-api-391"') < build.index('APK="$(find "$MPV_BUILDER_DIR/app/build/outputs/apk"'), (
-    "API-391 headers must be staged after native build and before runtime APK discovery"
-)
 required_fragments = (
     "1062752a891c95b2bfeed9e356562d88f9df84ac",
     "-DCMAKE_TOOLCHAIN_FILE=",
@@ -1064,10 +737,6 @@ required_fragments = (
     'MPV_BUILD_DIR="$BUILDSCRIPTS/deps/mpv/_build-arm64"',
     'MPV_DEPENDENCIES="$MPV_BUILD_DIR/meson-info/intro-dependencies.json"',
     'PLACEBO_PC="$MPV_PREFIX/pkgconfig/libplacebo.pc"',
-    'PLACEBO_INCLUDE_DIR="${MPV_PREFIX%/lib}/include/libplacebo"',
-    'API391_HEADER_ROOT="$ROOT/app/mpvflow-generated/libplacebo-api-391"',
-    "FONGMI_HEADERS.sha256",
-    "PL_API_VER",
     'PLACEBO_VERSION="$(sed -n \'s/^Version: *//p\' "$PLACEBO_PC")"',
     'readelf -d "$MPV_LIBRARY"',
     'python3 - "$MPV_DEPENDENCIES" "$PLACEBO_VERSION"',
@@ -1175,7 +844,7 @@ for marker in (
     "displayRefreshRate == null || flowDisplayFpsOverrideRc == 0",
     "snapshotDisplayRefreshRateOnMain()",
     "else cachedDisplayRefreshRate",
-    "var mpvFlowFrameInterpolationEnabled =",
+    "val mpvFlowFrameInterpolationEnabled =",
     "mpvFlowFrameInterpolationCandidate && flowTimingOptionsReady",
     'PlaybackSession.setOptionString("motion-interpolation", targetFps.toString())',
     'PlaybackSession.setOptionString("video-sync", "audio")',
@@ -1549,7 +1218,7 @@ assert "effective_compute_api=${effectiveComputeApiName()}" in media3_sink_sourc
 assert "backend=vulkan-spirv" not in media3_sink_source, (
     "Media3 Flow diagnostics must not claim Vulkan compute when OpenCL was requested or selected"
 )
-for source in ("mpvflow/mpvflow_capture_io.c", "mpvflow/mpvflow_opencl.c", "mpvflow/mpvflow_opencl_vk_bridge.c"):
+for source in ("mpvflow/mpvflow_opencl.c", "mpvflow/mpvflow_opencl_vk_bridge.c"):
     assert source in cmake_source, f"Native Media3 must compile {source}"
 assert "dl" in cmake_source and 'android:name="libOpenCL.so"' in manifest_source and 'android:required="false"' in manifest_source, (
     "OpenCL must be dynamically loaded as an optional Android vendor library"

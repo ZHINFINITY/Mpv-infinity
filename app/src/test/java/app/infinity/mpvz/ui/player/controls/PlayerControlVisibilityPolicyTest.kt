@@ -222,7 +222,6 @@ class PlayerControlVisibilityPolicyTest {
       PlayerControlVisibilityPolicy.isNativePlaybackStalled(
         isEnded = false,
         isReady = false,
-        isLoading = true,
         isBuffering = true,
         isLocalSource = true,
         hasRenderedFirstFrame = false,
@@ -232,7 +231,6 @@ class PlayerControlVisibilityPolicyTest {
       PlayerControlVisibilityPolicy.isNativePlaybackStalled(
         isEnded = false,
         isReady = false,
-        isLoading = true,
         isBuffering = false,
         isLocalSource = false,
         hasRenderedFirstFrame = false,
@@ -242,7 +240,6 @@ class PlayerControlVisibilityPolicyTest {
       PlayerControlVisibilityPolicy.isNativePlaybackStalled(
         isEnded = false,
         isReady = true,
-        isLoading = false,
         isBuffering = true,
         isLocalSource = true,
         hasRenderedFirstFrame = true,
@@ -252,7 +249,6 @@ class PlayerControlVisibilityPolicyTest {
       PlayerControlVisibilityPolicy.isNativePlaybackStalled(
         isEnded = true,
         isReady = false,
-        isLoading = true,
         isBuffering = true,
         isLocalSource = false,
         hasRenderedFirstFrame = true,
@@ -261,25 +257,49 @@ class PlayerControlVisibilityPolicyTest {
   }
 
   @Test
-  fun nativeBackgroundLoadingAfterFirstFrameIsNotAStall() {
+  fun nativeLoadingAheadDoesNotShowBufferingWhilePlaybackIsAdvancing() {
     assertFalse(
       PlayerControlVisibilityPolicy.isNativePlaybackStalled(
         isEnded = false,
         isReady = true,
-        isLoading = true,
         isBuffering = false,
+        isLoading = true,
         isLocalSource = false,
         hasRenderedFirstFrame = true,
+        isPlaying = true,
+      ),
+    )
+    assertFalse(
+      PlayerControlVisibilityPolicy.isNativePlaybackStalled(
+        isEnded = false,
+        isReady = true,
+        isBuffering = true,
+        isLoading = true,
+        isLocalSource = false,
+        hasRenderedFirstFrame = true,
+        isPlaying = true,
+      ),
+    )
+    assertFalse(
+      PlayerControlVisibilityPolicy.isNativePlaybackStalled(
+        isEnded = false,
+        isReady = true,
+        isBuffering = false,
+        isLoading = true,
+        isLocalSource = false,
+        hasRenderedFirstFrame = true,
+        isPlaying = false,
       ),
     )
     assertTrue(
       PlayerControlVisibilityPolicy.isNativePlaybackStalled(
         isEnded = false,
         isReady = true,
-        isLoading = true,
         isBuffering = false,
+        isLoading = true,
         isLocalSource = false,
         hasRenderedFirstFrame = false,
+        isPlaying = false,
       ),
     )
   }

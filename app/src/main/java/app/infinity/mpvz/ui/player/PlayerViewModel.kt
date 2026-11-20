@@ -2381,7 +2381,11 @@ class PlayerViewModel(
     _currentSkippableSegment.value = null
     _showSkipChipAuto.value = false
     skippedSegments.clear()
-    pendingIntroLookupTitle = currentMediaTitle.takeIf { it.isNotBlank() }
+    pendingIntroLookupTitle = null
+    currentMediaTitle = ""
+    lastAutoSelectedMediaTitle = null
+    videoHashJob?.cancel()
+    _videoHash.value = null
     _videoOpenAnimationState.update {
       it.copy(
         loadToken = it.loadToken + 1,
@@ -6286,7 +6290,7 @@ class PlayerViewModel(
       }
 
     return queue.items.mapIndexed { index, item ->
-      val uri = Uri.parse(NetworkPlaybackUri.normalize(item.originalUri))
+      val uri = PlaybackUriPolicy.playableUri(item.originalUri)
       val title = item.title?.takeIf { it.isNotBlank() } ?: uri.lastPathSegment.orEmpty()
       val resolvedUri =
         if (uri.scheme == "content") {
