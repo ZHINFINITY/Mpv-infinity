@@ -10,6 +10,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source', type=Path, required=True)
     parser.add_argument('--generate', type=Path, required=True)
+    parser.add_argument('--prefix', default='test_')
     args = parser.parse_args()
     source = args.source.read_text(encoding='utf-8')
     shaders = []
@@ -20,7 +21,7 @@ def main():
                           r'\[\] = GLSL\(\n.*?^\);', source, re.M | re.S)
         if not match:
             raise ValueError('Missing shader: ' + name)
-        shaders.append(match.group().replace(name + '[]', 'test_' + name + '[]', 1))
+        shaders.append(match.group().replace(name + '[]', args.prefix + name + '[]', 1))
     args.generate.write_text('#define GLSL(...) #__VA_ARGS__\n' +
                              '\n\n'.join(shaders) + '\n#undef GLSL\n', encoding='utf-8')
 

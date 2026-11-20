@@ -105,6 +105,29 @@ REPLACEMENT = r'''static void scaled_source_pair(pl_gpu gpu, struct mp_motion *m
 }'''
 
 
+APP_POLICY_FUNCTION = re.compile(
+    r"^static void synthesis_policy\(pl_gpu gpu\)\n\{.*?^\}",
+    re.MULTILINE | re.DOTALL,
+)
+
+
+def use_app_policy_shaders(source: str) -> str:
+    matches = list(APP_POLICY_FUNCTION.finditer(source))
+    if len(matches) != 1:
+        raise ValueError(f"expected one synthesis_policy function, found {len(matches)}")
+    start, end = matches[0].span()
+    function = matches[0].group(0)
+    for old, new in (
+        (".header = test_sample_header,", ".header = app_test_sample_header,"),
+        (".header = test_synthesis_header,", ".header = app_test_synthesis_header,"),
+        (".body = test_synthesis_body,", ".body = app_test_synthesis_body,"),
+    ):
+        if function.count(old) != 1:
+            raise ValueError("synthesis_policy no longer has exactly one app shader hook: " + old)
+        function = function.replace(old, new, 1)
+    return source[:start] + function + source[end:]
+
+
 def adapt(source: str) -> str:
     matches = list(FUNCTION.finditer(source))
     if len(matches) != 1:
@@ -120,12 +143,14 @@ def adapt(source: str) -> str:
     if source.count(APP_SHARED_BYTES_EXPR) != 1:
         raise ValueError("app fixture capability threshold no longer matches the expected test")
     adapted = source[: matches[0].start()] + REPLACEMENT + source[matches[0].end() :]
+    adapted = use_app_policy_shaders(adapted)
     include_marker = '#include "gpu_motion_shaders.h"\n'
     if adapted.count(include_marker) != 1:
         raise ValueError("expected one GPU motion shader include in the app fixture")
     adapted = adapted.replace(
         include_marker,
         include_marker
+        + '#include "gpu_motion_app_shaders.h"\n'
         + f"\n#define MPV645_MATCH_SHARED_BYTES {MPV645_SHARED_BYTES_EXPR}\n",
         1,
     )
@@ -138,6 +163,9 @@ def adapt(source: str) -> str:
         "const int scales[] = {2, 4}",
         f"#define MPV645_MATCH_SHARED_BYTES {MPV645_SHARED_BYTES_EXPR}",
         ADAPTED_SHARED_BYTES_EXPR,
+        '.header = app_test_sample_header,',
+        '.header = app_test_synthesis_header,',
+        '.body = app_test_synthesis_body,',
     ):
         if marker not in adapted:
             raise ValueError(f"adapted fixture is missing scale coverage: {marker}")
@@ -150,24 +178,29 @@ MPV_MOTION_TARGET = """motion_shaders = custom_target('motion-shaders',
         command: [python, files('gpu_motion.py'), '--source', '@INPUT0@',
                   '--vo-source', '@INPUT1@',
                   '--generate', '@OUTPUT@'])"""
-APP_MOTION_TARGET = """motion_shaders = custom_target('motion-shaders',
+APP_MOTION_TARGET = """    app_motion_shaders = custom_target('app-motion-policy-shaders',
         input: files('mpvflow_app_motion.c'),
         depend_files: files('mpvflow_app_motion.py'),
-        output: 'gpu_motion_shaders.h',
+        output: 'gpu_motion_app_shaders.h',
         command: [python, files('mpvflow_app_motion.py'), '--source', '@INPUT@',
-                  '--generate', '@OUTPUT@'])"""
+                  '--generate', '@OUTPUT@', '--prefix', 'app_test_'])"""
+MPV_MOTION_EXEC = "['gpu_motion.c', motion_shaders], link_with: libmpv_motion,"
+BOTH_MOTION_EXECS = "['gpu_motion.c', motion_shaders, app_motion_shaders], link_with: libmpv_motion,"
 
 
 def adapt_meson(source: str) -> str:
     if source.count(MPV_MOTION_TARGET) != 1:
         raise ValueError("expected exactly one pinned MPV motion-shader custom target")
-    adapted = source.replace(MPV_MOTION_TARGET, APP_MOTION_TARGET, 1)
-    if "input: files('mpvflow_app_motion.c')" not in adapted:
-        raise ValueError("temporary GPU shader target is not wired to the app helper")
-    if "files('mpvflow_app_motion.py')" not in adapted:
-        raise ValueError("temporary GPU shader target is not wired to the app generator")
-    if "input: files('../video/out/gpu_next/motion.c'" in adapted:
-        raise ValueError("pinned upstream motion shader remains in the test target")
+    if source.count(MPV_MOTION_EXEC) != 1:
+        raise ValueError("expected exactly one pinned MPV gpu-motion executable source list")
+    adapted = source.replace(MPV_MOTION_TARGET, MPV_MOTION_TARGET + "\n" + APP_MOTION_TARGET, 1)
+    adapted = adapted.replace(MPV_MOTION_EXEC, BOTH_MOTION_EXECS, 1)
+    if "input: files('../video/out/gpu_next/motion.c', '../video/out/vo_gpu_next.c')" not in adapted:
+        raise ValueError("the pinned MPV shader source was not preserved")
+    if "input: files('mpvflow_app_motion.c')" not in adapted or "'--prefix', 'app_test_'" not in adapted:
+        raise ValueError("app-only policy shader target is not separately prefixed")
+    if "motion_shaders, app_motion_shaders" not in adapted:
+        raise ValueError("gpu-motion executable is missing one of its distinct shader headers")
     return adapted
 
 
@@ -180,38 +213,40 @@ def self_test() -> None:
         raise ValueError("adapter left an obsolete API reference")
     if "mp_motion_supported(&limited)" not in adapted:
         raise ValueError("adapter removed the capability-boundary regression")
-    if "test_synthesis_pixel_header" in adapted or "source_size" not in adapted:
-        raise ValueError("app synthesis test header/uniforms are not source-aligned")
+    if 'app_test_warp_body' in adapted and '.body = app_test_warp_body,' in adapted:
+        raise ValueError("an unrelated MPV warp regression was redirected to the app shader")
+    if '.body = test_warp_body,' not in adapted:
+        raise ValueError("pinned MPV 645 warp regression no longer uses its upstream shader")
     motion_source = APP_MOTION.read_text(encoding="utf-8")
     if "MPVFLOW_LOCAL_MOTION_SOFTENING_V1" not in motion_source:
         raise ValueError("app-owned helper lacks the local-softening policy under test")
     with tempfile.TemporaryDirectory(prefix="pr137-app-shaders-") as temporary:
-        output = Path(temporary) / "gpu_motion_shaders.h"
+        output = Path(temporary) / "gpu_motion_app_shaders.h"
         subprocess.check_call([
             sys.executable, str(APP_SHADER_GENERATOR), "--source", str(APP_MOTION),
-            "--generate", str(output),
+            "--generate", str(output), "--prefix", "app_test_",
         ])
         generated = output.read_text(encoding="utf-8")
         if "MPVFLOW_LOCAL_MOTION_SOFTENING_V1" not in generated:
-            raise ValueError("generated GPU shader header omits app local softening")
-        for symbol in ("test_synthesis_header", "test_synthesis_body", "test_sample_header"):
+            raise ValueError("generated app shader header omits local softening")
+        for symbol in ("app_test_sample_header", "app_test_synthesis_header", "app_test_synthesis_body"):
             if symbol not in generated:
-                raise ValueError("generated GPU shader header is missing " + symbol)
-    if not ("value > 0.10f && value < 0.14f" in original):
-        raise ValueError("original app policy assertion is not the expected positive midpoint")
-    if "value > 0.10f && value < 0.14f" not in adapted:
-        raise ValueError("adapter did not retain the app-specific positive midpoint assertion")
+                raise ValueError("generated app shader header is missing " + symbol)
     sample_meson = """motion_shaders = custom_target('motion-shaders',
         input: files('../video/out/gpu_next/motion.c', '../video/out/vo_gpu_next.c'),
         output: 'gpu_motion_shaders.h',
         command: [python, files('gpu_motion.py'), '--source', '@INPUT0@',
                   '--vo-source', '@INPUT1@',
-                  '--generate', '@OUTPUT@'])"""
-    if "mpvflow_app_motion.c" not in adapt_meson(sample_meson):
-        raise ValueError("Meson self-test failed to select app-owned shader source")
+                  '--generate', '@OUTPUT@'])
+    gpu_motion = executable('gpu-motion',
+        ['gpu_motion.c', motion_shaders], link_with: libmpv_motion,"""
+    if 'app_motion_shaders' not in adapt_meson(sample_meson):
+        raise ValueError("Meson self-test failed to retain upstream shaders and add the app target")
+    if "value > 0.10f && value < 0.14f" not in adapted:
+        raise ValueError("adapter did not retain the app-specific positive midpoint assertion")
     print(
-        "MPV 645 GPU motion fixture adapter: source-pair scaling and pinned "
-        "capability-boundary coverage preserved"
+        "MPV 645 GPU motion fixture adapter: upstream warp tests preserved; "
+        "app-owned synthesis policy isolated and positive midpoint retained"
     )
 
 
@@ -263,8 +298,8 @@ def main(argv: list[str] | None = None) -> int:
     app_motion.write_text(motion_source, encoding="utf-8")
     app_generator = mpv_dir / "test/mpvflow_app_motion.py"
     app_generator.write_text(APP_SHADER_GENERATOR.read_text(encoding="utf-8"), encoding="utf-8")
-    print(f"Installed app-owned GPU policy fixture and shader source into temporary MPV checkout: {destination}")
-    print(f"Meson shader target now generates from the app-owned source: {app_motion}")
+    print(f"Installed app-owned synthesis fixture alongside pinned MPV 645 tests: {destination}")
+    print(f"Pinned MPV 645 shaders remain in gpu_motion_shaders.h; app synthesis shaders use gpu_motion_app_shaders.h from {app_motion}")
     return 0
 
 
