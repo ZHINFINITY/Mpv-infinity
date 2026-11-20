@@ -59,7 +59,7 @@ internal object BoundedProviderIo {
     operation: () -> T,
   ): T = providerReads.run(timeoutMs, fallback, onCancellation, operation)
 
-  private class BoundedLane(threadName: String) {
+  internal class BoundedLane(threadName: String) {
     // Keep this single daemon worker alive: an expiring core worker can race a new
     // SynchronousQueue submission and reject it while the old worker is exiting.
     private val executor =

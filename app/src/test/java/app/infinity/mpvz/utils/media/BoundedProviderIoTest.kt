@@ -39,8 +39,10 @@ class BoundedProviderIoTest {
     val started = CountDownLatch(1)
     val release = CountDownLatch(1)
     val cleaned = CountDownLatch(1)
+    // Parallel M3U tests may use the production lane; isolate this cancellation test.
+    val lane = BoundedProviderIo.BoundedLane("mpv-provider-cancellation-test")
     val job = launch {
-      BoundedProviderIo.read(
+      lane.run(
         timeoutMs = 10_000L,
         fallback = Unit,
         onCancellation = { cleaned.countDown() },
