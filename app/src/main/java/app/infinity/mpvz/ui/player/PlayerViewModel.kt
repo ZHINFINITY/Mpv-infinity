@@ -2466,8 +2466,8 @@ class PlayerViewModel(
 
   private fun setupCustomButtons() {
     customButtonsSetupJob?.cancel()
-    customButtonsSetupComplete = false
     val generation = synchronized(customButtonScriptsLock) {
+      customButtonsSetupComplete = false
       customButtonSetupGeneration.incrementAndGet().also { nextGeneration ->
         customButtonScriptsSnapshot = CustomButtonScriptsSnapshot(nextGeneration, emptyMap(), emptyMap())
       }
@@ -2628,8 +2628,10 @@ class PlayerViewModel(
               }
             }
           }
-          if (!isCurrentCustomButtonSetup(generation)) throw CancellationException("Superseded custom-button setup")
-          customButtonsSetupComplete = true
+          synchronized(customButtonScriptsLock) {
+            if (!isCurrentCustomButtonSetup(generation)) throw CancellationException("Superseded custom-button setup")
+            customButtonsSetupComplete = true
+          }
         } catch (cancelled: CancellationException) {
           throw cancelled
         } catch (e: Exception) {
