@@ -1240,6 +1240,7 @@
   <string name="player_horizontal_flip_off">左右反転オフ</string>
   <string name="player_vertical_flip_on">上下反転オン</string>
   <string name="player_vertical_flip_off">上下反転オフ</string>
+  <string name="player_flip_requires_hw_or_sw">フリップにはHWまたはSWデコードが必要です。HW+はサポートされていません。</string>
   <string name="btn_label_back">戻る矢印</string>
   <string name="btn_label_title">動画タイトル</string>
   <string name="btn_label_bookmarks">チャプター／ブックマーク</string>
@@ -2267,4 +2268,14 @@
 <string name="pref_glass_rim_width_summary">光る縁の太さ（dp）</string>
 <string name="pref_glass_rim_softness">縁の柔らかさ</string>
 <string name="pref_glass_rim_softness_summary">縁の光がどれだけ柔らかく消えるか</string>
+  <string name="player_sheets_sub_primary">メイン</string>
+  <string name="player_sheets_sub_secondary">サブ</string>
+  <string name="player_move_primary_subtitles_hint">上下にドラッグしてメイン字幕を移動</string>
+  <string name="player_move_secondary_subtitles_hint">上下にドラッグしてサブ字幕を移動</string>
+  <string name="video_mark_as_action">状態を設定</string>
+  <string name="video_mark_as_title">「%1$s」の状態を設定</string>
+  <string name="video_mark_as_new">新規</string>
+  <string name="video_mark_as_last_played">前回再生</string>
+  <string name="video_mark_as_finished">再生済み</string>
+  <string name="video_mark_as_none">なし</string>
 </resources>

@@ -1228,6 +1228,7 @@
   <string name="player_horizontal_flip_off">چرخش افقی</string>
   <string name="player_vertical_flip_on">چرخش عمودی On</string>
   <string name="player_vertical_flip_off">چرخش عمودی</string>
+  <string name="player_flip_requires_hw_or_sw">فلیپ به رمزگشایی HW یا SW نیاز دارد؛ HW+ پشتیبانی نمی‌شود.</string>
   <string name="btn_label_back">بازگشت به Arrow</string>
   <string name="btn_label_title">عنوان ویدئو</string>
   <string name="btn_label_bookmarks">فصل / Bookmarks</string>
@@ -2252,4 +2253,14 @@
 <string name="pref_glass_rim_width_summary">ضخامت لبهٔ نورانی بر حسب dp</string>
 <string name="pref_glass_rim_softness">نرمی لبه</string>
 <string name="pref_glass_rim_softness_summary">میزان نرمی محو شدن نور لبه</string>
+  <string name="player_sheets_sub_primary">اصلی</string>
+  <string name="player_sheets_sub_secondary">ثانویه</string>
+  <string name="player_move_primary_subtitles_hint">برای جابه‌جایی زیرنویس اصلی، آن را به بالا یا پایین بکشید</string>
+  <string name="player_move_secondary_subtitles_hint">برای جابه‌جایی زیرنویس ثانویه، آن را به بالا یا پایین بکشید</string>
+  <string name="video_mark_as_action">علامت‌گذاری به‌عنوان</string>
+  <string name="video_mark_as_title">«%1$s» را علامت‌گذاری کن به‌عنوان</string>
+  <string name="video_mark_as_new">جدید</string>
+  <string name="video_mark_as_last_played">آخرین پخش</string>
+  <string name="video_mark_as_finished">پایان‌یافته</string>
+  <string name="video_mark_as_none">هیچ‌کدام</string>
 </resources>

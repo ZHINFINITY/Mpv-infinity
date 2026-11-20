@@ -1171,7 +1171,15 @@ class MPVView(
       // Track console visibility state
       "user-data/mpv/console/open" to MPVLib.MpvFormat.MPV_FORMAT_FLAG,
       "sub-text" to MPVLib.MpvFormat.MPV_FORMAT_STRING,
+      "secondary-sub-text" to MPVLib.MpvFormat.MPV_FORMAT_STRING,
+      "sub-pos" to MPVLib.MpvFormat.MPV_FORMAT_INT64,
+      "secondary-sub-pos" to MPVLib.MpvFormat.MPV_FORMAT_INT64,
+      "sub-delay" to MPVLib.MpvFormat.MPV_FORMAT_DOUBLE,
+      "secondary-sub-delay" to MPVLib.MpvFormat.MPV_FORMAT_DOUBLE,
+      "sub-speed" to MPVLib.MpvFormat.MPV_FORMAT_DOUBLE,
+      "secondary-sub-speed" to MPVLib.MpvFormat.MPV_FORMAT_DOUBLE,
       "sub-scale" to MPVLib.MpvFormat.MPV_FORMAT_DOUBLE,
+      "secondary-sub-scale" to MPVLib.MpvFormat.MPV_FORMAT_DOUBLE,
     )
 
   private fun setupAudioOptions() {
@@ -1204,13 +1212,19 @@ class MPVView(
     // Auto-detect font provider (system fonts, embedded fonts, etc.)
     PlaybackSession.setOptionString("sub-font-provider", "auto")
 
-    // Delay and speed for both primary and secondary
-    val subDelay = (subtitlesPreferences.defaultSubDelay.get() / 1000.0).toString()
-    val subSpeed = subtitlesPreferences.defaultSubSpeed.get().toString()
+    // Secondary timing follows the primary default until the user sets a lane-specific default.
+    val primaryDelayMs = subtitlesPreferences.defaultSubDelay.get()
+    val secondaryDelayMs = subtitlesPreferences.defaultSecondarySubDelay.get()
+      .takeUnless { it == Int.MIN_VALUE } ?: primaryDelayMs
+    val subDelay = (primaryDelayMs / 1000.0).toString()
+    val secondarySubDelay = (secondaryDelayMs / 1000.0).toString()
+    val subSpeed = subtitlesPreferences.defaultSubSpeed.get()
+    val secondarySubSpeed = subtitlesPreferences.defaultSecondarySubSpeed.get()
+      .takeIf { it in 0.1f..10f } ?: subSpeed
     PlaybackSession.setOptionString("sub-delay", subDelay)
-    PlaybackSession.setOptionString("sub-speed", subSpeed)
-    PlaybackSession.setOptionString("secondary-sub-delay", subDelay)
-    PlaybackSession.setOptionString("secondary-sub-speed", subSpeed)
+    PlaybackSession.setOptionString("sub-speed", subSpeed.toString())
+    PlaybackSession.setOptionString("secondary-sub-delay", secondarySubDelay)
+    PlaybackSession.setOptionString("secondary-sub-speed", secondarySubSpeed.toString())
 
     val preferredFont = subtitlesPreferences.font.get().ifBlank { DEFAULT_SUBTITLE_FONT_FAMILY }
     PlaybackSession.setOptionString("sub-font", preferredFont)
@@ -1239,8 +1253,11 @@ class MPVView(
     val subPos = clampSubtitlePosition(subtitlesPreferences.subPos.get())
     val w = width.takeIf { it > 0 }?.toFloat() ?: context.resources.displayMetrics.widthPixels.toFloat()
     val h = height.takeIf { it > 0 }?.toFloat() ?: context.resources.displayMetrics.heightPixels.toFloat()
-    val secondarySubPos = calculateSecondarySubtitlePosition(subPos, w, h)
-    val subScale = subtitlesPreferences.subScale.get().toString()
+    val automaticSecondarySubPos = calculateSecondarySubtitlePosition(subPos, w, h)
+    val secondarySubPos =
+      resolveSecondarySubtitlePosition(automaticSecondarySubPos, subtitlesPreferences.secondarySubPos.get())
+    val subScale = subtitlesPreferences.subScale.get()
+    val secondarySubScale = subtitlesPreferences.secondarySubScale.get().takeIf { it > 0f } ?: subScale
 
     val scaleByWindow = if (subtitlesPreferences.scaleByWindow.get()) "yes" else "no"
     val blendMode =
@@ -1267,11 +1284,11 @@ class MPVView(
     PlaybackSession.setOptionString("sub-border-size", borderSize)
     PlaybackSession.setOptionString("sub-border-style", borderStyle)
     PlaybackSession.setOptionString("sub-shadow-offset", shadowOffset)
-    PlaybackSession.setOptionString("sub-scale", subScale)
+    PlaybackSession.setOptionString("sub-scale", subScale.toString())
     PlaybackSession.setOptionString("sub-pos", subPos.toString())
     PlaybackSession.setOptionString("sub-scale-by-window", scaleByWindow)
     PlaybackSession.setOptionString("sub-use-margins", scaleByWindow)
-    PlaybackSession.setOptionString("secondary-sub-scale", subScale)
+    PlaybackSession.setOptionString("secondary-sub-scale", secondarySubScale.toString())
     PlaybackSession.setOptionString("secondary-sub-pos", secondarySubPos.toString())
   }
 

@@ -17,9 +17,11 @@ import androidx.lifecycle.viewModelScope
 import app.infinity.mpvz.database.entities.PlaybackStateEntity
 import app.infinity.mpvz.domain.media.model.Video
 import app.infinity.mpvz.domain.playbackstate.repository.PlaybackStateRepository
+import app.infinity.mpvz.domain.recentlyplayed.repository.RecentlyPlayedRepository
 import app.infinity.mpvz.repository.MediaFileRepository
 import app.infinity.mpvz.ui.browser.base.BaseBrowserViewModel
 import app.infinity.mpvz.ui.player.PlaybackIdentity
+import app.infinity.mpvz.ui.player.PlaybackStateSaveCoordinator
 import app.infinity.mpvz.ui.player.isPlaybackStateWatched
 import app.infinity.mpvz.utils.history.RecentlyPlayedOps
 import app.infinity.mpvz.utils.media.MediaLibraryEvents
@@ -51,7 +53,6 @@ data class VideoWithPlaybackInfo(
   val isOldAndUnplayed: Boolean = false, // true while the NEW badge is eligible
   val isWatched: Boolean = false, // true once the configured watched threshold is reached
 )
-
 internal fun shouldShowNewBadge(
   isWatched: Boolean,
   isWithinNewLabelWindow: Boolean,
@@ -102,13 +103,17 @@ internal fun explicitVideoWatchedOverride(context: Context, videoPath: String): 
   }
 }
 
-internal fun setExplicitVideoWatchedOverride(context: Context, videoPath: String, watched: Boolean) {
+private val explicitVideoWatchedOverridesLock = Any()
+
+internal fun setExplicitVideoWatchedOverride(context: Context, videoPath: String, watched: Boolean?) {
   val prefix = "$videoPath\u001f"
   val preferences = context.getSharedPreferences("video_watched_overrides", Context.MODE_PRIVATE)
-  val values = preferences.getStringSet("values", emptySet())?.toMutableSet() ?: mutableSetOf()
-  values.removeIf { it.startsWith(prefix) }
-  values += "$prefix${if (watched) 1 else 0}"
-  preferences.edit().putStringSet("values", values).apply()
+  synchronized(explicitVideoWatchedOverridesLock) {
+    val values = preferences.getStringSet("values", emptySet())?.toMutableSet() ?: mutableSetOf()
+    values.removeIf { it.startsWith(prefix) }
+    if (watched != null) values += "$prefix${if (watched) 1 else 0}"
+    preferences.edit().putStringSet("values", values).apply()
+  }
 }
 
 internal fun buildVideoWithPlaybackInfo(
@@ -123,9 +128,8 @@ internal fun buildVideoWithPlaybackInfo(
   explicitlyMarkedWatched: Boolean = false,
 ): VideoWithPlaybackInfo {
   val durationSeconds = video.duration / 1000L
-  // A manual swipe-to-unwatched writes a reset playback state (position 0, full time remaining,
-  // hasBeenWatched=false). Keep that explicit child override visible even when its parent folder
-  // is marked watched and the file is older than the automatic NEW-label age window.
+  // Only an explicit child override can force NEW: a reset playback row alone (including Mark as
+  // None) stays age-governed, while an explicit manual NEW survives an old file or watched folder.
   val persistedUnwatched = explicitlyMarkedUnwatched
   val newLabelWindowMillis = newLabelDays.toLong() * 24L * 60L * 60L * 1000L
   val videoAgeMillis = currentTimeMillis - video.dateModified * 1000L
@@ -157,6 +161,7 @@ class VideoListViewModel(
 ) : BaseBrowserViewModel(application),
   KoinComponent {
   private val playbackStateRepository: PlaybackStateRepository by inject()
+  private val recentlyPlayedRepository: RecentlyPlayedRepository by inject()
   private val appearancePreferences: app.infinity.mpvz.preferences.AppearancePreferences by inject()
   private val browserPreferences: app.infinity.mpvz.preferences.BrowserPreferences by inject()
 
@@ -410,6 +415,7 @@ class VideoListViewModel(
       }
     val videosWithInfo =
       videos.map { video ->
+        val manualOverride = explicitVideoWatchedOverride(getApplication(), video.path)
         buildVideoWithPlaybackInfo(
           video = video,
           playbackState = videoPlaybackIdentifiers(video).firstNotNullOfOrNull(playbackByIdentifier::get),
@@ -418,8 +424,8 @@ class VideoListViewModel(
           watchedThreshold = watchedThreshold,
           folderMarkedUnwatched = folderMarkedUnwatched,
           folderMarkedWatched = folderMarkedWatched,
-          explicitlyMarkedUnwatched = explicitlyMarkedUnwatched(video),
-          explicitlyMarkedWatched = explicitlyMarkedWatched(video),
+          explicitlyMarkedUnwatched = manualOverride == false,
+          explicitlyMarkedWatched = manualOverride == true,
         )
       }
     _videosWithPlaybackInfo.value = videosWithInfo
@@ -440,6 +446,7 @@ class VideoListViewModel(
       return
     }
 
+    val manualOverride = explicitVideoWatchedOverride(getApplication(), video.path)
     val updatedItem =
       buildVideoWithPlaybackInfo(
         video = video,
@@ -449,8 +456,8 @@ class VideoListViewModel(
         watchedThreshold = browserPreferences.watchedThreshold.get(),
         folderMarkedUnwatched = folderMarkedUnwatched,
         folderMarkedWatched = folderMarkedWatched,
-        explicitlyMarkedUnwatched = explicitlyMarkedUnwatched(video),
-        explicitlyMarkedWatched = explicitlyMarkedWatched(video),
+        explicitlyMarkedUnwatched = manualOverride == false,
+        explicitlyMarkedWatched = manualOverride == true,
       )
     if (currentItems[index] == updatedItem) return
 
@@ -501,6 +508,63 @@ class VideoListViewModel(
         MediaLibraryEvents.notifyChanged()
       }.onFailure { error ->
         Log.e(tag, "Failed to update watched state for ${video.displayName}", error)
+        loadPlaybackInfo(_videos.value)
+      }
+    }
+  }
+
+  /** Applies the local VideoListScreen-only Mark as action. */
+  fun markAs(video: Video, markAs: VideoMarkAs) {
+    val canonicalIdentifier = canonicalPlaybackIdentifier(video)
+    // Sequence at the user action, so an already-captured older player snapshot cannot undo it.
+    val sequence = PlaybackStateSaveCoordinator.nextSequence()
+    viewModelScope.launch(Dispatchers.IO) {
+      val durationSeconds = (video.duration / 1000L).coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
+      runCatching {
+        val committed = PlaybackStateSaveCoordinator.persistIfNewest(canonicalIdentifier, sequence) {
+          val current = findPlaybackState(video) ?: emptyPlaybackState(video, durationSeconds)
+          playbackStateRepository.upsert(
+            playbackStateForMarkAs(current, markAs, durationSeconds).copy(mediaTitle = canonicalIdentifier),
+          )
+          setExplicitVideoWatchedOverride(
+            getApplication(),
+            video.path,
+            when (markAs) {
+              VideoMarkAs.New -> false
+              VideoMarkAs.Finished -> true
+              VideoMarkAs.LastPlayed, VideoMarkAs.None -> null
+            },
+          )
+        }
+
+        if (committed) {
+          when (markAs) {
+            VideoMarkAs.New, VideoMarkAs.None -> recentlyPlayedRepository.deleteByFilePath(video.path)
+            VideoMarkAs.LastPlayed -> {
+              recentlyPlayedRepository.deleteByFilePath(video.path)
+              RecentlyPlayedOps.addRecentlyPlayed(
+                context = getApplication(), filePath = video.path, fileName = video.displayName,
+                videoTitle = video.title, duration = video.duration, fileSize = video.size,
+                width = video.width, height = video.height, launchSource = "video_list",
+              )
+            }
+            VideoMarkAs.Finished -> {
+              // Manual finish is retained in history but excluded from the active highlight query.
+              recentlyPlayedRepository.deleteByFilePath(video.path)
+              RecentlyPlayedOps.addRecentlyPlayed(
+                context = getApplication(), filePath = video.path, fileName = video.displayName,
+                videoTitle = video.title, duration = video.duration, fileSize = video.size,
+                width = video.width, height = video.height, launchSource = "manual_finished",
+              )
+            }
+          }
+
+          PlaybackStateEvents.notifyChanged(canonicalIdentifier)
+        }
+        MediaLibraryEvents.notifyChanged()
+        loadPlaybackInfo(_videos.value)
+      }.onFailure { error ->
+        Log.e(tag, "Failed to mark ${video.displayName} as $markAs", error)
         loadPlaybackInfo(_videos.value)
       }
     }

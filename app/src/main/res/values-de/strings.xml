@@ -1240,6 +1240,7 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="player_horizontal_flip_off">Horizontal spiegeln aus</string>
   <string name="player_vertical_flip_on">Vertikal spiegeln ein</string>
   <string name="player_vertical_flip_off">Vertikal spiegeln aus</string>
+  <string name="player_flip_requires_hw_or_sw">Flip erfordert HW- oder SW-Dekodierung; HW+ wird nicht unterstützt.</string>
   <string name="btn_label_back">Zurück-Pfeil</string>
   <string name="btn_label_title">Videotitel</string>
   <string name="btn_label_bookmarks">Kapitel / Lesezeichen</string>
@@ -2267,4 +2268,14 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
 <string name="pref_glass_rim_width_summary">Dicke der Lichtkante in dp</string>
 <string name="pref_glass_rim_softness">Randweichheit</string>
 <string name="pref_glass_rim_softness_summary">Wie weich das Kantenlicht ausläuft</string>
+  <string name="player_sheets_sub_primary">Primär</string>
+  <string name="player_sheets_sub_secondary">Sekundär</string>
+  <string name="player_move_primary_subtitles_hint">Nach oben/unten ziehen, um die primären Untertitel zu verschieben</string>
+  <string name="player_move_secondary_subtitles_hint">Nach oben/unten ziehen, um die sekundären Untertitel zu verschieben</string>
+  <string name="video_mark_as_action">Markieren als</string>
+  <string name="video_mark_as_title">„%1$s“ markieren als</string>
+  <string name="video_mark_as_new">Neu</string>
+  <string name="video_mark_as_last_played">Zuletzt abgespielt</string>
+  <string name="video_mark_as_finished">Abgeschlossen</string>
+  <string name="video_mark_as_none">Keine</string>
 </resources>

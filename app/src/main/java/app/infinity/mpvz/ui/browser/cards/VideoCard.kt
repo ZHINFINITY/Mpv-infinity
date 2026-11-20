@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -147,6 +148,7 @@ fun VideoCard(
   modifier: Modifier = Modifier,
   isRecentlyPlayed: Boolean = false,
   onLongClick: (() -> Unit)? = null,
+  onMarkAsClick: (() -> Unit)? = null,
   isSelected: Boolean = false,
   progressPercentage: Float? = null,
   isOldAndUnplayed: Boolean = false,
@@ -851,6 +853,18 @@ fun VideoCard(
               }
             }
           }
+        }
+      }
+
+      if (onMarkAsClick != null) {
+        IconButton(
+          onClick = onMarkAsClick,
+          modifier = Modifier.align(Alignment.TopEnd).padding(2.dp),
+        ) {
+          Icon(
+            Icons.RoundedFilled.MoreVert,
+            contentDescription = stringResource(R.string.video_mark_as_action),
+          )
         }
       }
     }

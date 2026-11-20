@@ -20,7 +20,6 @@ import app.infinity.mpvz.preferences.FoldersPreferences
 import app.infinity.mpvz.repository.MediaFileRepository
 import app.infinity.mpvz.ui.browser.base.BaseBrowserViewModel
 import app.infinity.mpvz.ui.player.PlaybackIdentity
-import app.infinity.mpvz.ui.player.isPlaybackStateWatched
 import app.infinity.mpvz.utils.media.MediaLibraryEvents
 import app.infinity.mpvz.utils.media.MetadataRetrieval
 import app.infinity.mpvz.utils.media.PlaybackStateEvents
@@ -306,7 +305,6 @@ class FolderListViewModel(
           }
 
           val thresholdDays = appearancePreferences.unplayedOldVideoDays.get()
-          val thresholdMillis = thresholdDays * 24 * 60 * 60 * 1000L
           val watchedThreshold = browserPreferences.watchedThreshold.get()
           val currentTime = System.currentTimeMillis()
 
@@ -336,25 +334,19 @@ class FolderListViewModel(
                       playbackIdentifiers.firstNotNullOfOrNull { identifier ->
                         playbackStateRepository.getVideoDataByTitle(identifier)
                       }
-                    val durationSeconds = video.duration / 1000L
-                    val explicitlyWatched = "${video.path}\u001f1" in explicitVideoOverrides
-                    val isWatched = explicitlyWatched || isPlaybackStateWatched(playbackState, durationSeconds, watchedThreshold)
                     val explicitlyUnwatched = "${video.path}\u001f0" in explicitVideoOverrides
-                    val persistedUnwatched =
-                      playbackState != null &&
-                        !playbackState.hasBeenWatched &&
-                        playbackState.lastPosition <= 0 &&
-                        playbackState.timeRemaining >= durationSeconds - 1
-                    val markedNew = explicitlyUnwatched || persistedUnwatched
-                    val isRecent = currentTime - (video.dateModified * 1000) <= thresholdMillis
-
-                    // A saved watched flag or reached threshold always removes NEW, including
-                    // when an older manual-unwatched override or folder default is still present.
-                    when (watchedOverride) {
-                      true -> markedNew && !isWatched
-                      false -> !explicitlyWatched && !isWatched
-                      null -> !isWatched && (markedNew || isRecent)
-                    }
+                    val explicitlyWatched = "${video.path}\u001f1" in explicitVideoOverrides
+                    isVideoCountedAsNew(
+                      playbackState = playbackState,
+                      durationSeconds = video.duration / 1000L,
+                      videoDateModifiedSeconds = video.dateModified,
+                      currentTimeMillis = currentTime,
+                      newLabelDays = thresholdDays,
+                      watchedThreshold = watchedThreshold,
+                      folderWatchedOverride = watchedOverride,
+                      explicitlyMarkedUnwatched = explicitlyUnwatched,
+                      explicitlyMarkedWatched = explicitlyWatched,
+                    )
                   }
 
                 FolderWithNewCount(folder, newCount)

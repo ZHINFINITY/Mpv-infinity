@@ -1066,6 +1066,28 @@ def enable_mailbox_suboptimal_tolerance(vulkan_context: str) -> str:
     return vulkan_context.replace(anchor, replacement, 1)
 
 
+def reset_motion_queue_on_video_reconfig(vo_source: str) -> tuple[str, bool]:
+    reset_helper = "static void reset_frame_queue(struct priv *p)\n"
+    reconfig_anchor = (
+        "static int reconfig(struct vo *vo, struct mp_image_params *params)\n"
+        "{\n"
+        "    struct priv *p = vo->priv;\n"
+    )
+    reset_block = (
+        "    /* MPVFLOW_RECONFIG_MOTION_QUEUE_RESET */\n"
+        "    if (p->motion_fps)\n"
+        "        reset_frame_queue(p);\n"
+    )
+    if reset_helper not in vo_source or "pl_queue_reset(p->queue);" not in vo_source or \
+       "mp_motion_reset(p->motion);" not in vo_source:
+        raise ValueError("Pinned gpu-next frame-queue/motion reset helper is missing or incomplete")
+    if vo_source.count(reconfig_anchor) != 1:
+        raise ValueError("Pinned gpu-next video reconfigure function is missing or ambiguous")
+    if reconfig_anchor + reset_block in vo_source:
+        return vo_source, False
+    return vo_source.replace(reconfig_anchor, reconfig_anchor + reset_block, 1), True
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--mpv-dir", required=True, type=Path)
@@ -1179,6 +1201,15 @@ def main() -> None:
     stats_lua = stats_lua_path.read_text(encoding="utf-8")
     command = command_path.read_text(encoding="utf-8")
     vo = vo_path.read_text(encoding="utf-8")
+    try:
+        vo, reconfig_reset_applied = reset_motion_queue_on_video_reconfig(vo)
+    except ValueError as exc:
+        raise SystemExit(f"MPVFlow video-reconfigure queue reset verification failed: {exc}") from exc
+    print(
+        "Applied motion queue reset on video reconfigure"
+        if reconfig_reset_applied
+        else "Motion queue reset on video reconfigure already present"
+    )
     motion = motion_path.read_text(encoding="utf-8")
     motion_header = motion_header_path.read_text(encoding="utf-8")
     android_context = android_context_path.read_text(encoding="utf-8")
@@ -1380,8 +1411,9 @@ def main() -> None:
         meson = meson[: close + 1] + block + meson[close + 1 :]
     elif any(source not in meson for source in (gpu_source, capture_io_source, *opencl_sources)):
         raise SystemExit("GPU Flow Meson marker exists without every required Flow/capture/OpenCL/optical source")
-    meson_path.write_text(meson)
 
+    vo_path.write_text(vo, encoding="utf-8")
+    meson_path.write_text(meson, encoding="utf-8")
     vulkan_context_path.write_text(vulkan_context)
     glslang_meson_path.write_text(glslang_meson)
     glslang_source_path.write_text(glslang_source)
@@ -1393,13 +1425,17 @@ def main() -> None:
     placebo_formats_path.write_text(placebo_formats, encoding="utf-8")
     stats_lua_path.write_text(stats_lua)
     print(
-        f"Installed direct GPU/OpenCL MPVFlow into {mpv_dir} and corrected libplacebo's "
+        f"Validated native FongMi GPU MEMC and Android MediaCodec/Vulkan mapping in {mpv_dir}; "
+        f"installed direct GPU/OpenCL MPVFlow and corrected libplacebo's "
         f"Android glslang search path in {glslang_meson_path} and Vulkan timestamp "
         f"ring in {gpu_timer_path}, plus mailbox-only SUBOPTIMAL tolerance and Flow-gated WSI diagnostics "
-        f"in {placebo_swapchain_path}; "
+        f"in {placebo_swapchain_path}; kept SPIR-V optimization enabled and applied Android Vulkan "
+        f"synchronization and swapchain stability fixes in {libplacebo_dir}; "
         f"the built-in stats OSD reports successful MPVFlow synthesized-submit cadence; "
         f"the optional NV optical-flow vector format is registered with an extension-aware sampleability check; "
-        f"the legacy CPU filter is not compiled or registered by this build."
+        f"the legacy CPU filter is not compiled or registered by this build. Mpv-infinity "
+        f"analysis-downsample antialias candidate {'enabled' if downsample_antialias_enabled else 'disabled'}; "
+        f"480px cap unchanged."
     )
     print("Android MPV subprocesses use the existing fork/exec fallback instead of raw CLONE_VM.")
 

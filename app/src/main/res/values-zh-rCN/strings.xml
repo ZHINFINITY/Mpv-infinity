@@ -1240,6 +1240,7 @@
   <string name="player_horizontal_flip_off">水平翻转已关闭</string>
   <string name="player_vertical_flip_on">垂直翻转已开启</string>
   <string name="player_vertical_flip_off">垂直翻转已关闭</string>
+  <string name="player_flip_requires_hw_or_sw">翻转需要 HW 或 SW 解码；不支持 HW+。</string>
   <string name="btn_label_back">返回箭头</string>
   <string name="btn_label_title">视频标题</string>
   <string name="btn_label_bookmarks">章节/书签</string>
@@ -2267,4 +2268,14 @@
 <string name="pref_glass_rim_width_summary">高光边缘的粗细（dp）</string>
 <string name="pref_glass_rim_softness">边缘柔和度</string>
 <string name="pref_glass_rim_softness_summary">边缘光线淡出的柔和程度</string>
+  <string name="player_sheets_sub_primary">主字幕</string>
+  <string name="player_sheets_sub_secondary">次字幕</string>
+  <string name="player_move_primary_subtitles_hint">向上或向下拖动以移动主字幕</string>
+  <string name="player_move_secondary_subtitles_hint">向上或向下拖动以移动次字幕</string>
+  <string name="video_mark_as_action">标记为</string>
+  <string name="video_mark_as_title">将“%1$s”标记为</string>
+  <string name="video_mark_as_new">新</string>
+  <string name="video_mark_as_last_played">上次播放</string>
+  <string name="video_mark_as_finished">已完成</string>
+  <string name="video_mark_as_none">无</string>
 </resources>

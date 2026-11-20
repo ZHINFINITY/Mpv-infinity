@@ -1240,6 +1240,7 @@ Veuillez redémarrer l’application pour appliquer toutes les modifications.</s
   <string name="player_horizontal_flip_off">Retournement horizontal désactivé</string>
   <string name="player_vertical_flip_on">Retournement vertical activé</string>
   <string name="player_vertical_flip_off">Retournement vertical désactivé</string>
+  <string name="player_flip_requires_hw_or_sw">Le retournement nécessite un décodage HW ou SW ; HW+ n’est pas pris en charge.</string>
   <string name="btn_label_back">Flèche Retour</string>
   <string name="btn_label_title">Titre de la vidéo</string>
   <string name="btn_label_bookmarks">Chapitres / Signets</string>
@@ -2267,4 +2268,14 @@ Veuillez redémarrer l’application pour appliquer toutes les modifications.</s
 <string name="pref_glass_rim_width_summary">Épaisseur du liseré lumineux en dp</string>
 <string name="pref_glass_rim_softness">Douceur du liseré</string>
 <string name="pref_glass_rim_softness_summary">Douceur du fondu de la lumière du bord</string>
+  <string name="player_sheets_sub_primary">Principal</string>
+  <string name="player_sheets_sub_secondary">Secondaire</string>
+  <string name="player_move_primary_subtitles_hint">Faites glisser vers le haut ou le bas pour déplacer les sous-titres principaux</string>
+  <string name="player_move_secondary_subtitles_hint">Faites glisser vers le haut ou le bas pour déplacer les sous-titres secondaires</string>
+  <string name="video_mark_as_action">Marquer comme</string>
+  <string name="video_mark_as_title">Marquer «%1$s» comme</string>
+  <string name="video_mark_as_new">Nouveau</string>
+  <string name="video_mark_as_last_played">Dernière lecture</string>
+  <string name="video_mark_as_finished">Terminé</string>
+  <string name="video_mark_as_none">Aucun</string>
 </resources>

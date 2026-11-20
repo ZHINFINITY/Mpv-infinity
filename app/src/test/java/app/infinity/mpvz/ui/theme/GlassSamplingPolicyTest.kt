@@ -27,7 +27,7 @@ class GlassSamplingPolicyTest {
   }
 
   @Test fun pausedAndFailedSourcesDoNotPollAtPlaybackCadence() {
-    // PixelCopy plus CPU frosting is not a display-rate backdrop; the material stays responsive at 15 fps.
+    // Large panes keep the prior 15 fps motion sample; smaller controls use a separate 10 fps cadence.
     assertEquals(66L, GlassSamplingPolicy.PlayingIntervalMs)
     assertEquals(66L, GlassSamplingPolicy.interval(true, 0))
     assertEquals(66L, GlassSamplingPolicy.interval(true, 0, thermalStatus = 1))

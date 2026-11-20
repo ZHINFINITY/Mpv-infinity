@@ -120,6 +120,8 @@
   <string name="pref_appearance_watched_threshold_title">Watched threshold</string>
   <string name="pref_appearance_watched_threshold_summary">Mark video as watched when playback reaches %d%%</string>
   <string name="pref_appearance_watched_threshold_summary_infinite">Never auto-mark as watched (Infinitely)</string>
+  <string name="player_sheets_sub_primary">Primary</string>
+  <string name="player_sheets_sub_secondary">Secondary</string>
   <string name="pref_tree_flatten_depth_title">Tree path compression</string>
   <string name="pref_tree_flatten_depth_summary">%1$s skipped per navigation step for single-child folders</string>
   <string name="ytdl_audio_quality_title">yt-dlp audio quality</string>
@@ -1166,6 +1168,8 @@
   <string name="player_ambient_battery_saver_on">Ambient: Battery Saver ON</string>
   <string name="player_ambient_battery_saver_off">Ambient: Battery Saver OFF</string>
   <string name="player_move_subtitles_hint">Drag up/down to move subtitles</string>
+  <string name="player_move_primary_subtitles_hint">Drag up/down to move primary subtitles</string>
+  <string name="player_move_secondary_subtitles_hint">Drag up/down to move secondary subtitles</string>
   <string name="player_next_dialog">Next Dialog</string>
   <string name="player_previous_dialog">Previous Dialog</string>
   <string name="diagnostics_playback_decoder_header">PLAYBACK &amp; DECODER</string>
@@ -2349,4 +2353,10 @@
 <string name="pref_glass_rim_width_summary">Thickness of the lit edge in dp</string>
 <string name="pref_glass_rim_softness">Rim softness</string>
 <string name="pref_glass_rim_softness_summary">How softly the edge light fades</string>
+  <string name="video_mark_as_action">Mark as</string>
+  <string name="video_mark_as_title">Mark “%1$s” as</string>
+  <string name="video_mark_as_new">New</string>
+  <string name="video_mark_as_last_played">Last Played</string>
+  <string name="video_mark_as_finished">Finished</string>
+  <string name="video_mark_as_none">None</string>
 </resources>

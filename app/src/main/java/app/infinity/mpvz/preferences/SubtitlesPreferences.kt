@@ -30,6 +30,8 @@ class SubtitlesPreferences(
   val font = preferenceStore.getString("sub_font", "")
   val fontSize = preferenceStore.getInt("sub_font_size", 55)
   val subScale = preferenceStore.getFloat("sub_scale", 1f)
+  // Negative means follow the primary lane until the user explicitly changes the secondary lane.
+  val secondarySubScale = preferenceStore.getFloat("sub_secondary_scale", -1f)
   val borderSize = preferenceStore.getInt("sub_border_size", 3)
   val bold = preferenceStore.getBoolean("sub_bold", false)
   val italic = preferenceStore.getBoolean("sub_italic", false)
@@ -44,6 +46,8 @@ class SubtitlesPreferences(
 
   val justification = preferenceStore.getEnum("sub_justify", SubtitleJustification.Auto)
   val subPos = preferenceStore.getInt("sub_pos", 100)
+  // Negative preserves the automatic overlap-avoidance position for the secondary lane.
+  val secondarySubPos = preferenceStore.getInt("sub_secondary_pos", -1)
 
   val overrideAssSubs = preferenceStore.getBoolean("sub_override_ass")
   val scaleByWindow = preferenceStore.getBoolean("sub_scale_by_window", true)
@@ -51,6 +55,9 @@ class SubtitlesPreferences(
 
   val defaultSubDelay = preferenceStore.getInt("sub_default_delay")
   val defaultSubSpeed = preferenceStore.getFloat("sub_default_speed", 1f)
+  // Int.MIN_VALUE / a negative speed mean the secondary lane follows the primary default.
+  val defaultSecondarySubDelay = preferenceStore.getInt("sub_secondary_default_delay", Int.MIN_VALUE)
+  val defaultSecondarySubSpeed = preferenceStore.getFloat("sub_secondary_default_speed", -1f)
 
   val pickerPath = preferenceStore.getString("sub_picker_path")
 

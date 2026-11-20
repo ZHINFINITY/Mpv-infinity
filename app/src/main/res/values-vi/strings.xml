@@ -1228,6 +1228,7 @@
   <string name="player_horizontal_flip_off">Tắt ngang</string>
   <string name="player_vertical_flip_on">Bật dọc</string>
   <string name="player_vertical_flip_off">Tắt dọc</string>
+  <string name="player_flip_requires_hw_or_sw">Lật yêu cầu giải mã bằng HW hoặc SW; không hỗ trợ HW+.</string>
   <string name="btn_label_back">Mũi tên quay lại</string>
   <string name="btn_label_title">Tiêu đề video</string>
   <string name="btn_label_bookmarks">Chương / Dấu trang</string>
@@ -2252,4 +2253,14 @@
 <string name="pref_glass_rim_width_summary">Độ dày của viền sáng tính bằng dp</string>
 <string name="pref_glass_rim_softness">Độ mềm viền</string>
 <string name="pref_glass_rim_softness_summary">Mức độ mềm mại khi ánh sáng viền mờ dần</string>
+  <string name="player_sheets_sub_primary">Chính</string>
+  <string name="player_sheets_sub_secondary">Phụ</string>
+  <string name="player_move_primary_subtitles_hint">Kéo lên/xuống để di chuyển phụ đề chính</string>
+  <string name="player_move_secondary_subtitles_hint">Kéo lên/xuống để di chuyển phụ đề phụ</string>
+  <string name="video_mark_as_action">Đánh dấu là</string>
+  <string name="video_mark_as_title">Đánh dấu “%1$s” là</string>
+  <string name="video_mark_as_new">Mới</string>
+  <string name="video_mark_as_last_played">Phát gần đây nhất</string>
+  <string name="video_mark_as_finished">Đã xem xong</string>
+  <string name="video_mark_as_none">Không có</string>
 </resources>

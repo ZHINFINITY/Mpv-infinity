@@ -86,6 +86,8 @@ data class NativePlaybackSnapshot(
   val isReady: Boolean = false,
   val isBuffering: Boolean = false,
   val isLoading: Boolean = false,
+  val isLocalSource: Boolean = false,
+  val hasRenderedFirstFrame: Boolean = false,
   val isEnded: Boolean = false,
   val hasError: Boolean = false,
   val positionMs: Long = 0L,
@@ -722,6 +724,7 @@ class NativeMedia3Engine internal constructor(
       val elapsed = preparationStartedAtMs.takeIf { it > 0L }?.let { SystemClock.elapsedRealtime() - it }
       Log.d(logTag, "first frame rendered uri=$uri prepareElapsedMs=$elapsed")
       _hasRenderedFirstFrame.value = true
+      publishPlaybackSnapshot()
       attachedView?.post {
         ensureLibassRenderer()
         configureSubtitleView()
@@ -1547,6 +1550,20 @@ class NativeMedia3Engine internal constructor(
     return mime.contains("ssa") || mime.contains("ass") || codecs.contains("ssa") || codecs.contains("ass")
   }
 
+  /** Clears the outgoing item's libass state without waiting on the UI thread's renderer lock. */
+  suspend fun clearPreviousSubtitleTracks() {
+    val renderer = libassRenderer ?: return
+    withContext(Dispatchers.IO) {
+      try {
+        renderer.getTrackIds().keys.toList().forEach(renderer::removeTrack)
+      } catch (cancelled: CancellationException) {
+        throw cancelled
+      } catch (failure: IllegalStateException) {
+        Log.w(logTag, "Could not clear previous libass tracks before playback", failure)
+      }
+    }
+  }
+
   fun play(
     uri: Uri,
     startPositionMs: Long = 0L,
@@ -1585,9 +1602,6 @@ class NativeMedia3Engine internal constructor(
     audioSelectionRestored = false
     subtitleSelectionRestored = false
     externalAssEnabled.clear()
-    libassRenderer?.getTrackIds()?.keys?.toList()?.forEach { id ->
-      libassRenderer?.removeTrack(id)
-    }
     // Uri.parse("/storage/...") has no scheme. Make local paths explicit so Media3 selects
     // FileDataSource instead of treating the original MediaStore URI as the playable source.
     val mediaUri =
@@ -2120,12 +2134,16 @@ class NativeMedia3Engine internal constructor(
     libassRenderer?.close()
     libassRendererSize = null
     libassRenderer = null
+    libassRendererSize = null
     subtitleOverlay = null
     attachedView = null
     assHandler.release()
     player.release()
     media3FlowSink?.release()
   }
+
+  private fun isPreparedSourceLocal(): Boolean =
+    preparationUri?.toString()?.let { shouldBypassNativeReadCache(it) } == true
 
   private fun publishSnapshot() {
     val groups = player.currentTracks.groups
@@ -2216,6 +2234,8 @@ class NativeMedia3Engine internal constructor(
       isReady = player.playbackState == Player.STATE_READY,
       isBuffering = player.playbackState == Player.STATE_BUFFERING,
       isLoading = player.isLoading,
+      isLocalSource = isPreparedSourceLocal(),
+      hasRenderedFirstFrame = _hasRenderedFirstFrame.value,
       isEnded = player.playbackState == Player.STATE_ENDED,
       hasError = player.playerError != null,
       positionMs = (pendingSeekDisplayPositionMs ?: player.currentPosition).coerceAtLeast(0L),
@@ -2287,6 +2307,8 @@ class NativeMedia3Engine internal constructor(
       isReady = player.playbackState == Player.STATE_READY,
       isBuffering = player.playbackState == Player.STATE_BUFFERING,
       isLoading = player.isLoading,
+      isLocalSource = isPreparedSourceLocal(),
+      hasRenderedFirstFrame = _hasRenderedFirstFrame.value,
       isEnded = player.playbackState == Player.STATE_ENDED,
       hasError = player.playerError != null,
       positionMs = (pendingSeekDisplayPositionMs ?: player.currentPosition).coerceAtLeast(0L),

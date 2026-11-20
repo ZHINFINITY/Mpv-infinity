@@ -58,6 +58,36 @@ VULKAN_MAPPER_DIR = ROOT / "app/src/main/cpp/mpvflow/mediacodec-vulkan"
 VO_PATCH = ROOT / "app/src/main/cpp/mpvflow/mpvflow-vo-gpu-next.patch"
 
 sys.dont_write_bytecode = True
+sys.path.insert(0, str(ROOT / "scripts"))
+prepare_spec = importlib.util.spec_from_file_location("mpvflow_prepare_regression", PREPARE)
+assert prepare_spec is not None and prepare_spec.loader is not None
+prepare_module = importlib.util.module_from_spec(prepare_spec)
+sys.modules[prepare_spec.name] = prepare_module
+prepare_spec.loader.exec_module(prepare_module)
+sys.path.pop(0)
+reconfig_fixture = """static void reset_frame_queue(struct priv *p)
+{
+    pl_queue_reset(p->queue);
+    mp_motion_reset(p->motion);
+}
+
+static int reconfig(struct vo *vo, struct mp_image_params *params)
+{
+    struct priv *p = vo->priv;
+    if (p->ra_ctx->fns->reconfig(p->ra_ctx, params) < 0)
+        return -1;
+    return 0;
+}
+"""
+patched_reconfig, reset_added = prepare_module.reset_motion_queue_on_video_reconfig(reconfig_fixture)
+assert reset_added
+assert "if (p->motion_fps)\n        reset_frame_queue(p);" in patched_reconfig
+assert patched_reconfig.index("MPVFLOW_RECONFIG_MOTION_QUEUE_RESET") < patched_reconfig.index(
+    "p->ra_ctx->fns->reconfig"
+)
+patched_reconfig_again, reset_added_again = prepare_module.reset_motion_queue_on_video_reconfig(patched_reconfig)
+assert not reset_added_again and patched_reconfig_again == patched_reconfig
+
 fongmi_motion = (FONGMI_DIR / "motion.c").read_text(encoding="utf-8")
 fongmi_test = (FONGMI_DIR / "test/gpu_motion.c").read_text(encoding="utf-8")
 media3_native = (ROOT / "app/src/main/cpp/media3flow_vulkan_jni.cpp").read_text(encoding="utf-8")

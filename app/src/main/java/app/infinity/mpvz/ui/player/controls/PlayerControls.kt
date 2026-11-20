@@ -10,7 +10,9 @@ package app.infinity.mpvz.ui.player.controls
 import app.infinity.mpvz.ui.player.StatsLuaOverlay
 import app.infinity.mpvz.ui.player.DeclaredPlaybackMediaKind
 import app.infinity.mpvz.ui.player.PlaybackSession
+import app.infinity.mpvz.ui.player.PlaybackPhase
 import app.infinity.mpvz.ui.player.declaredMediaKind
+import app.infinity.mpvz.ui.player.shouldPauseForCache
 import app.infinity.mpvz.domain.torrent.TorrentStreamingState
 import app.infinity.mpvz.domain.torrent.formatTorrentBytes
 import app.infinity.mpvz.domain.torrent.formatTorrentSpeed
@@ -314,7 +316,7 @@ internal fun AudioPlayerScreen(
         }
       },
       decoder = decoder,
-      onUpdateDecoder = { PlaybackSession.setPropertyString("hwdec", it.value) },
+      onUpdateDecoder = { PlaybackSession.setDecoderAndRecover(it.value) },
       selectedEngine = if (nativeEngineActive) PlaybackEngineMode.NATIVE else PlaybackEngineMode.MPV,
       onSelectEngine = onSelectEngine ?: { decoderPreferences.playbackEngine.set(it) },
       speed = playbackSpeed ?: playerPreferences.defaultSpeed.get(),
@@ -459,6 +461,9 @@ fun PlayerControls(
   val torrentState by viewModel.torrentState.collectAsState()
   val videoOpenAnimState by viewModel.videoOpenAnimationState.collectAsState()
   val isWaitingForVideo = videoOpenAnimState.isWaitingForVideo
+  val isLocalPlaybackStartup =
+    playbackSessionState.currentItem?.let { !shouldPauseForCache(it) } == true &&
+      (playbackSessionState.phase == PlaybackPhase.LOADING || isWaitingForVideo)
   val showLoadingCircle by playerPreferences.showLoadingCircle.collectAsState()
   val embeddedTranslatedSubtitle by viewModel.embeddedTranslatedSubtitle.collectAsState()
 
@@ -469,26 +474,35 @@ fun PlayerControls(
   val nativeSnapshot by activity?.nativePlaybackSnapshot?.collectAsState()
     ?: remember { mutableStateOf(NativePlaybackSnapshot()) }
   val nativeEngineActive = activity?.isNativeEngineActive() == true
+  // Keep a remote-backed content URI eligible for real buffering even when its DataSource is local.
+  val isLocalNativeSource =
+    nativeSnapshot.isLocalSource &&
+      (playbackSessionState.currentItem?.let { !shouldPauseForCache(it) } ?: true)
   val nativeBufferingVisible =
     rememberDebouncedBufferingVisibility(
       enabled = showLoadingCircle && nativeEngineActive,
-      stalled =
-        PlayerControlVisibilityPolicy.isNativePlaybackStalled(
-          isEnded = nativeSnapshot.isEnded,
-          hasError = nativeSnapshot.hasError,
-          isBuffering = nativeSnapshot.isBuffering,
-        ),
+      stalled = PlayerControlVisibilityPolicy.isNativePlaybackStalled(
+        isEnded = nativeSnapshot.isEnded,
+        hasError = nativeSnapshot.hasError,
+        isReady = nativeSnapshot.isReady,
+        isLoading = nativeSnapshot.isLoading,
+        isBuffering = nativeSnapshot.isBuffering,
+        isLocalSource = isLocalNativeSource,
+        hasRenderedFirstFrame = nativeSnapshot.hasRenderedFirstFrame,
+      ),
     )
   val bufferingState =
     rememberBufferingState(
       enabled = showLoadingCircle && !nativeEngineActive,
       // A torrent that has not produced a playable range yet never reaches mpv, so the engine's own
       // connecting phase has to drive the spinner directly.
-      // Local opens and saved-position restores are not proof of a cache stall; MPV core state
-      // below drives the indicator once playback is actually waiting for output.
-      forceVisible = !nativeEngineActive && isTorrentConnecting,
+      forceVisible = PlayerControlVisibilityPolicy.shouldForceMpvBufferingIndicator(
+        nativeEngineActive = nativeEngineActive,
+        torrentConnecting = isTorrentConnecting,
+      ),
+      suppressStartupStalls = isLocalPlaybackStartup,
     )
-  val isMpvBuffering = bufferingState.isCacheStall
+  val isMpvBuffering = bufferingState.isCacheStall && !isLocalPlaybackStartup
   val safeAreaWindow by playerPreferences.safeAreaWindow.collectAsState()
   val safeAreaInsetModifier =
     if (safeAreaWindow) {
@@ -2416,7 +2430,7 @@ fun PlayerControls(
         }
       },
       decoder = decoder,
-      onUpdateDecoder = { PlaybackSession.setPropertyString("hwdec", it.value) },
+      onUpdateDecoder = { PlaybackSession.setDecoderAndRecover(it.value) },
       selectedEngine = if (nativeEngineActive) PlaybackEngineMode.NATIVE else PlaybackEngineMode.MPV,
       onSelectEngine = onSelectEngine ?: { decoderPreferences.playbackEngine.set(it) },
       speed = playbackSpeed ?: playerPreferences.defaultSpeed.get(),

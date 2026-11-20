@@ -9,6 +9,7 @@ package app.infinity.mpvz.database.entities
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import androidx.room.ColumnInfo
 
 @Entity
 data class PlaybackStateEntity(
@@ -30,4 +31,6 @@ data class PlaybackStateEntity(
   val audioSelection: String? = null,
   val subtitleSelection: String? = null,
   val secondarySubtitleSelection: String? = null,
+  @ColumnInfo(defaultValue = "-1") val secondarySubDelay: Int = -1,
+  @ColumnInfo(defaultValue = "-1.0") val secondarySubSpeed: Double = -1.0,
 )

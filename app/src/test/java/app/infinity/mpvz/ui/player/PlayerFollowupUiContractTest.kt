@@ -33,7 +33,18 @@ class PlayerFollowupUiContractTest {
     assertFalse(branch.contains("timeNetworkSlotWidth"))
     assertFalse(branch.contains("Modifier.width(slotWidth)"))
     assertTrue(branch.contains("onLongClick = toggleTimeAndNetwork"))
-    assertTrue(!branch.contains("resetFrameNavigationTimer"))
+    assertFalse(branch.contains("resetFrameNavigationTimer"))
+  }
+
+  @Test
+  fun targetFpsSheetKeepsItsPreferenceAndOptionsWithoutTheTimingParagraph() {
+    val sheet = read("app/src/main/java/app/infinity/mpvz/ui/player/controls/components/sheets/FrameInterpolationFpsSheet.kt")
+
+    assertFalse(sheet.contains("interpolationApplyTimingNote"))
+    assertTrue(sheet.contains("pref_decoder_mpvflow_target_fps_title"))
+    assertTrue(sheet.contains("interpolation_feedback_saved_state"))
+    assertTrue(sheet.contains("MPVFLOW_TARGET_FPS_OPTIONS.forEach"))
+    assertTrue(sheet.contains("applyInterpolationPreferencesFromControls()"))
   }
 
   @Test
@@ -743,7 +754,8 @@ class PlayerFollowupUiContractTest {
     assertTrue(fileSystem.contains("browserPreferences.watchedThreshold.changes()"))
     assertTrue(mediaLibrary.contains("browserPreferences.watchedThreshold.changes()"))
     assertTrue(folders.contains("browserPreferences.watchedThreshold.changes()"))
-    assertTrue(folders.contains("val isWatched = explicitlyWatched ||"))
+    assertTrue(folders.contains("isVideoCountedAsNew("))
+    assertTrue(folders.contains("explicitlyMarkedWatched = explicitlyWatched"))
   }
 
   @Test
@@ -763,7 +775,9 @@ class PlayerFollowupUiContractTest {
       .substringBefore("if (canIssueMpvCommands())")
 
     assertTrue(nativeStallInputs.contains("isBuffering = nativeSnapshot.isBuffering"))
-    assertFalse(nativeStallInputs.contains("nativeSnapshot.isLoading"))
+    assertTrue(nativeStallInputs.contains("isLoading = nativeSnapshot.isLoading"))
+    assertTrue(nativeStallInputs.contains("isLocalSource = isLocalNativeSource"))
+    assertTrue(nativeStallInputs.contains("hasRenderedFirstFrame = nativeSnapshot.hasRenderedFirstFrame"))
     assertTrue(mpvForceInputs.contains("isTorrentConnecting"))
     assertFalse(mpvForceInputs.contains("PlaybackPhase.LOADING"))
     assertTrue(nativeEndHandler.indexOf("saveVideoPlaybackState(fileName, immediate = true)") in 0 until nativeEndHandler.indexOf("when {"))
