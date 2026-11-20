@@ -203,7 +203,9 @@ jobs:
         if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}
         uses: actions/cache/restore@v4
         with:
-          path: native-builder/app/build/outputs/apk
+          path: |
+            native-builder/app/build/outputs/apk
+            app/build/mpvflow-generated/libplacebo-api-391
           key: mpvflow-arm64-runtime-v7-builder-1efc82739f6f7034-mpv-fongmi-95ec8e929f8ad2f97c8415c486971493a0b408df-libplacebo-fongmi-63659d96d1bff7d7a5a1368e9538056a193fc6fb-ffmpeg-fongmi-f2c5162b7c4b3e8835de270ff78cecc524decad1-vulkan-headers-khronos-a4f8ada9f4f97c45b8c89c57997be9cebaae65d2-cores2-${{ hashFiles('scripts/build-mpvflow-mpv-runtime.sh', 'scripts/mpvrx_motion_source.py', 'scripts/prepare-mpvflow.py', 'scripts/prepare-mpvflow-vulkan-headers.py', 'scripts/patch-ffmpeg-symver.py', 'scripts/patches/mpvlibandroid-fongmi/**', 'app/src/main/cpp/**', 'THIRD_PARTY_LICENSES/**', 'app/src/main/assets/mpv/licenses/**') }}
       - name: Checkout pinned Android MPV build tools
         if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' && steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' }}
@@ -273,7 +275,9 @@ jobs:
         if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' && steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v4
         with:
-          path: native-builder/app/build/outputs/apk
+          path: |
+            native-builder/app/build/outputs/apk
+            app/build/mpvflow-generated/libplacebo-api-391
           key: ${{ steps.mpvflow-runtime-cache.outputs.cache-primary-key }}
       - name: Run focused interpolation regression tests
         if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}
@@ -281,6 +285,7 @@ jobs:
           python3 scripts/tests/package_mpv_runtime_aar_test.py
           python3 scripts/tests/mpvflow_flow_only_test.py
           python3 scripts/tests/mpvflow_native_build_test.py
+          python3 scripts/tests/mpvflow_placebo_api_headers_test.py --require-api391-snapshot
           if [[ -f "$GITHUB_WORKSPACE/native-builder/buildscripts/deps/mpv/video/out/gpu_next/motion.c" ]]; then
             export MPVFLOW_MPV_SOURCE_DIR="$GITHUB_WORKSPACE/native-builder/buildscripts/deps/mpv"
           fi

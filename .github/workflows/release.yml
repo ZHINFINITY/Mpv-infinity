@@ -131,7 +131,9 @@ jobs:
         id: mpvflow-runtime-cache
         uses: actions/cache/restore@v4
         with:
-          path: native-builder/app/build/outputs/apk
+          path: |
+            native-builder/app/build/outputs/apk
+            app/build/mpvflow-generated/libplacebo-api-391
           key: mpvflow-arm64-runtime-v7-builder-1efc82739f6f7034-mpv-fongmi-95ec8e929f8ad2f97c8415c486971493a0b408df-libplacebo-fongmi-63659d96d1bff7d7a5a1368e9538056a193fc6fb-ffmpeg-fongmi-f2c5162b7c4b3e8835de270ff78cecc524decad1-vulkan-headers-khronos-a4f8ada9f4f97c45b8c89c57997be9cebaae65d2-cores2-${{ hashFiles('scripts/build-mpvflow-mpv-runtime.sh', 'scripts/mpvrx_motion_source.py', 'scripts/prepare-mpvflow.py', 'scripts/prepare-mpvflow-vulkan-headers.py', 'scripts/patch-ffmpeg-symver.py', 'scripts/patches/mpvlibandroid-fongmi/**', 'app/src/main/cpp/**', 'THIRD_PARTY_LICENSES/**', 'app/src/main/assets/mpv/licenses/**') }}
 
       - name: Checkout pinned Android MPV build tools
@@ -180,6 +182,7 @@ jobs:
           apk="$(find "$runtime_dir" -type f -path '*/debug/*' -name '*arm64-v8a-debug*.apk' -print -quit)"
           [[ -n "$apk" ]] || { echo "MPVFlow arm64 runtime APK is missing" >&2; exit 1; }
           python3 scripts/package-mpv-runtime-aar.py --runtime-apk "$apk" --mpv-aar app/libs/mpvlib.aar --abis arm64-v8a
+          python3 scripts/tests/mpvflow_placebo_api_headers_test.py --require-api391-snapshot
           python3 scripts/verify-mpv-aar-lgpl.py app/libs/mpvlib.aar --abis arm64-v8a,armeabi-v7a,x86,x86_64 --require-vulkan
           ./gradlew assembleStandardRelease -PtargetAbi=arm64-v8a -PmpvFlowMpvBuild=true --stacktrace --no-daemon --max-workers=2
           release_dir="app/build/outputs/apk/standard/release"

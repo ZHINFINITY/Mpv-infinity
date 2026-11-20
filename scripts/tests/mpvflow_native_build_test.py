@@ -909,6 +909,9 @@ assert flow_surface_initialize.index("initialized = sinkInitialized") < flow_sur
 assert build.index("./include/ci.sh install") < build.index(prepare_call) < build.index("./include/ci.sh build"), (
     "the libplacebo search-path correction must run after dependency checkout and before native builds"
 )
+assert build.index("./include/ci.sh build") < build.index('API391_HEADER_ROOT="$ROOT/app/build/mpvflow-generated/libplacebo-api-391"') < build.index('APK="$(find "$MPV_BUILDER_DIR/app/build/outputs/apk"'), (
+    "API-391 headers must be staged after native build and before runtime APK discovery"
+)
 required_fragments = (
     "1062752a891c95b2bfeed9e356562d88f9df84ac",
     "-DCMAKE_TOOLCHAIN_FILE=",
@@ -925,6 +928,10 @@ required_fragments = (
     'MPV_BUILD_DIR="$BUILDSCRIPTS/deps/mpv/_build-arm64"',
     'MPV_DEPENDENCIES="$MPV_BUILD_DIR/meson-info/intro-dependencies.json"',
     'PLACEBO_PC="$MPV_PREFIX/pkgconfig/libplacebo.pc"',
+    'PLACEBO_INCLUDE_DIR="${MPV_PREFIX%/lib}/include/libplacebo"',
+    'API391_HEADER_ROOT="$ROOT/app/build/mpvflow-generated/libplacebo-api-391"',
+    "FONGMI_HEADERS.sha256",
+    "PL_API_VER",
     'PLACEBO_VERSION="$(sed -n \'s/^Version: *//p\' "$PLACEBO_PC")"',
     'readelf -d "$MPV_LIBRARY"',
     'python3 - "$MPV_DEPENDENCIES" "$PLACEBO_VERSION"',

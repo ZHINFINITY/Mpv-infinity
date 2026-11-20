@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import re
 import os
@@ -15,13 +16,19 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 CMAKE = (ROOT / "app/src/main/cpp/CMakeLists.txt").read_text(encoding="utf-8")
 PLACEBO = ROOT / "app/src/main/cpp/third_party/libplacebo"
+API391_HEADER_ROOT = ROOT / "app/build/mpvflow-generated/libplacebo-api-391"
 
+parser = argparse.ArgumentParser()
+parser.add_argument("--require-api391-snapshot", action="store_true")
+ARGS = parser.parse_args()
 
+# API-391 headers are generated from the pinned runtime build, never inferred from
+# the verifier-only scripts/libplacebo-api-391-config.h marker.
 API_HEADERS = {
     374: PLACEBO / "include/libplacebo",
     387: PLACEBO / "include-api-387/libplacebo",
+    391: API391_HEADER_ROOT / "libplacebo",
 }
-assert 391 not in API_HEADERS, "MPV runtime API-391 verifier marker must not enter Native Media3 header selection"
 
 
 def exported_apis(nm_output: str) -> list[int]:
@@ -87,22 +94,21 @@ int main(void) { return 0; }
         assert run.returncode == 0, run.stderr
 
 
-def assert_fongmi_api387_snapshot_hashes() -> None:
-    """Require the complete fork header snapshot and generated config to stay pinned."""
-    include_root = API_HEADERS[387].parent
+def assert_fongmi_header_snapshot_hashes(include_root: Path, api: int) -> None:
+    """Require the complete installed or vendored FongMi header set to stay pinned."""
     manifest = include_root / "FONGMI_HEADERS.sha256"
-    assert manifest.is_file(), f"missing FongMi header hash manifest: {manifest}"
+    assert manifest.is_file(), f"missing FongMi API-{api} header hash manifest: {manifest}"
     expected_files: set[str] = set()
     for line in manifest.read_text(encoding="utf-8").splitlines():
         expected, relative = line.split("  ", maxsplit=1)
         path = include_root / relative
-        assert path.is_file(), f"missing pinned FongMi API-387 header {relative}"
+        assert path.is_file(), f"missing FongMi API-{api} header {relative}"
         actual = hashlib.sha256(path.read_bytes()).hexdigest()
         assert actual == expected, (relative, actual, expected)
         expected_files.add(relative)
     actual_files = {
         path.relative_to(include_root).as_posix()
-        for path in API_HEADERS[387].parent.joinpath("libplacebo").rglob("*")
+        for path in (include_root / "libplacebo").rglob("*")
         if path.is_file()
     }
     assert expected_files == actual_files, (expected_files - actual_files, actual_files - expected_files)
@@ -122,11 +128,14 @@ assert "does not export ${MPVFLOW_REQUIRED_PLACEBO_SYMBOL}" in CMAKE
 assert '"${MPVFLOW_PLACEBO_INCLUDE_DIR}"' in CMAKE
 assert '"${CMAKE_CURRENT_SOURCE_DIR}/third_party/libplacebo/include"' in CMAKE
 assert '"${CMAKE_CURRENT_SOURCE_DIR}/third_party/libplacebo/include-api-387"' in CMAKE
+assert '"${CMAKE_CURRENT_SOURCE_DIR}/../../../build/mpvflow-generated/libplacebo-api-391"' in CMAKE
+assert 'MPVFLOW_DETECTED_PLACEBO_API_VER STREQUAL "391"' in CMAKE
 assert "header/API mismatch" in CMAKE
 
 # Both supported nm forms (plain and ELF symbol-version suffixed) map correctly.
 assert select_header("00000000 T pl_log_create_374") == API_HEADERS[374]
 assert select_header("00000000 T pl_log_create_387@LIBPLACEBO_7.387") == API_HEADERS[387]
+assert select_header("00000000 T pl_log_create_391@LIBPLACEBO_7.391") == API_HEADERS[391]
 assert config_api(select_header("00000000 T pl_log_create_374")) == 374
 assert config_api(select_header("00000000 T pl_log_create_387")) == 387
 
@@ -162,7 +171,19 @@ assert config_api(API_HEADERS[374]) == 374
 config387 = (API_HEADERS[387] / "config.h").read_text(encoding="utf-8")
 assert "PL_HAVE_FONGMI_VULKAN_YCBCR" in config387
 assert "PL_HAVE_FONGMI_CHECKED_DOVI" in config387
-assert_fongmi_api387_snapshot_hashes()
+assert_fongmi_header_snapshot_hashes(API_HEADERS[387].parent, 387)
 assert_fongmi_api387_struct_layout()
 
+if API_HEADERS[391].is_dir():
+    assert config_api(API_HEADERS[391]) == 391
+    for name in ("config.h", "common.h", "gpu.h", "log.h", "renderer.h", "shaders.h", "vulkan.h"):
+        assert (API_HEADERS[391] / name).is_file(), f"missing API-391 header {name}"
+    assert_fongmi_header_snapshot_hashes(API391_HEADER_ROOT, 391)
+elif ARGS.require_api391_snapshot:
+    raise AssertionError(f"missing generated API-391 header snapshot: {API391_HEADER_ROOT}")
+
 print("libplacebo API 374 and FongMi API-387 header ABI contracts OK")
+if API_HEADERS[391].is_dir():
+    print("Generated FongMi API-391 header ABI contracts OK")
+else:
+    print("Generated API-391 header snapshot pending the pinned runtime build")

@@ -5,10 +5,17 @@ import re
 import sys
 import unittest
 
-DEFAULT = Path(__file__).resolve().parents[2] / ".github/workflows/mpvflow-debug-arm64.yml"
+ROOT = Path(__file__).resolve().parents[2]
+DEFAULT = ROOT / ".github/workflows/mpvflow-debug-arm64.yml"
 WORKFLOW = Path(sys.argv.pop()) if len(sys.argv) > 1 else DEFAULT
 TEXT = WORKFLOW.read_text(encoding="utf-8")
-STEPS = dict(re.findall(r"^      - name: ([^\n]+)\n(.*?)(?=^      - name: |\Z)", TEXT, re.M | re.S))
+
+def parse_steps(text: str) -> dict[str, str]:
+    return dict(re.findall(r"^      - name: ([^\n]+)\n(.*?)(?=^      - name: |\Z)", text, re.M | re.S))
+
+STEPS = parse_steps(TEXT)
+DEBUG_APK_STEPS = parse_steps((ROOT / ".github/workflows/debug-apk.yml").read_text(encoding="utf-8"))
+RELEASE_STEPS = parse_steps((ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8"))
 CACHE_MISS = "if: ${{ steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' }}"
 MPV_SHA = "95ec8e929f8ad2f97c8415c486971493a0b408df"
 PLACEBO_SHA = "63659d96d1bff7d7a5a1368e9538056a193fc6fb"
@@ -57,6 +64,26 @@ class Arm64WorkflowTest(unittest.TestCase):
         self.assertIn("id: mpvflow-runtime-cache", restore)
         self.assertEqual(TEXT.count("uses: actions/cache/restore@v4"), 1)
         self.assertIn("steps.mpvflow-runtime-cache.outputs.cache-hit == 'true'", STEPS["Use cached Flow-only MPVFlow arm64 runtime"])
+
+    def test_generated_api391_headers_are_cached_and_revalidated(self):
+        generated = "app/build/mpvflow-generated/libplacebo-api-391"
+        cache_steps = (
+            (STEPS, ("Restore verified Flow-only MPVFlow arm64 runtime", "Save verified Flow-only MPVFlow arm64 runtime")),
+            (DEBUG_APK_STEPS, ("Restore verified Flow-only MPVFlow arm64 runtime", "Save verified Flow-only MPVFlow arm64 runtime")),
+            (RELEASE_STEPS, ("Restore verified Flow-only MPVFlow arm64 runtime",)),
+        )
+        for workflow_steps, names in cache_steps:
+            for name in names:
+                with self.subTest(cache_step=name):
+                    self.assertIn(generated, workflow_steps[name])
+        command = "scripts/tests/mpvflow_placebo_api_headers_test.py --require-api391-snapshot"
+        self.assertIn(command, STEPS["Verify generated FongMi API-391 libplacebo headers"])
+        self.assertIn(command, DEBUG_APK_STEPS["Run focused interpolation regression tests"])
+        self.assertIn(command, RELEASE_STEPS["Overlay Flow-only runtime and build Standard arm64-v8a release"])
+        self.assertLess(
+            TEXT.index("- name: Overlay MPVFlow MPV/FFmpeg arm64 runtime into MPV∞ AAR"),
+            TEXT.index("- name: Verify generated FongMi API-391 libplacebo headers"),
+        )
 
     def test_focused_invariants_run_before_the_runtime_build(self):
         focused = STEPS["Test complete MPVFlow focused invariants"]

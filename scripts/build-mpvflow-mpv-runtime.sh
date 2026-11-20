@@ -381,6 +381,8 @@ MPV_BUILD_DIR="$BUILDSCRIPTS/deps/mpv/_build-arm64"
 MPV_DEPENDENCIES="$MPV_BUILD_DIR/meson-info/intro-dependencies.json"
 PLACEBO_LIBRARY="$MPV_PREFIX/libplacebo.so"
 PLACEBO_PC="$MPV_PREFIX/pkgconfig/libplacebo.pc"
+PLACEBO_INCLUDE_DIR="${MPV_PREFIX%/lib}/include/libplacebo"
+API391_HEADER_ROOT="$ROOT/app/build/mpvflow-generated/libplacebo-api-391"
 [[ -f "$MPV_LIBRARY" && -f "$PLACEBO_LIBRARY" && -f "$PLACEBO_PC" ]] || {
   echo "MPVFlow native prefix is missing libmpv, libplacebo, or libplacebo.pc" >&2
   exit 1
@@ -445,6 +447,44 @@ if actual_version != expected_version:
 print(f"Verified MPV Meson libplacebo dependency version {actual_version}")
 PY
 echo "Verified libmpv.so dynamically uses shared libplacebo $PLACEBO_VERSION, matching Native Media3 Flow"
+# Native Media3 must compile against the exact API-391 headers that built libplacebo.so.
+python3 - "$PLACEBO_INCLUDE_DIR" "$API391_HEADER_ROOT" <<'PY'
+import hashlib
+import re
+import shutil
+import sys
+from pathlib import Path
+
+source = Path(sys.argv[1])
+destination = Path(sys.argv[2])
+config = source / "config.h"
+if not config.is_file():
+    raise SystemExit(f"Installed libplacebo headers are missing: {source}")
+config_text = config.read_text(encoding="utf-8")
+if not re.search(r"^#define\s+PL_API_VER\s+391\s*$", config_text, re.MULTILINE):
+    raise SystemExit(f"Expected installed libplacebo PL_API_VER 391 in {config}")
+required = ("config.h", "common.h", "gpu.h", "log.h", "renderer.h", "shaders.h", "vulkan.h")
+missing = [name for name in required if not (source / name).is_file()]
+if missing:
+    raise SystemExit(f"Installed API-391 libplacebo headers are incomplete: {missing}")
+if destination.exists():
+    shutil.rmtree(destination)
+target = destination / "libplacebo"
+destination.mkdir(parents=True, exist_ok=True)
+shutil.copytree(source, target)
+files = sorted(path for path in target.rglob("*") if path.is_file())
+if not files:
+    raise SystemExit(f"No installed libplacebo headers found under {target}")
+manifest = destination / "FONGMI_HEADERS.sha256"
+manifest.write_text(
+    "".join(
+        f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.relative_to(destination).as_posix()}\n"
+        for path in files
+    ),
+    encoding="utf-8",
+)
+print(f"Staged {len(files)} matching FongMi API-391 libplacebo headers: {destination}")
+PY
 APK="$(find "$MPV_BUILDER_DIR/app/build/outputs/apk" -type f -path '*/debug/*' -name '*arm64-v8a-debug*.apk' -print -quit)"
 if [[ -z "$APK" ]]; then
   echo "Android MPVFlow runtime build finished but no arm64-v8a debug APK was found" >&2
