@@ -190,6 +190,8 @@ internal object PlaybackStatePersistence {
     positionIsKnown: Boolean,
     isPositionRestorePending: Boolean,
   ): Boolean {
+    if (!positionIsKnown || isPositionRestorePending) return oldState?.hasBeenWatched == true
+
     // Watched threshold 0 means "Infinitely": the video is never auto-marked as
     // watched based on progress (only an explicit flag keeps it marked).
     if (watchedThreshold == 0) return oldState?.hasBeenWatched == true

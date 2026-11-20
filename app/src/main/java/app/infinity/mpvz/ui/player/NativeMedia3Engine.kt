@@ -2132,6 +2132,7 @@ class NativeMedia3Engine internal constructor(
     attachedView?.player = null
     subtitleOverlay?.setRenderer(null)
     libassRenderer?.close()
+    libassRendererSize = null
     libassRenderer = null
     libassRendererSize = null
     subtitleOverlay = null

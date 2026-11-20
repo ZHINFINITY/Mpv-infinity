@@ -96,29 +96,31 @@ fun SubtitleDelayPanel(
     // We unwrap the card content here because DraggablePanel already provides the card
     Column(verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.smaller)) {
       SubtitleLaneSelector(selected = selectedLane, onSelected = { selectedLane = it })
-      SubtitleDelayCardContent(
-        delay = delayFloat,
-        onDelayChange = { PlaybackSession.setPropertyDouble(delayProperty, it.toDouble()) },
-        speed = speedFloat,
-        onSpeedChange = { PlaybackSession.setPropertyDouble(speedProperty, it.toDouble()) },
-        onApply = {
-          if (delayEnabled) {
-            val value = (delayFloat * 1000).roundToInt()
-            if (selectedLane == SubtitleLane.Primary) preferences.defaultSubDelay.set(value)
-            else preferences.defaultSecondarySubDelay.set(value)
-          }
-          if (speedEnabled && speedFloat in 0.1f..10f) {
-            if (selectedLane == SubtitleLane.Primary) preferences.defaultSubSpeed.set(speedFloat)
-            else preferences.defaultSecondarySubSpeed.set(speedFloat)
-          }
-        },
-        onReset = {
-          if (delayEnabled) PlaybackSession.setPropertyDouble(delayProperty, defaultDelayMs / 1000.0)
-          if (speedEnabled) PlaybackSession.setPropertyDouble(speedProperty, defaultSpeed.toDouble())
-        },
-        delayEnabled = delayEnabled,
-        speedEnabled = speedEnabled,
-      )
+      androidx.compose.runtime.key(selectedLane) {
+        SubtitleDelayCardContent(
+          delay = delayFloat,
+          onDelayChange = { PlaybackSession.setPropertyDouble(delayProperty, it.toDouble()) },
+          speed = speedFloat,
+          onSpeedChange = { PlaybackSession.setPropertyDouble(speedProperty, it.toDouble()) },
+          onApply = {
+            if (delayEnabled) {
+              val value = (delayFloat * 1000).roundToInt()
+              if (selectedLane == SubtitleLane.Primary) preferences.defaultSubDelay.set(value)
+              else preferences.defaultSecondarySubDelay.set(value)
+            }
+            if (speedEnabled && speedFloat in 0.1f..10f) {
+              if (selectedLane == SubtitleLane.Primary) preferences.defaultSubSpeed.set(speedFloat)
+              else preferences.defaultSecondarySubSpeed.set(speedFloat)
+            }
+          },
+          onReset = {
+            if (delayEnabled) PlaybackSession.setPropertyDouble(delayProperty, defaultDelayMs / 1000.0)
+            if (speedEnabled) PlaybackSession.setPropertyDouble(speedProperty, defaultSpeed.toDouble())
+          },
+          delayEnabled = delayEnabled,
+          speedEnabled = speedEnabled,
+        )
+      }
     }
   }
 }
@@ -199,13 +201,13 @@ fun DelayCardContent( // Renamed from DelayCard and removed the Card wrapper
       modifier = Modifier.animateContentSize(),
     ) { extraSettings() }
     // true (heard -> spotted), false (spotted -> heard)
-    var isDirectionPositive by remember { mutableStateOf<Boolean?>(null) }
+    var isDirectionPositive by remember(delayType) { mutableStateOf<Boolean?>(null) }
     Row(
       horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.smaller),
     ) {
-      var timerStart by remember { mutableStateOf<Long?>(null) }
-      var finalDelay by remember { mutableStateOf(delay) }
-      LaunchedEffect(isDirectionPositive) {
+      var timerStart by remember(delayType) { mutableStateOf<Long?>(null) }
+      var finalDelay by remember(delayType) { mutableStateOf(delay) }
+      LaunchedEffect(delayType, isDirectionPositive) {
         if (isDirectionPositive == null) {
           onDelayChange(finalDelay)
           return@LaunchedEffect

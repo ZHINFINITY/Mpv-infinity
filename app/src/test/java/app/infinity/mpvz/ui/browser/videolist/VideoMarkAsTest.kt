@@ -25,9 +25,9 @@ class VideoMarkAsTest {
   }
 
   @Test
-  fun finishedSetsFullPositionAndWatched() {
+  fun finishedUsesNoResumePositionAndWatched() {
     val result = playbackStateForMarkAs(state(lastPosition = 120, remaining = 480), VideoMarkAs.Finished, 600)
-    assertEquals(600, result.lastPosition)
+    assertEquals(0, result.lastPosition)
     assertEquals(0, result.timeRemaining)
     assertTrue(result.hasBeenWatched)
   }

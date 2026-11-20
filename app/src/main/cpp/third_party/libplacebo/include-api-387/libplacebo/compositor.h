@@ -255,7 +255,8 @@ PL_API enum pl_queue_status pl_input_update(pl_input input,
 struct pl_compositor_status {
     // Combined status of all inputs: PL_QUEUE_ERR if any input failed,
     // otherwise PL_QUEUE_MORE if any input needs more frames, PL_QUEUE_EOF if
-    // all inputs (if any) have reached EOF, and PL_QUEUE_OK otherwise.
+    // all inputs (if any) have reached EOF, and PL_QUEUE_OK otherwise. An empty
+    // compositor also reports EOF; distinguish it by checking `num_inputs`.
     enum pl_queue_status status;
 
     // The status of every input, as returned by `pl_input_update()`, in the

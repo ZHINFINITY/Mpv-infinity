@@ -21,8 +21,10 @@
 // Sampling operations. These shaders perform some form of sampling operation
 // from a given pl_tex. In order to use these, the pl_shader *must* have been
 // created using the same `gpu` as the originating `pl_tex`. Otherwise, this
-// is undefined behavior. They require nothing (PL_SHADER_SIG_NONE) and return
-// a color (PL_SHADER_SIG_COLOR).
+// is undefined behavior. When `pl_sample_src.tex` is provided, they require
+// no input (PL_SHADER_SIG_NONE); when it is unset and sampler metadata is
+// provided, they require an external sampler input (PL_SHADER_SIG_SAMPLER).
+// Both modes return a color (PL_SHADER_SIG_COLOR).
 
 #include <libplacebo/colorspace.h>
 #include <libplacebo/filters.h>

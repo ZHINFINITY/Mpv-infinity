@@ -202,17 +202,27 @@ class MpvAspectSurfaceDiagnosticsContractTest {
 
   @Test fun nativeHandoffUsesTheRequestCapturedBeforeSuspendingStateRead() {
     val activity = source("ui/player/PlayerActivity.kt")
-    val interpolationJoin = activity.indexOf("mpvInterpolationRestartJob?.join()")
-    val requestCapture = activity.indexOf("val handoffRequestGeneration = mediaRequestGeneration", interpolationJoin)
-    val stateSave = activity.indexOf("saveVideoPlaybackState(fileName, immediate = true)?.join()", requestCapture)
-    val stateRead = activity.indexOf("playbackStateRepository.getVideoDataByTitle", stateSave)
+    val requestCapture = activity.indexOf("val handoffRequestGeneration = mediaRequestGeneration")
+    val interpolationJoin = activity.indexOf("mpvInterpolationRestartJob?.join()", requestCapture)
+    val interpolationGuard = activity.indexOf("if (!isCurrentHandoffRequest()) return@collect", interpolationJoin)
+    val nativeInterpolationJoin = activity.indexOf("nativeInterpolationRestartJob?.join()", interpolationGuard)
+    val nativeInterpolationGuard = activity.indexOf("if (!isCurrentHandoffRequest()) return@collect", nativeInterpolationJoin)
+    val stateSave = activity.indexOf("saveVideoPlaybackState(fileName, immediate = true)?.join()", nativeInterpolationGuard)
+    val stateSaveGuard = activity.indexOf("if (!isCurrentHandoffRequest()) return@collect", stateSave)
+    val stateRead = activity.indexOf("playbackStateRepository.getVideoDataByTitle", stateSaveGuard)
+    val stateReadGuard = activity.indexOf("if (!isCurrentHandoffRequest()) return@collect", stateRead)
     val nativeApply =
-      activity.indexOf("applyNativePlaybackState(handoffState, handoffRequestGeneration)", stateRead)
+      activity.indexOf("applyNativePlaybackState(handoffState, handoffRequestGeneration)", stateReadGuard)
 
-    assertTrue(interpolationJoin >= 0)
-    assertTrue(requestCapture > interpolationJoin)
-    assertTrue(stateSave > requestCapture)
-    assertTrue(stateRead > stateSave)
-    assertTrue(nativeApply > stateRead)
+    assertTrue(requestCapture >= 0)
+    assertTrue(interpolationJoin > requestCapture)
+    assertTrue(interpolationGuard > interpolationJoin)
+    assertTrue(nativeInterpolationJoin > interpolationGuard)
+    assertTrue(nativeInterpolationGuard > nativeInterpolationJoin)
+    assertTrue(stateSave > nativeInterpolationGuard)
+    assertTrue(stateSaveGuard > stateSave)
+    assertTrue(stateRead > stateSaveGuard)
+    assertTrue(stateReadGuard > stateRead)
+    assertTrue(nativeApply > stateReadGuard)
   }
 }

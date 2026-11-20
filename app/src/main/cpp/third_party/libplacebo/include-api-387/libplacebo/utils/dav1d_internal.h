@@ -22,6 +22,7 @@
 #else
 
 #include <assert.h>
+#include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -45,7 +46,7 @@ PL_DAV1D_API enum pl_color_system pl_system_from_dav1d(enum Dav1dMatrixCoefficie
         // requires inferring from other sources, but libplacebo makes
         // explicit. Default to PQ as it's the more common scenario.
         case DAV1D_MC_ICTCP:        return PL_COLOR_SYSTEM_BT_2100_PQ;
-        case DAV1D_MC_RESERVED: abort();
+        case DAV1D_MC_RESERVED: return PL_COLOR_SYSTEM_UNKNOWN;
     }
 
     return PL_COLOR_SYSTEM_UNKNOWN;
@@ -152,7 +153,7 @@ PL_DAV1D_API enum pl_color_transfer pl_transfer_from_dav1d(enum Dav1dTransferCha
     case DAV1D_TRC_SMPTE2084:       return PL_COLOR_TRC_PQ;
     case DAV1D_TRC_SMPTE428:        return PL_COLOR_TRC_ST428;
     case DAV1D_TRC_HLG:             return PL_COLOR_TRC_HLG;
-    case DAV1D_TRC_RESERVED: abort();
+    case DAV1D_TRC_RESERVED: return PL_COLOR_TRC_UNKNOWN;
     }
 
     return PL_COLOR_TRC_UNKNOWN;
@@ -378,10 +379,57 @@ PL_DAV1D_API void pl_swapchain_colors_from_dav1dpicture(struct pl_swapchain_colo
 #define PL_MAGIC1 0xc6d02577
 
 struct pl_dav1dalloc {
+    struct pl_dav1dalloc *next;
     uint32_t magic[2];
     pl_gpu gpu;
     pl_buf buf;
 };
+
+// allocator_data is user-owned by dav1d and may point to an unrelated custom
+// allocator record. Validate pointer identity against allocations made here
+// before reading any private fields.
+static pthread_mutex_t pl_dav1dalloc_lock = PTHREAD_MUTEX_INITIALIZER;
+static struct pl_dav1dalloc *pl_dav1dalloc_list;
+
+static void pl_dav1dalloc_register(struct pl_dav1dalloc *alloc)
+{
+    pthread_mutex_lock(&pl_dav1dalloc_lock);
+    alloc->next = pl_dav1dalloc_list;
+    pl_dav1dalloc_list = alloc;
+    pthread_mutex_unlock(&pl_dav1dalloc_lock);
+}
+
+static struct pl_dav1dalloc *pl_dav1dalloc_find(const void *candidate)
+{
+    struct pl_dav1dalloc *found = NULL;
+    pthread_mutex_lock(&pl_dav1dalloc_lock);
+    for (struct pl_dav1dalloc *alloc = pl_dav1dalloc_list; alloc; alloc = alloc->next) {
+        if (alloc == candidate) {
+            found = alloc;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&pl_dav1dalloc_lock);
+    return found;
+}
+
+static struct pl_dav1dalloc *pl_dav1dalloc_remove(const void *candidate)
+{
+    struct pl_dav1dalloc *found = NULL;
+    pthread_mutex_lock(&pl_dav1dalloc_lock);
+    struct pl_dav1dalloc **link = &pl_dav1dalloc_list;
+    while (*link) {
+        if (*link == candidate) {
+            found = *link;
+            *link = found->next;
+            found->next = NULL;
+            break;
+        }
+        link = &(*link)->next;
+    }
+    pthread_mutex_unlock(&pl_dav1dalloc_lock);
+    return found;
+}
 
 struct pl_dav1dref {
     Dav1dPicture pic;
@@ -433,16 +481,16 @@ PL_DAV1D_API bool pl_upload_dav1dpicture(pl_gpu gpu,
         }, {
             // U plane
             .type           = PL_FMT_UNORM,
-            .width          = pic->p.w >> sub_x,
-            .height         = pic->p.h >> sub_y,
+            .width          = (pic->p.w + (1 << sub_x) - 1) >> sub_x,
+            .height         = (pic->p.h + (1 << sub_y) - 1) >> sub_y,
             .pixel_stride   = bytes,
             .component_size = {bytes * 8},
             .component_map  = {1},
         }, {
             // V plane
             .type           = PL_FMT_UNORM,
-            .width          = pic->p.w >> sub_x,
-            .height         = pic->p.h >> sub_y,
+            .width          = (pic->p.w + (1 << sub_x) - 1) >> sub_x,
+            .height         = (pic->p.h + (1 << sub_y) - 1) >> sub_y,
             .pixel_stride   = bytes,
             .component_size = {bytes * 8},
             .component_map  = {2},
@@ -450,19 +498,23 @@ PL_DAV1D_API bool pl_upload_dav1dpicture(pl_gpu gpu,
     };
 
     pl_buf buf = NULL;
-    struct pl_dav1dalloc *alloc = params->gpu_allocated ? pic->allocator_data : NULL;
+    struct pl_dav1dalloc *alloc = params->gpu_allocated
+        ? pl_dav1dalloc_find(pic->allocator_data) : NULL;
     struct pl_dav1dref *ref = NULL;
 
-    if (alloc && alloc->magic[0] == PL_MAGIC0 && alloc->magic[1] == PL_MAGIC1) {
-        // Re-use pre-allocated buffers directly
-        assert(alloc->gpu == gpu);
+    if (alloc && alloc->magic[0] == PL_MAGIC0 && alloc->magic[1] == PL_MAGIC1 &&
+        alloc->gpu == gpu) {
+        // Re-use buffers only when allocator_data belongs to this adapter and GPU.
         buf = alloc->buf;
-    } else if (params->asynchronous && gpu->limits.callbacks) {
-        ref = malloc(sizeof(*ref));
-        if (!ref)
-            return false;
-        memcpy(&ref->pic, pic, sizeof(Dav1dPicture));
-        ref->count = out->num_planes;
+    } else {
+        alloc = NULL;
+        if (params->asynchronous && gpu->limits.callbacks) {
+            ref = malloc(sizeof(*ref));
+            if (!ref)
+                return false;
+            memcpy(&ref->pic, pic, sizeof(Dav1dPicture));
+            ref->count = out->num_planes;
+        }
     }
 
     for (int p = 0; p < out->num_planes; p++) {
@@ -486,7 +538,14 @@ PL_DAV1D_API bool pl_upload_dav1dpicture(pl_gpu gpu,
         }
 
         if (!pl_upload_plane(gpu, &out->planes[p], &tex[p], &data[p])) {
-            free(ref);
+            if (ref) {
+                // Accepted uploads retain ref until their callback runs. Drain
+                // them before freeing the callback state, and leave pic owned
+                // by the caller because this operation failed.
+                for (int i = 0; i < p; i++)
+                    pl_tex_poll(gpu, tex[i], UINT64_MAX);
+                free(ref);
+            }
             return false;
         }
     }
@@ -566,6 +625,7 @@ PL_DAV1D_API int pl_allocate_dav1dpicture(Dav1dPicture *p, void *cookie)
     data[1] = PL_ALIGN2(data[0] + y_sz, DAV1D_PICTURE_ALIGNMENT);
     data[2] = PL_ALIGN2(data[1] + uv_sz, DAV1D_PICTURE_ALIGNMENT);
 
+    pl_dav1dalloc_register(alloc);
     p->allocator_data = alloc;
     p->data[0] = (void *) data[0];
     p->data[1] = (void *) data[1];
@@ -575,7 +635,7 @@ PL_DAV1D_API int pl_allocate_dav1dpicture(Dav1dPicture *p, void *cookie)
 
 PL_DAV1D_API void pl_release_dav1dpicture(Dav1dPicture *p, void *cookie)
 {
-    struct pl_dav1dalloc *alloc = p->allocator_data;
+    struct pl_dav1dalloc *alloc = pl_dav1dalloc_remove(p->allocator_data);
     if (!alloc)
         return;
 

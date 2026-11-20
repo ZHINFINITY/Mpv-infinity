@@ -13,7 +13,6 @@ val localProperties =
 val targetAbiProp = project.findProperty("targetAbi")?.toString() ?: localProperties.getProperty("targetAbi")
 val enableX86 = project.findProperty("enableX86") != "false"
 val requestedMpvFlowMpvRuntime = project.findProperty("mpvFlowMpvBuild")?.toString() == "true"
-val requestedMpvFlowFongmiDiagnostics = project.findProperty("mpvFlowFongmiDiagnosticCapture")?.toString() == "true"
 val x86Abis = if (enableX86) listOf("x86", "x86_64") else emptyList()
 val activeAbis =
   if (!targetAbiProp.isNullOrBlank()) {
@@ -22,7 +21,8 @@ val activeAbis =
     listOf("arm64-v8a", "armeabi-v7a") + x86Abis
   }
 val includeMpvFlowMpvRuntime = requestedMpvFlowMpvRuntime && activeAbis == listOf("arm64-v8a")
-val includeMpvFlowFongmiDiagnostics = includeMpvFlowMpvRuntime && requestedMpvFlowFongmiDiagnostics
+// The pinned MPVRx runtime rejects MPVFLOW_DEBUG_CAPTURE, so do not advertise uninstrumented native capture.
+val includeMpvFlowFongmiDiagnostics = false
 val universalOnlyDistributions = setOf("noVulkan")
 val releaseVersionCode = 264
 val versionCodeBandSize = 10_000

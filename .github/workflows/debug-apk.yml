@@ -207,6 +207,9 @@ jobs:
           sudo install -d -m0755 -o _apt -g root "$RUNNER_TEMP/mpv-native-apt-archives/partial"
       - name: Install native subtitle build dependencies
         run: scripts/ci/apt-install-with-fallback.sh autoconf automake libtool gettext autopoint gperf pkg-config
+      - name: Verify vendored libplacebo API headers
+        if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}
+        run: python3 scripts/tests/mpvflow_placebo_api_headers_test.py
       - name: Restore verified Flow-only MPVFlow arm64 runtime
         id: mpvflow-runtime-cache
         if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}
@@ -279,7 +282,7 @@ jobs:
         if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}
         run: python3 scripts/verify-mpv-aar-lgpl.py app/libs/mpvlib.aar --abis arm64-v8a,armeabi-v7a,x86,x86_64 --require-vulkan --require-fork-subprocess
       - name: Save verified Flow-only MPVFlow arm64 runtime
-        if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' && steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' }}
+        if: ${{ success() && inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' && steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v4
         with:
           path: native-builder/app/build/outputs/apk
@@ -290,6 +293,7 @@ jobs:
           python3 scripts/tests/package_mpv_runtime_aar_test.py
           python3 scripts/tests/mpvflow_flow_only_test.py
           python3 scripts/tests/mpvflow_native_build_test.py
+          # API-391 headers are checked from the tracked vendor snapshot above.
           if [[ -f "$GITHUB_WORKSPACE/native-builder/buildscripts/deps/mpv/video/out/gpu_next/motion.c" ]]; then
             export MPVFLOW_MPV_SOURCE_DIR="$GITHUB_WORKSPACE/native-builder/buildscripts/deps/mpv"
             python3 scripts/tests/fongmi_paired_color_mask_test.py --source "$MPVFLOW_MPV_SOURCE_DIR/video/out/gpu_next/motion.c"
@@ -403,6 +407,8 @@ jobs:
           apk="$(find app/build/outputs/apk/standard/debug -type f -name '*arm64-v8a*.apk' -print -quit)"
           [[ -n "$apk" ]]
           python3 scripts/verify-debug-apk-artifact.py "$apk" "${apk%.apk}.verification.json"
+          python3 scripts/verify-region3-shader-apk.py "$apk"
+          python3 scripts/verify-pair-ghost-apk.py "$apk"
       - name: Wait for fail-fast compile and full unit tests before publishing APK
         env:
           GH_TOKEN: ${{ github.token }}

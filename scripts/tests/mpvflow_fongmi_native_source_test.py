@@ -32,6 +32,7 @@ CMAKE = (ROOT / "app/src/main/cpp/CMakeLists.txt").read_text(encoding="utf-8")
 PATCH_DIR = ROOT / "scripts/patches/mpvlibandroid-fongmi"
 PATCHER = (PATCH_DIR / "patch-libbluray.sh").read_text(encoding="utf-8")
 PATCH_README = (PATCH_DIR / "README.md").read_text(encoding="utf-8")
+DIAGNOSTICS_GUIDE = (ROOT / "docs/mpvflow-diagnostics.md").read_text(encoding="utf-8")
 
 MPV_SHA = "645f8ecdd3c94379048e9ee3e7014e174de0bd02"
 PLACEBO_SHA = "63659d96d1bff7d7a5a1368e9538056a193fc6fb"
@@ -46,7 +47,7 @@ VULKAN_HEADERS_SHA = "a4f8ada9f4f97c45b8c89c57997be9cebaae65d2"
 GPL_SHA = "edaef632cbb643e4e7a221717a6c441a4c1a7c918e6e4d56debc3d8739b233f6"
 PATCH_HASHES = {
     "libbluray-1.4.1-still-eof.patch": "cc0a15ee88b1ead665dadbc3ac363c2686e5184fc1e04a76713665cad57c0fc7",
-    "libbluray-1.4.1-checked-seek.patch": "1055d99f0940b3077e9f7171a220f242396e6bf5196415f3fc987b316d51447c",
+    "libbluray-1.4.1-checked-seek.patch": "0124542e530f03d41f5770386f00836523333c635fe5216c5f0729181550219d",
     "libbluray-1.4.1-menu-info.patch": "17a1b88c72c3b467ba6ac8d9419f003c93f694733b9214deee13bad5ebfedb5c",
     "libbluray-1.4.1-bdj-pointer.patch": "232ce1e634335af5d69a705745a57ea5cd5da8d7160b9441b5ba154e7b3dec85",
 }
@@ -182,6 +183,8 @@ for patch_name, expected_hash in PATCH_HASHES.items():
 assert MPVLIB_ANDROID_SHA in PATCH_README
 assert "patch_fongmi_motion_artifact.py" not in MANIFEST
 assert "patch_fongmi_motion_artifact.py" not in LICENSES
+assert "does **not** expose FongMi one-shot capture" in DIAGNOSTICS_GUIDE
+assert "unavailable in the current build" in DIAGNOSTICS_GUIDE
 assert "FongMi/FFmpeg" in LICENSES and "release-9.1-fongmi" in LICENSES
 assert f"https://github.com/FongMi/FFmpeg/commit/{FFMPEG_SHA}" in (ROOT / "app/src/main/java/app/infinity/mpvz/ui/preferences/AboutScreen.kt").read_text(encoding="utf-8")
 assert "LICENSE.GPL" in LICENSES

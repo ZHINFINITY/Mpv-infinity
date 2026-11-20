@@ -67,7 +67,7 @@ struct pl_deinterlace_source {
     // may be NULL, but `cur` is required. If present, they must all have the
     // exact same texture dimensions.
     //
-    // Note: `prev` and `next` are only required for PL_DEINTERLACE_YADIF.
+    // Note: `prev.top` and `next.top` are used by temporal BWDIF/BWDIF (YADIF must be selected explicitly); an absent neighbor makes the operation spatial-only.
     struct pl_field_pair prev, cur, next;
 
     // The parity of the current field to output. This field will be unmodified

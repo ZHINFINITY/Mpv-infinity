@@ -26,9 +26,11 @@ class MpvDecoderRecoveryContractTest {
     assertTrue(snapshot.contains("MPVLib.getPropertyInt(\"vid\")"))
     assertTrue(snapshot.contains("RecoverableVideoTrack(trackId, current.generation)"))
     assertTrue(recovery.contains("MpvConfigOverridePolicy.isOwnedByMpvConf(\"hwdec\")"))
+    assertTrue(recovery.contains("withReadyCore(Unit) {"))
     assertTrue(recovery.contains("lastSelectedVideoTrackForRecovery?.takeIf { it.generation == current.generation }"))
-    assertTrue(recovery.indexOf("setPropertyInt(\"vid\", rememberedTrack.id)") >= 0)
-    assertTrue(recovery.indexOf("setPropertyString(\"vid\", \"auto\")") > recovery.indexOf("rememberedTrack"))
+    assertTrue(recovery.indexOf("MPVLib.setPropertyString(\"hwdec\", value)") < recovery.indexOf("MPVLib.getPropertyInt(\"vid\")"))
+    assertTrue(recovery.indexOf("MPVLib.setPropertyInt(\"vid\", rememberedTrack.id)") >= 0)
+    assertTrue(recovery.indexOf("MPVLib.setPropertyString(\"vid\", \"auto\")") > recovery.indexOf("rememberedTrack"))
     assertTrue(session.contains("suspendedVideoTrack = null\n      lastSelectedVideoTrackForRecovery = null"))
 
     val standardSnapshot = standardAspect.indexOf("PlaybackSession.rememberMpvVideoTrackForRecovery()")

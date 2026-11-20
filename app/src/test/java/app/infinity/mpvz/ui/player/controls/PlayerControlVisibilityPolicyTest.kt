@@ -261,6 +261,30 @@ class PlayerControlVisibilityPolicyTest {
   }
 
   @Test
+  fun nativeBackgroundLoadingAfterFirstFrameIsNotAStall() {
+    assertFalse(
+      PlayerControlVisibilityPolicy.isNativePlaybackStalled(
+        isEnded = false,
+        isReady = true,
+        isLoading = true,
+        isBuffering = false,
+        isLocalSource = false,
+        hasRenderedFirstFrame = true,
+      ),
+    )
+    assertTrue(
+      PlayerControlVisibilityPolicy.isNativePlaybackStalled(
+        isEnded = false,
+        isReady = true,
+        isLoading = true,
+        isBuffering = false,
+        isLocalSource = false,
+        hasRenderedFirstFrame = false,
+      ),
+    )
+  }
+
+  @Test
   fun localMpvStartupCoreIdleIsSuppressedButNetworkAndTorrentStallsRemainVisible() {
     val localStartupStall = MpvBufferingVisibilityPolicy.isStalled(
       enabled = true,

@@ -1,8 +1,8 @@
 # MPVFlow diagnostics and presentation checks
 
-The dedicated diagnostic debug APK exposes one capture control: **One-shot FongMi diagnostic** in the player's **More** sheet. It appears only during active FongMi MPV playback; ordinary debug and release builds do not include the diagnostic capture UI or native shader instrumentation. Ordinary marked capture and paired Soft Blend comparison controls remain unavailable in the player.
+The current debug APK does **not** expose FongMi one-shot capture. The feature remains disabled because the active MPVRx-pinned FongMi runtime is not instrumented for diagnostic readback; ordinary debug and release builds do not include diagnostic capture UI or native shader instrumentation. Older diagnostic builds may have exposed the one-shot flow described below, but it is not available in the current build. Ordinary marked capture and paired Soft Blend comparison controls are also unavailable.
 
-## Current debug build: capture one FongMi output
+## Older diagnostic builds: one-shot FongMi capture (unavailable in the current build)
 
 1. Install the diagnostic debug APK, open the video in **MPV**, and seek to just before the artifact. Open **More** and press **Capture one bad frame**.
 2. Play through the troublesome moment. The next eligible FongMi interpolation output is captured; the session automatically completes after that one sample. If no eligible output arrives, press **Stop capture** or let the bounded watchdog end the request.
