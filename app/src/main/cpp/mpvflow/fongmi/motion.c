@@ -29,6 +29,7 @@ struct mp_motion {
     uint64_t ids[2];
     bool pair_valid;
     bool result_valid;
+    pl_tex result_first, result_second;
     float last_alpha;
     struct mp_motion_stats stats;
     int timing_stage;
@@ -553,7 +554,9 @@ static const char scene_body[] = GLSL(
         if (local_luma_delta > 0.15)
             spatial_cut += 1.0 / 16.0;
     }
-    cut = max(cut, spatial_cut);
+    // Tile disagreement is ambiguous: camera translation can produce it too.
+    // Spatial-only evidence must stay below the hard source-frame hold threshold.
+    cut = max(cut, min(spatial_cut, 0.44));
     // A global brightness change contributes matching error without a cut.
     float brightness_error = dot(mean_distance, vec3(0.25)) +
         0.25 * abs(dot((mean0 - mean1) / 256.0, vec3(0.2126, 0.7152, 0.0722)));
@@ -741,7 +744,8 @@ static const char warp_body[] = GLSL(
     source = best_source;
     f = best_field;
     vec2 motion_vector = f.xy;
-    vec2 displacement = -weight * f.xy;
+    // Preserve the selected solved coordinate in map-pixel units for synthesis.
+    vec2 displacement = (best_source - uv) * map_size;
     f.xy /= map_size;
     vec4 reverse = textureLod(backward, source + f.xy, 0.0);
     reverse.xy /= map_size;
@@ -765,8 +769,6 @@ static const char warp_body[] = GLSL(
         any(isnan(reverse)) || any(isinf(reverse)) ||
         isnan(geometry) || isinf(geometry))
         geometry = 0.0;
-    // Use the solved vector directly. Subtracting normalized coordinates
-    // loses precision before half-float storage, even for integer translations.
     color = vec4(displacement,
                  trust * geometry, reliable * geometry);
 );
@@ -830,7 +832,7 @@ static const char synthesis_body[] = GLSL(
         // MPVFLOW_SPATIAL_VISIBILITY_CAP_V1: preserve the same downward-only attenuation for independent source weights.
         float spatial_visibility_scale = 1.0;
         if (boundary_activation > 0.0) {
-            float spatial_consensus = spatial_trust_consensus(warp0, warp1, uv, f, r);
+            float spatial_consensus = spatial_trust_consensus(forward, backward, uv, f, r);
             if (spatial_consensus >= 0.0) {
                 float spatial_island = max(0.0, clamp(trust, 0.0, 1.0) - spatial_consensus);
                 float spatial_guard_weight = 0.75 * boundary_activation *
@@ -868,7 +870,7 @@ static const char synthesis_body[] = GLSL(
         if (trust < 0.999 && boundary_activation > 0.0 && local_quality < 0.70) {
             vec2 coherent0, coherent1;
             float coherent_support;
-            motion_field_medoid(warp0, warp1, uv, f, r, coherent0, coherent1, coherent_support);
+            motion_field_medoid(forward, backward, uv, f, r, coherent0, coherent1, coherent_support);
             float coherent_delta = 0.5 * (length(coherent0 - f.xy) + length(coherent1 - r.xy));
             vec4 coherent_warped0 = sample_rgba(first, source_position + coherent0 * scale);
             vec4 coherent_warped1 = sample_rgba(second, source_position + coherent1 * scale);
@@ -986,6 +988,19 @@ static bool dispatch(struct mp_motion *m, pl_tex target,
     ));
 }
 
+static bool dispatch_storage(struct mp_motion *m, pl_tex target,
+                             struct pl_custom_shader *custom)
+{
+    custom->output = PL_SHADER_SIG_COLOR;
+    custom->compute = true;
+    custom->compute_group_size[0] = target->params.w == 1 ? 1 : 8;
+    custom->compute_group_size[1] = target->params.h == 1 ? 1 : 8;
+    pl_shader shader = begin_dispatch(m, custom);
+    return shader && pl_dispatch_compute(m->dispatch, pl_dispatch_compute_params(
+        .shader = &shader,
+        .dispatch_size = {target->params.w, target->params.h, 1},
+    ));
+}
 static bool dispatch_matching(struct mp_motion *m, pl_tex target,
                               struct pl_custom_shader *custom)
 {
@@ -1394,7 +1409,8 @@ static bool render_motion(struct mp_motion *m,
         if (!same_size)
             m->result_valid = false;
         destination = m->result;
-        if (m->result_valid && m->last_alpha == alpha) {
+        if (m->result_valid && m->last_alpha == alpha &&
+            m->result_first == first && m->result_second == second) {
             m->stats.repeated_frames++;
             *output = destination;
             return true;
@@ -1440,16 +1456,25 @@ static bool render_motion(struct mp_motion *m,
         {.var = pl_var_float("alpha"), .data = &alpha, .dynamic = true},
     };
     m->timing_stage = LEVELS + 1;
-    if (!dispatch(m, destination, &(struct pl_custom_shader) {
+    bool synthesis_ok = destination->params.renderable
+        ? dispatch(m, destination, &(struct pl_custom_shader) {
         .description = "motion compensated interpolation",
         .body = synthesis_body,
         .descriptors = desc, .num_descriptors = 5,
         .variables = vars, .num_variables = 4,
-    }))
+    }) : dispatch_storage(m, destination, &(struct pl_custom_shader) {
+        .description = "motion compensated interpolation",
+        .body = synthesis_body,
+        .descriptors = desc, .num_descriptors = 5,
+        .variables = vars, .num_variables = 4,
+    });
+    if (!synthesis_ok)
         return false;
 
     if (!target) {
         m->last_alpha = alpha;
+        m->result_first = first;
+        m->result_second = second;
         m->result_valid = true;
     }
     m->stats.generated_frames++;

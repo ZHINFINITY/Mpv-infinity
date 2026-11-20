@@ -151,6 +151,12 @@ def test_standard_workflow_is_flow_only() -> None:
     assert '| grep' not in apk_check
     assert "librife_vfi\\.so" in apk_check
     assert "exit 1" in apk_check
+    region3_verifier = (ROOT / "scripts/verify-region3-shader-apk.py").read_text(encoding="utf-8")
+    pair_verifier = (ROOT / "scripts/verify-pair-ghost-apk.py").read_text(encoding="utf-8")
+    for verifier in (region3_verifier, pair_verifier):
+        assert 'MPV_LIBRARY = "lib/arm64-v8a/libmpv.so"' in verifier
+        assert 'NATIVE_LIBRARY = "lib/arm64-v8a/libmedia3flow_vulkan.so"' in verifier
+        assert 'FONGMI_MEMC_OPTION = b"motion-interpolation"' in verifier
     assert workflow.index("- name: Run focused interpolation regression tests") < workflow.index(
         "- name: Build debug APK"
     )

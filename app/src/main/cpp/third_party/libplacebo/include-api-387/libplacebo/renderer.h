@@ -1015,9 +1015,10 @@ struct pl_source_peak_context {
     // source once. Each field keeps its own rendering signature and timestamp.
     const uint64_t *ids;
     // Source-time watermark for this render. It must have been submitted, but
-    // need not occur in ids. Keep its clock consistent across render modes;
-    // it is independent of the frames chosen for a view. Earlier sources are
-    // committed, future sources only contribute speculative prefixes.
+    // must not decrease within an epoch; start a new epoch when the source clock
+    // resets. It need not occur in ids and may remain at a newer value while ids
+    // selects an older retained view. Earlier sources are committed, future
+    // sources only contribute speculative prefixes.
     uint64_t current_id;
     // Oldest source that may still be used by a later render, including sources
     // absent from this mix. After successful rendering, committed records below

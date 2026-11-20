@@ -518,8 +518,12 @@ private fun MiniPlayerContent(
       }
       .pointerInput(Unit) {
         val velocityTracker = VelocityTracker()
+        var trackedHorizontalDragPx = 0f
         detectHorizontalDragGestures(
-          onDragStart = { velocityTracker.resetTracking() },
+          onDragStart = {
+            velocityTracker.resetTracking()
+            trackedHorizontalDragPx = 0f
+          },
           onDragEnd = {
             val velocityX = runCatching { velocityTracker.calculateVelocity().x }.getOrDefault(0f)
             if (MiniPlayerDismissGesturePolicy.shouldDismissHorizontally(
@@ -547,7 +551,11 @@ private fun MiniPlayerContent(
             }
           },
           onHorizontalDrag = { change, dragAmount ->
-            velocityTracker.addPosition(change.uptimeMillis, change.position)
+            trackedHorizontalDragPx += dragAmount
+            velocityTracker.addPosition(
+              change.uptimeMillis,
+              androidx.compose.ui.geometry.Offset(trackedHorizontalDragPx, 0f),
+            )
             offsetX += dragAmount
           },
         )

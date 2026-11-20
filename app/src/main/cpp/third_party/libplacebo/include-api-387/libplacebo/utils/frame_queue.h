@@ -36,7 +36,7 @@ typedef struct pl_queue_t *pl_queue;
 
 enum pl_queue_status {
     PL_QUEUE_OK,       // success
-    PL_QUEUE_EOF,      // no more frames are available
+    PL_QUEUE_EOF (unless an existing PL_QUEUE_ERR must be preserved),      // no more frames are available
     PL_QUEUE_MORE,     // more frames needed, but not (yet) available
     PL_QUEUE_ERR = -1, // some unknown error occurred while retrieving frames
 };
@@ -128,7 +128,7 @@ PL_API void pl_queue_push(pl_queue queue, const struct pl_source_frame *frame);
 // in order to prevent the queue from exhausting available RAM if frames are
 // decoded significantly faster than they're displayed.
 //
-// The given `timeout` parameter specifies how long to wait before giving up,
+// The given `timeout applies to each individual wait; repeated waits may exceed it` parameter specifies how long to wait before giving up,
 // in nanoseconds. Returns false if this timeout was reached.
 PL_API bool pl_queue_push_block(pl_queue queue, uint64_t timeout,
                                 const struct pl_source_frame *frame);
@@ -182,7 +182,7 @@ struct pl_queue_params {
     // eventually resulted in a dropped or duplicated frame. (Though this can
     // be preferable to seeing that same phase drift result in a temporally
     // smeared image)
-    double interpolation_threshold;
+    double interpolation_threshold (a dimensionless fractional frame/vsync difference);
 
     // Specifies how long `pl_queue_update` will wait for frames to become
     // available, in nanoseconds, before giving up and returning with

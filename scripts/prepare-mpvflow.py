@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Validate and adapt the pinned native FongMi MPV runtime source."""
+"""Install the direct GPU MPVFlow renderer stage into the pinned Android mpv checkout."""
 from __future__ import annotations
 
 import argparse
 import os
+import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -15,13 +17,63 @@ from mpvrx_motion_source import verify_mpv_source
 
 ROOT = SCRIPT_DIR.parent
 VENDOR = ROOT / "app/src/main/cpp/mpvflow"
+VO_PATCH = VENDOR / "mpvflow-vo-gpu-next.patch"
+AIMAGE_VULKAN_PATCH = VENDOR / "mpvflow-aimagereader-vulkan.patch"
+MEDIACODEC_VULKAN_DIR = VENDOR / "mediacodec-vulkan"
+MEDIACODEC_VULKAN_FILES = (
+    "LICENSE.LGPL", "hwdec_aimagereader.c", "hwdec_aimagereader.comp",
+    "hwdec_aimagereader.frag", "hwdec_aimagereader.vert",
+    "hwdec_aimagereader_comp.h", "hwdec_aimagereader_frag.h",
+    "hwdec_aimagereader_vert.h", "hwdec_aimagereader_vk.c",
+    "hwdec_aimagereader_vk.h", "hwdec_aimagereader_vk_convert.c",
+    "hwdec_aimagereader_vk_private.h",
+)
 MPV_VULKAN_DEPENDENCY = "vulkan = dependency('vulkan', version: '>= 1.3.238', required: vulkan_opt)"
 ANDROID_VULKAN_DEPENDENCY = "vulkan = dependency('vulkan', required: vulkan_opt)"
 PLACEBO_SPIRV_LIBRARY_LOOKUP = "spirv = cxx.find_library('SPIRV', required: required, static: static, dirs: vulkan_lib_dirs)"
 PLACEBO_GLSLANG_LIBRARY_LOOKUP = "cxx.find_library('glslang', required: required, static: static)"
 ANDROID_PLACEBO_GLSLANG_LIBRARY_LOOKUP = "cxx.find_library('glslang', required: required, static: static, dirs: vulkan_lib_dirs)"
+PLACEBO_OPTIONS_HOOK_COUNT_MARKER = "/* MPVFLOW_OPTIONS_HOOK_COUNT */"
 MPV_CLONE_FEATURE = "features += {'clone': cc.has_header_symbol('sched.h', 'clone', args: '-D_GNU_SOURCE')}"
 MPV_ANDROID_CLONE_FEATURE = "features += {'clone': host_machine.system() != 'android' and cc.has_header_symbol('sched.h', 'clone', args: '-D_GNU_SOURCE')}"
+RENDERER_HOOK_PROBE = """
+# MPVFLOW_HAVE_RENDERER_HOOK
+if features.get('libplacebo', false) and cc.has_header_symbol('libplacebo/shaders/custom.h', 'pl_shader_custom', dependencies: libplacebo) and cc.has_header_symbol('libplacebo/shaders.h', 'pl_shader_is_compute', dependencies: libplacebo)
+    add_project_arguments('-DMPVFLOW_HAVE_RENDERER_HOOK=1', language: 'c')
+endif
+"""
+
+
+def insert_project_arguments_before_first_target(meson: str, block: str) -> str:
+    """Insert project-wide Meson arguments before any build target, replacing old appended copies."""
+    normalized = block.strip()
+    marker = normalized.splitlines()[0]
+    if marker in meson:
+        start = meson.index(marker)
+        end_marker = meson.find("\nendif", start)
+        if end_marker < 0:
+            raise SystemExit("Existing renderer-hook probe is incomplete")
+        end = end_marker + len("\nendif")
+        while end < len(meson) and meson[end] == "\n":
+            end += 1
+        meson = meson[:start] + meson[end:]
+        if marker in meson:
+            raise SystemExit("Multiple renderer-hook probes found in MPV Meson source")
+
+    target = re.search(
+        (
+            r"(?m)^[ \t]*(?:[A-Za-z_]\w*\s*=\s*)?"
+            r"(?:library|shared_library|static_library|both_libraries|"
+            r"shared_module|executable|custom_target|run_target|alias_target|jar)\s*\("
+        ),
+        meson,
+    )
+    if target is None:
+        raise SystemExit("Unable to locate the first MPV Meson build target")
+    insertion = target.start()
+    return meson[:insertion] + normalized + "\n\n" + meson[insertion:]
+
+
 NV_OPTICAL_FORMAT_MARKER = "/* MPVFLOW_NV_OPTICAL_FLOW_SFIXED5_FORMAT */"
 VULKAN_OPT_EXTENSION_LIST = "    const char *opt_extensions[] = {\n"
 ANDROID_AHB_EXTENSIONS = (
@@ -43,6 +95,49 @@ PLACEBO_TIMER_RING_NEW = (
 )
 
 
+def patch_mpvflow_stats_lua(stats_lua: str) -> str:
+    """Add only MPVFlow's synthesized-FPS value to MPV's normal stats page."""
+    message_marker = "-- MPVFLOW_OSD_SYNTH_STATS"
+    row_marker = "    -- MPVFLOW_OSD_SYNTH_ROW"
+    if message_marker in stats_lua or row_marker in stats_lua:
+        required = (
+            message_marker,
+            row_marker,
+            'mp.register_script_message("mpvflow-output-rate"',
+            'append(s, mpvflow_output_summary, {prefix="MPVFlow Synth:"})',
+        )
+        if all(marker in stats_lua for marker in required):
+            return stats_lua
+        raise SystemExit("Pinned MPV stats.lua Flow FPS row is incomplete")
+
+    page_anchor = "local function add_video_out(s)\n"
+    row_anchor = '    append_fps(s, "display-fps", "estimated-display-fps")\n'
+    if stats_lua.count(page_anchor) != 1 or stats_lua.count(row_anchor) != 1:
+        raise SystemExit("Pinned MPV stats.lua page-one layout changed; refusing an unverified OSD insertion")
+
+    message_handler = (
+        f"{message_marker}\n"
+        "local mpvflow_output_summary\n"
+        "mp.register_script_message(\"mpvflow-output-rate\", function(synthesized_fps)\n"
+        "    local synthesized = tonumber(synthesized_fps)\n"
+        "    if not synthesized or synthesized < 0 or synthesized ~= synthesized or synthesized == math.huge then\n"
+        "        mpvflow_output_summary = nil\n"
+        "        return\n"
+        "    end\n"
+        "    mpvflow_output_summary = format(\"%.1f fps\", synthesized)\n"
+        "end)\n\n"
+    )
+    stats_lua = stats_lua.replace(page_anchor, message_handler + page_anchor, 1)
+    row = (
+        row_anchor
+        + f"{row_marker}\n"
+        + "    if mpvflow_output_summary then\n"
+        + "        append(s, mpvflow_output_summary, {prefix=\"MPVFlow Synth:\"})\n"
+        + "    end\n"
+    )
+    return stats_lua.replace(row_anchor, row, 1)
+
+
 def validate_fongmi_frame_priv_members(vo_source: str) -> None:
     start = vo_source.find("struct frame_priv {")
     if start < 0:
@@ -52,17 +147,33 @@ def validate_fongmi_frame_priv_members(vo_source: str) -> None:
         raise SystemExit("Pinned MPV struct frame_priv is not closed")
     body = vo_source[start:end]
     required = (
-        "struct source_frame *source;",
-        "bool motion_capture;",
-        "pl_tex motion_texture;",
-        "struct mp_motion_frame motion_frame;",
+        "struct source_frame *source;", "bool motion_capture;",
+        "pl_tex motion_texture;", "struct mp_motion_frame motion_frame;",
+        "bool mapped_coordinates;", "struct mp_image_params mapped_params;",
+    )
+    missing = [member for member in required if member not in body]
+    if missing:
+        raise SystemExit("Pinned FongMi frame ownership/MEMC fields must be members of struct frame_priv; missing: " + ", ".join(missing))
+
+
+def validate_hwdec_frame_priv_members(vo_source: str) -> None:
+    start = vo_source.find("struct frame_priv {")
+    if start < 0:
+        raise SystemExit("Pinned MPV vo_gpu_next.c has no struct frame_priv")
+    end = vo_source.find("\n};", start)
+    if end < 0:
+        raise SystemExit("Pinned MPV struct frame_priv is not closed")
+    body = vo_source[start:end]
+    required = (
+        "bool hwdec_preloaded;",
+        "bool el_hwdec_preloaded;",
         "bool mapped_coordinates;",
         "struct mp_image_params mapped_params;",
     )
     missing = [member for member in required if member not in body]
     if missing:
         raise SystemExit(
-            "Pinned FongMi frame ownership/MEMC fields must be members of struct frame_priv; "
+            "Android Vulkan mapper fields must be members of struct frame_priv; "
             "missing: " + ", ".join(missing)
         )
 
@@ -114,23 +225,12 @@ def configure_debug_capture_source(source: str, enabled: bool) -> str:
 def enable_android_vulkan_dependency(meson: str) -> str:
     if "vulkan/vulkan_core.h" not in meson or "VK_VERSION_1_3" not in meson:
         raise SystemExit("Pinned MPV Vulkan header-version guard is missing; refusing an unverified Android Vulkan build")
-    lines = meson.splitlines(keepends=True)
-    dependency_lines = [
-        index for index, line in enumerate(lines)
-        if line.strip().startswith("vulkan = dependency('vulkan',")
-    ]
-    if len(dependency_lines) == 1:
-        index = dependency_lines[0]
-        line = lines[index]
-        if line.strip() == ANDROID_VULKAN_DEPENDENCY:
-            return meson
-        version_start = line.find(", version: '")
-        required_start = line.find(", required: vulkan_opt)", version_start + 1)
-        if version_start >= 0 and required_start > version_start:
-            version = line[version_start + len(", version: '"):line.find("'", version_start + len(", version: '"))]
-            if version.startswith(">= "):
-                lines[index] = line[:version_start] + line[required_start:]
-                return "".join(lines)
+    old_count = meson.count(MPV_VULKAN_DEPENDENCY)
+    new_count = meson.count(ANDROID_VULKAN_DEPENDENCY)
+    if old_count == 1 and new_count == 0:
+        return meson.replace(MPV_VULKAN_DEPENDENCY, ANDROID_VULKAN_DEPENDENCY, 1)
+    if old_count == 0 and new_count == 1:
+        return meson
     raise SystemExit("Pinned MPV Vulkan dependency check changed; refusing an unverified Android Vulkan build")
 
 
@@ -171,6 +271,50 @@ def enlarge_libplacebo_timer_ring(gpu_c: str) -> str:
     for old, new in zip(PLACEBO_TIMER_RING_OLD, PLACEBO_TIMER_RING_NEW, strict=True):
         gpu_c = gpu_c.replace(old, new, 1)
     return gpu_c
+
+
+def publish_libplacebo_hook_count(options_c: str) -> str:
+    """Patch the pinned FongMi helpers to publish params.num_hooks."""
+    marker_count = options_c.count(PLACEBO_OPTIONS_HOOK_COUNT_MARKER)
+    if marker_count == 3:
+        return options_c
+    if marker_count:
+        raise SystemExit("Pinned libplacebo hook-count patch is incomplete")
+    replacements = (
+        (
+            "    PL_ARRAY_APPEND(opts, p->hooks, hook);\n"
+            "    opts->params.hooks = p->hooks.elem;",
+            "    PL_ARRAY_APPEND(opts, p->hooks, hook);\n"
+            "    opts->params.hooks = p->hooks.elem;\n"
+            "    opts->params.num_hooks = p->hooks.num; "
+            + PLACEBO_OPTIONS_HOOK_COUNT_MARKER,
+        ),
+        (
+            "    PL_ARRAY_INSERT_AT(opts, p->hooks, idx, hook);\n"
+            "    opts->params.hooks = p->hooks.elem;",
+            "    PL_ARRAY_INSERT_AT(opts, p->hooks, idx, hook);\n"
+            "    opts->params.hooks = p->hooks.elem;\n"
+            "    opts->params.num_hooks = p->hooks.num; "
+            + PLACEBO_OPTIONS_HOOK_COUNT_MARKER,
+        ),
+        (
+            "    PL_ARRAY_REMOVE_AT(p->hooks, idx);\n"
+            "    opts->params.hooks = p->hooks.elem;",
+            "    PL_ARRAY_REMOVE_AT(p->hooks, idx);\n"
+            "    opts->params.hooks = p->hooks.elem;\n"
+            "    opts->params.num_hooks = p->hooks.num; "
+            + PLACEBO_OPTIONS_HOOK_COUNT_MARKER,
+        ),
+    )
+    for old, new in replacements:
+        if options_c.count(old) != 1:
+            raise SystemExit(
+                "Pinned libplacebo options.c hook helper changed; "
+                "refusing an unverified hook-count patch"
+            )
+        options_c = options_c.replace(old, new, 1)
+    return options_c
+
 
 
 def add_libplacebo_swapchain_diagnostics_api(vulkan_header: str) -> str:
@@ -232,6 +376,7 @@ def validate_libplacebo_suboptimal_recovery(swapchain_c: str) -> None:
         raise SystemExit(
             "Pinned libplacebo suboptimal/out-of-date/resize recovery changed; refusing an unverified Mailbox tolerance policy"
         )
+
 
 
 def instrument_libplacebo_swapchain(swapchain_c: str) -> str:
@@ -536,8 +681,9 @@ static void flow_report_created_swapchain(struct priv *p)
     swapchain_c = replace_once(
         swapchain_c,
         "    VkResult res = vk->QueuePresentKHR(queue, &pinfo);\n",
+        "    pl_clock_t flow_present_start = flow_queue_lock_start ? pl_clock_now() : 0;\n"
         "    VkResult res = vk->QueuePresentKHR(queue, &pinfo);\n"
-        "    pl_clock_t flow_present_end = flow_queue_lock_start ? pl_clock_now() : 0;\n",
+        "    pl_clock_t flow_present_end = flow_present_start ? pl_clock_now() : 0;\n",
         "vkQueuePresentKHR call timing",
     )
     swapchain_c = replace_once(
@@ -678,6 +824,7 @@ static void flow_report_created_swapchain(struct priv *p)
         "diagnostic toggle API",
     )
     return swapchain_c
+
 
 
 def add_libplacebo_swapchain_diagnostics_stub(stubs_c: str) -> str:
@@ -881,6 +1028,7 @@ def enable_mailbox_suboptimal_tolerance(vulkan_context: str) -> str:
     marker = "/* MPVFLOW_MAILBOX_SUBOPTIMAL_TOLERANCE */"
     policy = (
         "    pl_params.allow_suboptimal =\n"
+        "        pl_params.allow_suboptimal ||\n"
         "        pl_params.present_mode == VK_PRESENT_MODE_MAILBOX_KHR;\n"
     )
     required = (
@@ -931,17 +1079,47 @@ def main() -> None:
     glslang_meson_path = libplacebo_dir / "src/glsl/meson.build"
     glslang_source_path = libplacebo_dir / "src/glsl/glslang.cc"
     gpu_timer_path = libplacebo_dir / "src/vulkan/gpu.c"
+    placebo_options_path = libplacebo_dir / "src/options.c"
     placebo_swapchain_path = libplacebo_dir / "src/vulkan/swapchain.c"
+    placebo_formats_path = libplacebo_dir / "src/vulkan/formats.c"
     placebo_vulkan_header_path = libplacebo_dir / "src/include/libplacebo/vulkan.h"
     placebo_stubs_path = libplacebo_dir / "src/vulkan/stubs.c"
     for path in (
         meson_path, stats_lua_path, command_path, vo_path, motion_path, motion_header_path,
-        hwdec_header_path, vulkan_context_path, android_context_path, glslang_meson_path,
-        glslang_source_path, gpu_timer_path,
-        placebo_swapchain_path, placebo_vulkan_header_path, placebo_stubs_path,
+        hwdec_header_path, vulkan_context_path, android_context_path, placebo_options_path,
+        glslang_meson_path, glslang_source_path, gpu_timer_path,
+        placebo_swapchain_path, placebo_vulkan_header_path, placebo_stubs_path, placebo_formats_path,
     ):
         if not path.is_file():
             raise SystemExit(f"Pinned native source is missing required file {path}")
+
+    required = (
+        VENDOR / "mpvflow_gpu.c",
+        VENDOR / "mpvflow_gpu.h",
+        VENDOR / "mpvflow_capture_io.c",
+        VENDOR / "mpvflow_capture_io.h",
+        VENDOR / "mpvflow_visibility.h",
+        VENDOR / "mpvflow_visibility_resolver_shader.h",
+        VENDOR / "mpvflow_rate_limit.h",
+        VENDOR / "mpvflow_synthesis_scale.h",
+        VENDOR / "mpvflow_opencl.c",
+        VENDOR / "mpvflow_opencl.h",
+        VENDOR / "mpvflow_opencl_vk_bridge.c",
+        VENDOR / "mpvflow_opencl_vk_bridge.h",
+        VENDOR / "mpvflow_vulkan_optical.c",
+        VENDOR / "mpvflow_vulkan_optical.h",
+        VENDOR / "mpvflow_vulkan_qcom.c",
+        VENDOR / "mpvflow_vulkan_qcom.h",
+        VENDOR / "mpvflow_qcom_seed.comp",
+        VENDOR / "mpvflow_qcom_seed_spv.h",
+        VO_PATCH,
+        AIMAGE_VULKAN_PATCH,
+        VENDOR / "mpvflow_opencl_validation.h",
+        *(MEDIACODEC_VULKAN_DIR / filename for filename in MEDIACODEC_VULKAN_FILES),
+    )
+    for path in required:
+        if not path.is_file():
+            raise SystemExit(f"GPU Flow source is missing: {path}")
 
     debug_capture_enabled = os.environ.get("MPVFLOW_DEBUG_CAPTURE") == "1"
     if debug_capture_enabled:
@@ -965,6 +1143,7 @@ def main() -> None:
         "mp_motion_prepare_view",
         "mp_motion_render_views",
     )
+
     meson = meson_path.read_text(encoding="utf-8")
     stats_lua = stats_lua_path.read_text(encoding="utf-8")
     command = command_path.read_text(encoding="utf-8")
@@ -1015,38 +1194,66 @@ def main() -> None:
     if not debug_capture_enabled and any(marker in capture_source for marker in capture_markers):
         raise SystemExit("FongMi one-shot capture unexpectedly present in a non-debug runtime")
     validate_fongmi_frame_priv_members(vo)
-    mapper_sources = (
-        mpv_dir / "video/out/hwdec/hwdec_aimagereader.c",
-        mpv_dir / "video/out/hwdec/hwdec_aimagereader_vk.c",
-        mpv_dir / "video/out/hwdec/hwdec_aimagereader_vk_convert.c",
-        mpv_dir / "video/out/hwdec/hwdec_aimagereader_vk_direct.c",
-    )
-    missing_mapper_sources = [path for path in mapper_sources if not path.is_file()]
-    if missing_mapper_sources:
-        raise SystemExit(
-            "Pinned FongMi MPV source is missing native AImageReader/Vulkan mapper files: "
-            + ", ".join(str(path) for path in missing_mapper_sources)
-        )
+    mapper_sources = tuple(mpv_dir / "video/out/hwdec" / name for name in (
+        "hwdec_aimagereader.c", "hwdec_aimagereader_vk.c",
+        "hwdec_aimagereader_vk_convert.c", "hwdec_aimagereader_vk_direct.c"))
+    if any(not path.is_file() for path in mapper_sources):
+        raise SystemExit("Pinned FongMi MPV source is missing native AImageReader/Vulkan mapper files")
     mapper_header = hwdec_header_path.read_text(encoding="utf-8")
-    if (
-        "#define RA_HWDEC_MAP_RETRY (-2)" not in mapper_header
-        or "bool retry = result == RA_HWDEC_MAP_RETRY;" not in vo
-        or "p->hwdec_map_retry |= retry;" not in vo
-        or "fp->source->failed = ret != RA_HWDEC_MAP_RETRY;" not in vo
-    ):
+    if ("#define RA_HWDEC_MAP_RETRY (-2)" not in mapper_header
+            or "bool retry = result == RA_HWDEC_MAP_RETRY;" not in vo
+            or "p->hwdec_map_retry |= retry;" not in vo
+            or "fp->source->failed = ret != RA_HWDEC_MAP_RETRY;" not in vo):
         raise SystemExit("Pinned FongMi VO is missing the transient hwdec-map retry/ownership contract")
 
+    video_out_dir = mpv_dir / "video/out"
+    gpu_source = (VENDOR / "mpvflow_gpu.c").read_text(encoding="utf-8")
+    gpu_source = configure_debug_capture_source(
+        gpu_source, enabled=os.environ.get("MPVFLOW_DEBUG_CAPTURE") == "1"
+    )
+    (video_out_dir / "mpvflow_gpu.c").write_text(gpu_source, encoding="utf-8")
+    shutil.copy2(VENDOR / "mpvflow_gpu.h", video_out_dir / "mpvflow_gpu.h")
+    shutil.copy2(VENDOR / "mpvflow_capture_io.c", video_out_dir / "mpvflow_capture_io.c")
+    shutil.copy2(VENDOR / "mpvflow_capture_io.h", video_out_dir / "mpvflow_capture_io.h")
+    shutil.copy2(VENDOR / "mpvflow_visibility_resolver_shader.h", video_out_dir / "mpvflow_visibility_resolver_shader.h")
+    shutil.copy2(VENDOR / "mpvflow_rate_limit.h", video_out_dir / "mpvflow_rate_limit.h")
+    shutil.copy2(VENDOR / "mpvflow_synthesis_scale.h", video_out_dir / "mpvflow_synthesis_scale.h")
+    for filename in (
+        "mpvflow_visibility.h",
+        "mpvflow_opencl.c",
+        "mpvflow_opencl.h",
+        "mpvflow_opencl_validation.h",
+        "mpvflow_opencl_vk_bridge.c",
+        "mpvflow_opencl_vk_bridge.h",
+        "mpvflow_vulkan_optical.c",
+        "mpvflow_vulkan_optical.h",
+        "mpvflow_vulkan_qcom.c",
+        "mpvflow_vulkan_qcom.h",
+        "mpvflow_qcom_seed.comp",
+        "mpvflow_qcom_seed_spv.h",
+    ):
+        shutil.copy2(VENDOR / filename, video_out_dir / filename)
+    hwdec_dir = video_out_dir / "hwdec"
+    for filename in MEDIACODEC_VULKAN_FILES:
+        if filename != "LICENSE.LGPL":
+            shutil.copy2(MEDIACODEC_VULKAN_DIR / filename, hwdec_dir / filename)
+
+    vo = vo_path.read_text()
+    stats_lua = patch_mpvflow_stats_lua(stats_lua_path.read_text())
+    meson = meson_path.read_text()
+    # mpvflow_gpu.c is compiled by MPV's Meson target, not the app CMake
+    # target. Enable the hook only when the selected libplacebo exposes both
+    # APIs; otherwise mpvflow_gpu.c intentionally retains its safe stub.
+    renderer_hook_probe = RENDERER_HOOK_PROBE
+    meson = insert_project_arguments_before_first_target(meson, renderer_hook_probe)
     vulkan_context = enable_android_external_memory_extensions(
-        vulkan_context_path.read_text(encoding="utf-8")
+        vulkan_context_path.read_text()
     )
+    vulkan_context = enable_qcom_image_processing(vulkan_context)
     vulkan_context = enable_mailbox_suboptimal_tolerance(vulkan_context)
-    meson = prefer_fork_for_android_mpv_subprocesses(
-        enable_android_vulkan_dependency(meson)
-    )
-    glslang_meson = enable_android_glslang_library_search(
-        glslang_meson_path.read_text(encoding="utf-8")
-    )
-    glslang_source = glslang_source_path.read_text(encoding="utf-8")
+    meson = enable_android_vulkan_dependency(meson)
+    glslang_meson = enable_android_glslang_library_search(glslang_meson_path.read_text())
+    glslang_source = glslang_source_path.read_text()
     optimizer_enabled = "options.disableOptimizer = false;"
     optimizer_disabled = "options.disableOptimizer = true;"
     enabled_count = glslang_source.count(optimizer_enabled)
@@ -1054,34 +1261,111 @@ def main() -> None:
     if enabled_count == 0 and disabled_count == 1:
         glslang_source = glslang_source.replace(optimizer_disabled, optimizer_enabled, 1)
     elif enabled_count != 1 or disabled_count != 0:
-        raise SystemExit(
-            "Pinned libplacebo glslang optimizer setting is ambiguous; refusing an unverified SPIR-V build"
-        )
-
-    gpu_timer = enlarge_libplacebo_timer_ring(gpu_timer_path.read_text(encoding="utf-8"))
-    placebo_swapchain_source = placebo_swapchain_path.read_text(encoding="utf-8")
+        raise SystemExit("Pinned libplacebo glslang optimizer setting is ambiguous; refusing an unverified SPIR-V build")
+    gpu_timer = enlarge_libplacebo_timer_ring(gpu_timer_path.read_text())
+    placebo_options = publish_libplacebo_hook_count(placebo_options_path.read_text(encoding="utf-8"))
+    placebo_swapchain_source = placebo_swapchain_path.read_text()
     validate_libplacebo_suboptimal_recovery(placebo_swapchain_source)
     placebo_swapchain = instrument_libplacebo_swapchain(placebo_swapchain_source)
-    placebo_vulkan_header = add_libplacebo_swapchain_diagnostics_api(
-        placebo_vulkan_header_path.read_text(encoding="utf-8")
+    placebo_vulkan_header = add_libplacebo_swapchain_diagnostics_api(placebo_vulkan_header_path.read_text())
+    placebo_stubs = add_libplacebo_swapchain_diagnostics_stub(placebo_stubs_path.read_text())
+    placebo_formats = enable_nv_optical_flow_sampleability(
+        enable_nv_optical_flow_vector_format(placebo_formats_path.read_text())
     )
-    placebo_stubs = add_libplacebo_swapchain_diagnostics_stub(
-        placebo_stubs_path.read_text(encoding="utf-8")
-    )
+    vo_marker = "MPVFLOW_GPU_INTEGRATION"
+    meson_marker = "# MPVFLOW_ANDROID_GPU"
+    if vo_marker not in vo:
+        subprocess.run(
+            ["patch", "-p1", "--forward", "--input", str(VO_PATCH)],
+            cwd=mpv_dir,
+            check=True,
+        )
+        vo = vo_path.read_text()
+    if vo_marker not in vo:
+        raise SystemExit("GPU Flow patch did not mark vo_gpu_next.c")
 
-    meson_path.write_text(meson, encoding="utf-8")
-    vulkan_context_path.write_text(vulkan_context, encoding="utf-8")
-    glslang_meson_path.write_text(glslang_meson, encoding="utf-8")
-    glslang_source_path.write_text(glslang_source, encoding="utf-8")
-    gpu_timer_path.write_text(gpu_timer, encoding="utf-8")
-    placebo_swapchain_path.write_text(placebo_swapchain, encoding="utf-8")
-    placebo_vulkan_header_path.write_text(placebo_vulkan_header, encoding="utf-8")
-    placebo_stubs_path.write_text(placebo_stubs, encoding="utf-8")
-    print(
-        f"Validated native FongMi GPU MEMC and Android MediaCodec/Vulkan mapping in {mpv_dir}; "
-        f"kept SPIR-V optimization enabled and applied Android Vulkan synchronization and "
-        f"swapchain stability fixes in {libplacebo_dir}."
+    hwdec_header_path = mpv_dir / "video/out/gpu/hwdec.h"
+    mapper_marker = "#define RA_HWDEC_MAP_RETRY (-2)"
+    if mapper_marker not in hwdec_header_path.read_text():
+        subprocess.run(
+            ["patch", "-p1", "--forward", "--fuzz=0", "--input", str(AIMAGE_VULKAN_PATCH)],
+            cwd=mpv_dir,
+            check=True,
+        )
+        vo = vo_path.read_text()
+    gpu_video_path = mpv_dir / "video/out/gpu/video.c"
+    gpu_video_source = gpu_video_path.read_text(encoding="utf-8")
+    retry_marker = "if (map_result == RA_HWDEC_MAP_RETRY) {"
+    retry_start = gpu_video_source.find(retry_marker)
+    retry_end = gpu_video_source.find("\n        }", retry_start) if retry_start >= 0 else -1
+    retry_branch = gpu_video_source[retry_start:retry_end] if retry_end >= 0 else ""
+    fatal_marker = "Mapping hardware decoded surface failed."
+    fatal_index = gpu_video_source.find(fatal_marker)
+    if (
+        retry_start < 0
+        or retry_end < 0
+        or "unref_current_image(p);" not in retry_branch
+        or "return false;" not in retry_branch
+        or fatal_index < 0
+        or retry_start >= fatal_index
+    ):
+        raise SystemExit(
+            "Pinned MPV video.c is missing the non-fatal AImageReader retry guard "
+            "before the generic hardware-map fatal path"
+        )
+    meson = prefer_fork_for_android_mpv_subprocesses(
+        enable_android_vulkan_dependency(meson)
     )
+    # Dependency setup reloads Meson from disk; preserve the capability-gated
+    # renderer-hook probe on the final content we publish.
+    meson = insert_project_arguments_before_first_target(meson, renderer_hook_probe)
+    if mapper_marker not in hwdec_header_path.read_text() or "# MPVFLOW_AIMAGE_VULKAN_MAPPER" not in meson:
+        raise SystemExit("Android MediaCodec/Vulkan mapper patch was not fully applied")
+
+    validate_hwdec_frame_priv_members(vo)
+    gpu_source = "video/out/mpvflow_gpu.c"
+    capture_io_source = "video/out/mpvflow_capture_io.c"
+    opencl_sources = (
+        "video/out/mpvflow_opencl.c",
+        "video/out/mpvflow_opencl_vk_bridge.c",
+        "video/out/mpvflow_vulkan_optical.c",
+        "video/out/mpvflow_vulkan_qcom.c",
+    )
+    if meson_marker not in meson:
+        close = base_sources_close(meson)
+        block = (
+            "\n# The direct MPVFlow compute stage is built only for Android.\n"
+            "if host_machine.system() == 'android'\n"
+            f"    sources += files('{gpu_source}', '{capture_io_source}', '{opencl_sources[0]}', '{opencl_sources[1]}', '{opencl_sources[2]}', '{opencl_sources[3]}')\n"
+            "endif\n"
+            f"{meson_marker}\n"
+        )
+        meson = meson[: close + 1] + block + meson[close + 1 :]
+    elif any(source not in meson for source in (gpu_source, capture_io_source, *opencl_sources)):
+        raise SystemExit("GPU Flow Meson marker exists without every required Flow/capture/OpenCL/optical source")
+    meson_path.write_text(meson)
+
+    vulkan_context_path.write_text(vulkan_context)
+    glslang_meson_path.write_text(glslang_meson)
+    glslang_source_path.write_text(glslang_source)
+    gpu_timer_path.write_text(gpu_timer, encoding="utf-8")
+    placebo_options_path.write_text(placebo_options, encoding="utf-8")
+    placebo_swapchain_path.write_text(placebo_swapchain)
+    placebo_vulkan_header_path.write_text(placebo_vulkan_header)
+    placebo_stubs_path.write_text(placebo_stubs)
+    placebo_formats_path.write_text(placebo_formats, encoding="utf-8")
+    stats_lua_path.write_text(stats_lua)
+    print(
+        f"Installed direct GPU/OpenCL MPVFlow into {mpv_dir} and corrected libplacebo's "
+        f"Android glslang search path in {glslang_meson_path} and Vulkan timestamp "
+        f"ring in {gpu_timer_path}, plus mailbox-only SUBOPTIMAL tolerance and Flow-gated WSI diagnostics "
+        f"in {placebo_swapchain_path}; "
+        f"the built-in stats OSD reports successful MPVFlow synthesized-submit cadence; "
+        f"the optional NV optical-flow vector format is registered with an extension-aware sampleability check; "
+        f"the legacy CPU filter is not compiled or registered by this build."
+    )
+    print("Android MPV subprocesses use the existing fork/exec fallback instead of raw CLONE_VM.")
+
 
 if __name__ == "__main__":
     main()

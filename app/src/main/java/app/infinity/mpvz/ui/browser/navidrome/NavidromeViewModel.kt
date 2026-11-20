@@ -80,8 +80,8 @@ class NavidromeViewModel(
   private val navidromeRepository: NavidromeRepository by inject()
   private val navidromeClient: NavidromeClient by inject()
   private val browserPreferences: BrowserPreferences by inject()
-  private var playbackLaunchJob: Job? = null
-  private var playbackLaunchRequestId = 0L
+  @Volatile private var playbackLaunchJob: Job? = null
+  @Volatile private var playbackLaunchRequestId = 0L
   private var catalogLoadJob: Job? = null
   @Volatile private var catalogLoadRequestId = 0L
   private var albumLoadJob: Job? = null
@@ -111,30 +111,7 @@ class NavidromeViewModel(
         } else {
           newest
         }
-        val activeConnectionChanged =
-          currentActive?.copy(lastConnected = 0L) != newActive?.copy(lastConnected = 0L)
-        _uiState.update { current ->
-          current.copy(
-            servers = servers,
-            activeServer = newActive,
-            jumpBackIn = if (activeConnectionChanged) emptyList() else current.jumpBackIn,
-            playlists = if (activeConnectionChanged) emptyList() else current.playlists,
-            recentlyAddedAlbums = if (activeConnectionChanged) emptyList() else current.recentlyAddedAlbums,
-            artistsToExplore = if (activeConnectionChanged) emptyList() else current.artistsToExplore,
-            tracks = if (activeConnectionChanged) emptyList() else current.tracks,
-            albums = if (activeConnectionChanged) emptyList() else current.albums,
-            artists = if (activeConnectionChanged) emptyList() else current.artists,
-            isLoadingAlbums = if (activeConnectionChanged) false else current.isLoadingAlbums,
-          )
-        }
-        if (activeConnectionChanged) {
-          albumLoadJob?.cancel()
-          albumLoadServerId = null
-          loadedAlbumsForServerId = null
-        }
-        if (activeConnectionChanged && newActive != null) {
-          loadAllData()
-        }
+        activateServer(newActive, servers = servers)
       }
     }
     viewModelScope.launch {
@@ -151,24 +128,49 @@ class NavidromeViewModel(
 
   fun selectServer(server: NavidromeServer) {
     val selected = server.copy(lastConnected = System.currentTimeMillis())
-    albumLoadJob?.cancel()
-    albumLoadServerId = null
-    loadedAlbumsForServerId = null
-    _uiState.update {
-      it.copy(
-        activeServer = selected,
-        jumpBackIn = emptyList(),
-        playlists = emptyList(),
-        recentlyAddedAlbums = emptyList(),
-        artistsToExplore = emptyList(),
-        tracks = emptyList(),
-        albums = emptyList(),
-        artists = emptyList(),
-        isLoadingAlbums = false,
+    activateServer(selected, forceLoad = true)
+    viewModelScope.launch(Dispatchers.IO) { navidromeRepository.updateServer(selected) }
+  }
+
+  private fun activateServer(
+    server: NavidromeServer?,
+    servers: List<NavidromeServer>? = null,
+    forceLoad: Boolean = false,
+  ) {
+    val previous = _uiState.value
+    val connectionChanged =
+      previous.activeServer?.copy(lastConnected = 0L) != server?.copy(lastConnected = 0L)
+    if (connectionChanged) {
+      playbackLaunchRequestId++
+      playbackLaunchJob?.cancel()
+      playbackLaunchJob = null
+    }
+    val shouldResetState = connectionChanged || forceLoad
+    if (shouldResetState) {
+      albumLoadJob?.cancel()
+      albumLoadJob = null
+      albumLoadRequestId++
+      albumLoadServerId = null
+      loadedAlbumsForServerId = null
+    }
+    _uiState.update { current ->
+      current.copy(
+        servers = servers ?: current.servers,
+        activeServer = server,
+        jumpBackIn = if (shouldResetState) emptyList() else current.jumpBackIn,
+        playlists = if (shouldResetState) emptyList() else current.playlists,
+        recentlyAddedAlbums = if (shouldResetState) emptyList() else current.recentlyAddedAlbums,
+        artistsToExplore = if (shouldResetState) emptyList() else current.artistsToExplore,
+        tracks = if (shouldResetState) emptyList() else current.tracks,
+        albums = if (shouldResetState) emptyList() else current.albums,
+        artists = if (shouldResetState) emptyList() else current.artists,
+        isLoadingAlbums = if (shouldResetState) false else current.isLoadingAlbums,
       )
     }
-    viewModelScope.launch(Dispatchers.IO) { navidromeRepository.updateServer(selected) }
-    loadAllData()
+    if ((connectionChanged || forceLoad) && server != null) {
+      loadAllData()
+      if (_uiState.value.activeTab == NavidromeMusicTab.ALBUMS) loadAlbumsIfNeeded()
+    }
   }
 
   fun deleteServer(server: NavidromeServer) {
@@ -254,6 +256,7 @@ class NavidromeViewModel(
                 val favoriteIds = starredSongs.mapTo(mutableSetOf()) { it.id }
                 val favorites = favoritesPlaylist(starredSongs)
                 state.copy(
+                  jumpBackIn = state.jumpBackIn.map { song -> song.copy(isFavorite = song.id in favoriteIds) },
                   tracks = state.tracks.map { song -> song.copy(isFavorite = song.id in favoriteIds) },
                   playlists = listOf(favorites) + state.playlists.filterNot {
                     it.id == FAVORITES_PLAYLIST_ID || it.id == "favorites" || it.name.equals("Favorites", ignoreCase = true)
@@ -455,10 +458,10 @@ class NavidromeViewModel(
               playbackItems = tracks.map { it.item },
             )
           }
-        if (requestId != playbackLaunchRequestId) return@launch
+        if (requestId != playbackLaunchRequestId || !isActiveServerForPlayback(server)) return@launch
 
         withContext(Dispatchers.Main.immediate) {
-          if (requestId != playbackLaunchRequestId) return@withContext
+          if (requestId != playbackLaunchRequestId || !isActiveServerForPlayback(server)) return@withContext
           val current = preparedQueue.tracks.getOrNull(selectedIndex) ?: return@withContext
           MediaUtils.playFile(
             source = current.uri.toString(),
@@ -478,6 +481,9 @@ class NavidromeViewModel(
         }
       }
   }
+
+  private fun isActiveServerForPlayback(server: NavidromeServer): Boolean =
+    _uiState.value.activeServer?.copy(lastConnected = 0L) == server.copy(lastConnected = 0L)
 
   private data class PreparedNavidromeTrack(
     val uri: Uri,
@@ -690,17 +696,8 @@ class NavidromeViewModel(
           navidromeRepository.saveServer(successfulServer)
         }
         val savedServer = successfulServer.copy(id = savedId)
-        _uiState.update {
-          it.copy(
-            isConnectingServer = false,
-            connectServerError = null,
-            activeServer = savedServer,
-          )
-        }
-        // Start the first catalog load immediately; loadAllData retains the
-        // request-generation and active-server cancellation guards. The DB
-        // collector sees the same active server and therefore does not reload.
-        loadAllData()
+        _uiState.update { it.copy(isConnectingServer = false, connectServerError = null) }
+        activateServer(savedServer, forceLoad = true)
         withContext(Dispatchers.Main) {
           onSuccess()
         }

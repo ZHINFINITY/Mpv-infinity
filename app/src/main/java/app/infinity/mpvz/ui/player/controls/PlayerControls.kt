@@ -500,9 +500,9 @@ fun PlayerControls(
     PlayerControlVisibilityPolicy.shouldShowBufferingIndicator(
       nativeEngineActive = nativeEngineActive,
       nativeReady = nativeSnapshot.isReady,
-      nativeLoading = nativeSnapshot.isLoading,
       nativeBuffering = nativeSnapshot.isBuffering,
       nativeEnded = nativeSnapshot.isEnded,
+      nativeFailed = nativeSnapshot.hasError,
       mpvLoading = playbackSessionState.phase == PlaybackPhase.LOADING,
       mpvBuffering = bufferingState.visible,
       torrentConnecting = isTorrentConnecting,

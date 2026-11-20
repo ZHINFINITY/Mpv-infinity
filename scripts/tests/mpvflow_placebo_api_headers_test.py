@@ -16,7 +16,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 CMAKE = (ROOT / "app/src/main/cpp/CMakeLists.txt").read_text(encoding="utf-8")
 PLACEBO = ROOT / "app/src/main/cpp/third_party/libplacebo"
-API391_HEADER_ROOT = ROOT / "app/build/mpvflow-generated/libplacebo-api-391"
+API391_HEADER_ROOT = ROOT / "app/mpvflow-generated/libplacebo-api-391"
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--require-api391-snapshot", action="store_true")
@@ -128,7 +128,7 @@ assert "does not export ${MPVFLOW_REQUIRED_PLACEBO_SYMBOL}" in CMAKE
 assert '"${MPVFLOW_PLACEBO_INCLUDE_DIR}"' in CMAKE
 assert '"${CMAKE_CURRENT_SOURCE_DIR}/third_party/libplacebo/include"' in CMAKE
 assert '"${CMAKE_CURRENT_SOURCE_DIR}/third_party/libplacebo/include-api-387"' in CMAKE
-assert '"${CMAKE_CURRENT_SOURCE_DIR}/../../../build/mpvflow-generated/libplacebo-api-391"' in CMAKE
+assert '"${CMAKE_CURRENT_SOURCE_DIR}/../../../mpvflow-generated/libplacebo-api-391"' in CMAKE
 assert 'MPVFLOW_DETECTED_PLACEBO_API_VER STREQUAL "391"' in CMAKE
 assert "header/API mismatch" in CMAKE
 

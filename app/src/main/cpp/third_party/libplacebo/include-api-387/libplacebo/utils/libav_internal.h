@@ -356,8 +356,9 @@ PL_LIBAV_API void pl_map_hdr_metadata(struct pl_hdr_metadata *out,
         const AVHDRPlusColorTransformParams *pars = &data->dhp->params[0];
         if (pars->num_distribution_maxrgb_percentiles >
                 FF_ARRAY_ELEMS(pars->distribution_maxrgb) ||
-            pars->num_bezier_curve_anchors >
-                FF_ARRAY_ELEMS(pars->bezier_curve_anchors))
+            (pars->tone_mapping_flag == 1 &&
+             pars->num_bezier_curve_anchors >
+                 FF_ARRAY_ELEMS(pars->bezier_curve_anchors)))
             return;
 
         out->scene_max[0] = 10000 * av_q2d(pars->maxscl[0]);
@@ -789,13 +790,19 @@ PL_LIBAV_API void pl_avframe_set_repr(AVFrame *frame, struct pl_color_repr repr)
 PL_LIBAV_API void pl_avframe_set_profile(AVFrame *frame, struct pl_icc_profile profile)
 {
     const AVFrameSideData *sd;
-    av_frame_remove_side_data(frame, AV_FRAME_DATA_ICC_PROFILE);
-
-    if (!profile.len)
+    if (!profile.len) {
+        av_frame_remove_side_data(frame, AV_FRAME_DATA_ICC_PROFILE);
         return;
+    }
 
-    sd = av_frame_new_side_data(frame, AV_FRAME_DATA_ICC_PROFILE, profile.len);
-    memcpy(sd->data, profile.data, profile.len);
+    AVBufferRef *replacement = av_buffer_alloc(profile.len);
+    if (!replacement)
+        return;
+    memcpy(replacement->data, profile.data, profile.len);
+    av_frame_remove_side_data(frame, AV_FRAME_DATA_ICC_PROFILE);
+    sd = av_frame_new_side_data_from_buf(frame, AV_FRAME_DATA_ICC_PROFILE, replacement);
+    if (!sd)
+        av_buffer_unref(&replacement);
 }
 
 PL_LIBAV_API void pl_frame_from_avframe(struct pl_frame *out,
@@ -1403,6 +1410,8 @@ static bool pl_map_avframe_derived(pl_gpu gpu, struct pl_frame *out,
     const int flags = AV_HWFRAME_MAP_READ | AV_HWFRAME_MAP_DIRECT;
     struct pl_avframe_priv *priv = out->user_data;
     AVFrame *derived = av_frame_alloc();
+    if (!derived)
+        return false;
     derived->width = frame->width;
     derived->height = frame->height;
     derived->format = AV_PIX_FMT_DRM_PRIME;
@@ -1598,10 +1607,15 @@ PL_LIBAV_API bool pl_map_avframe_ex(pl_gpu gpu, struct pl_frame *out,
 
     struct pl_avframe_priv *priv = malloc(sizeof(*priv));
     if (!priv)
-        goto error;
+        return false;
+    *priv = (struct pl_avframe_priv) {0};
 
     pl_frame_from_avframe(out, frame);
     priv->avframe = av_frame_clone(frame);
+    if (!priv->avframe) {
+        free(priv);
+        return false;
+    }
     out->user_data = priv;
 
 #ifdef PL_HAVE_LAV_DOLBY_VISION
@@ -1672,8 +1686,11 @@ PL_LIBAV_API bool pl_map_avframe_ex(pl_gpu gpu, struct pl_frame *out,
             data[p].pixels = NULL;
         } else if (gpu->limits.callbacks) {
             // Use asynchronous upload if possible
-            data[p].callback = pl_avframe_free_cb;
-            data[p].priv = av_frame_clone(frame);
+            AVFrame *clone = av_frame_clone(frame);
+            if (clone) {
+                data[p].callback = pl_avframe_free_cb;
+                data[p].priv = clone;
+            }
         }
 
         if (!pl_upload_plane(gpu, &out->planes[p], &tex[p], &data[p])) {
@@ -1752,12 +1769,20 @@ PL_LIBAV_API bool pl_download_avframe(pl_gpu gpu,
             .row_pitch = out_frame->linesize[p],
             .ptr = out_frame->data[p],
             // Use synchronous transfer for the last plane
-            .callback = (p+1) < frame->num_planes ? pl_done_cb : NULL,
+            .callback = gpu->limits.callbacks && (p+1) < frame->num_planes
+                      ? pl_done_cb : NULL,
             .priv = &done[p],
         ));
 
-        if (!ok)
+        if (!ok) {
+            for (int i = 0; i < p; i++) {
+                if (done[i])
+                    continue;
+                while (!done[i])
+                    pl_tex_poll(gpu, frame->planes[i].texture, UINT64_MAX);
+            }
             return false;
+        }
     }
 
     for (int p = 0; p < frame->num_planes - 1; p++) {
@@ -1840,13 +1865,17 @@ PL_LIBAV_API int pl_get_buffer2(AVCodecContext *avctx, AVFrame *pic, int flags)
         planesize[p] = (uintptr_t) ptrs[p] - (uintptr_t) base;
 #endif
 
+    // Decide whether the default allocator is required before installing any
+    // GPU-backed planes; a partial GPU allocation cannot be handed to FFmpeg's
+    // fallback allocator as a fresh frame.
     for (int p = 0; p < planes; p++) {
         const size_t buf_size = planesize[p] + alignment[p];
-        if (buf_size > gpu->limits.max_mapped_size) {
-            av_frame_unref(pic);
+        if (buf_size > gpu->limits.max_mapped_size)
             goto fallback;
-        }
+    }
 
+    for (int p = 0; p < planes; p++) {
+        const size_t buf_size = planesize[p] + alignment[p];
         alloc = malloc(sizeof(*alloc));
         if (!alloc) {
             av_frame_unref(pic);

@@ -30,6 +30,7 @@ app/debug/
 # Generated files
 bin/
 gen/
+app/mpvflow-generated/
 !app/src/main/cpp/third_party/quickjs/gen/
 !app/src/main/cpp/third_party/quickjs/gen/repl.c
 !app/src/main/cpp/third_party/quickjs/gen/standalone.c

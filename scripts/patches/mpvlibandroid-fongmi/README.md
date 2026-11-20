@@ -5,7 +5,7 @@ These patches are copied byte-for-byte from the FongMi build branch of [Riteshp2
 The target is the unmodified VideoLAN libbluray 1.4.1 source archive, SHA-256 `76b5dc40097f28dca4ebb009c98ed51321b2927453f75cc72cf74acd09b9f449`. The patches are applied in the same order as the upstream FongMi AAR builder, with zero fuzz and forward/reverse dry-run checks:
 
 1. `libbluray-1.4.1-still-eof.patch` — SHA-256 `cc0a15ee88b1ead665dadbc3ac363c2686e5184fc1e04a76713665cad57c0fc7`
-2. `libbluray-1.4.1-checked-seek.patch` — SHA-256 `1055d99f0940b3077e9f7171a220f242396e6bf5196415f3fc987b316d51447c`
+2. `libbluray-1.4.1-checked-seek.patch` — SHA-256 `0124542e530f03d41f5770386f00836523333c635fe5216c5f0729181550219d`
 3. `libbluray-1.4.1-menu-info.patch` — SHA-256 `17a1b88c72c3b467ba6ac8d9419f003c93f694733b9214deee13bad5ebfedb5c`
 4. `libbluray-1.4.1-bdj-pointer.patch` — SHA-256 `232ce1e634335af5d69a705745a57ea5cd5da8d7160b9441b5ba154e7b3dec85`
 

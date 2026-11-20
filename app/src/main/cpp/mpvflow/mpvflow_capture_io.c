@@ -576,7 +576,7 @@ static int write_manifest_json(FILE *file, const struct MPVFlowCaptureSession *s
             "\"pair_count\":%u,\"sample_count\":%u,"
             "\"bytes_written\":%zu,\"limits\":{\"pairs\":%d,\"samples_per_pair\":%d,\"bytes\":%u},"
             "\"image_policy\":{\"max_dimension\":%d,\"color_images\":\"%s\","
-            "\"maps\":\"native motion-grid resolution; not full-resolution\"},"
+            "\"maps\":\"%s\"},"
             "\"units\":{\"motion_forward\":\"working-resolution pixels; HSV direction and magnitude visualization\","
             "\"motion_backward\":\"working-resolution pixels; HSV direction and magnitude visualization\","
             "\"motion\":\"working-resolution pixels; legacy alias\","
@@ -604,7 +604,10 @@ static int write_manifest_json(FILE *file, const struct MPVFlowCaptureSession *s
                 session->single_output
                     ? "shared aspect-preserving RGBA8 downscale; source and captured dimensions recorded"
                     : (session->paired_output ? "native-resolution RGBA8; no resampling"
-                                              : "aspect-preserving RGBA8 downscale")) < 0)
+                                              : "aspect-preserving RGBA8 downscale"),
+                session->single_output
+                    ? "captured output resolution; see captured_dimensions"
+                    : "native motion-grid resolution; not full-resolution") < 0)
         return -1;
 
     if (session->paired_output)
@@ -1019,7 +1022,7 @@ static int write_terminal_manifest_mode(
             "\"pair_count\":0,\"sample_count\":0,"
             "\"bytes_written\":0,\"limits\":{\"pairs\":%d,\"samples_per_pair\":%d,\"bytes\":%u},"
             "\"image_policy\":{\"max_dimension\":%d,\"color_images\":\"%s\","
-            "\"maps\":\"native motion-grid resolution; not full-resolution\"},"
+            "\"maps\":\"%s\"},"
             "\"units\":{\"motion_forward\":\"working-resolution pixels; HSV direction and magnitude visualization\","
             "\"motion_backward\":\"working-resolution pixels; HSV direction and magnitude visualization\","
             "\"residual\":\"normalized SAD [0,1]\",\"uniqueness\":\"normalized cost margin [0,1]\","
@@ -1046,7 +1049,9 @@ static int write_terminal_manifest_mode(
             MPVFLOW_CAPTURE_MAX_BYTES,
             (paired_output || single_output) ? MPVFLOW_CAPTURE_DECISION_MAX_DIMENSION : MPVFLOW_CAPTURE_IMAGE_MAX_DIMENSION,
             single_output ? "shared aspect-preserving RGBA8 downscale; source and captured dimensions recorded" :
-                (paired_output ? "native-resolution RGBA8; no resampling" : "aspect-preserving RGBA8 downscale"));
+                (paired_output ? "native-resolution RGBA8; no resampling" : "aspect-preserving RGBA8 downscale"),
+            single_output ? "captured output resolution; dimensions unavailable before first sample" :
+                "native motion-grid resolution; not full-resolution");
     write_json_string(file, reason && *reason ? reason : "no_synthesized_samples");
     fputs("}]}", file);
     int failed = ferror(file);

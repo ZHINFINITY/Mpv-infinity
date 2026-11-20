@@ -58,7 +58,14 @@ assert synthesis_queue.index("presentationQueue.acquireForWriteWithSnapshot()") 
     "Media3 must reserve the bounded output slot before Vulkan writes into its image"
 )
 assert "reservedLease = lease" in synthesis_queue and "directOutputTarget = sharedTarget" in synthesis_queue
-assert "if (sharedTarget) slot.nativeImageHandle else outputImageHandle" in synthesis_queue
+assert "dispatchSynthesis(a, b, pair, targetPtsUs, slot.nativeImageHandle)" in synthesis_queue, (
+    "shared output must dispatch directly into the leased slot image"
+)
+assert synthesis_queue.count("dispatchSynthesis(a, b, pair, targetPtsUs, outputImageHandle)") == 2, (
+    "shared-write failure and non-shared output must both dispatch through the scratch image"
+)
+assert "if (sharedTarget)" in synthesis_queue and "sharedTarget = false" in synthesis_queue
+assert "scratchFailure.addSuppressed(sharedFailure)" in synthesis_queue
 assert "copy_elided=true" in SINK and "path=staging_copy" in SINK, (
     "Media3 must diagnose direct output and retain a safe staging-copy fallback"
 )
@@ -284,7 +291,7 @@ assert "eglSwapReturnFps=" in SINK and "outputMetric=successful_eglSwapBuffers_r
 assert 'MpvConfigOverridePolicy.isOwnedByMpvConf("motion-interpolation")' in MPV_VIEW
 assert 'if (mpvFlowFrameInterpolationEnabled) "display-resample" else "audio"' in MPV_VIEW
 assert "external fun nativeCreateContext" in NATIVE
-assert "external fun nativeGetRequiredHardwareBufferUsage" in NATIVE
+assert "external fun nativeGetRequiredHardwareBufferUsage(context: Long, output: Boolean, storage: Boolean)" in NATIVE
 assert "external fun nativeAnalyzePair" in NATIVE
 assert "external fun nativeGetVulkanTimingStats(context: Long): LongArray?" in NATIVE
 assert "mpvflow_gpu_get_timing_stats(context->flow, &stats)" in JNI
@@ -315,12 +322,17 @@ assert "NativeStatsDisplay.interpolationFps(" in stats_controls
 timing_snapshot = JNI.split("nativeGetVulkanTimingStats(", 1)[1].split("nativeDestroyContext(", 1)[0]
 assert "mpvflow_gpu_get_timing_stats" in timing_snapshot
 assert "pl_gpu_finish" not in timing_snapshot and "glFinish" not in timing_snapshot
-assert "nativeGetRequiredHardwareBufferUsage(flowVulkanContext, output = false)" in SINK
-assert "nativeGetRequiredHardwareBufferUsage(flowVulkanContext, output = true)" in SINK
+assert "nativeGetRequiredHardwareBufferUsage(flowVulkanContext, output = false, storage = true)" in SINK
+assert "nativeGetRequiredHardwareBufferUsage(flowVulkanContext, output = true, storage = true)" in SINK
+assert "flowVulkanContext, output = true, storage = false," in SINK
 assert "baseUsage or driverRequiredUsage" in SINK
+assert "baseUsage or fallbackRequiredUsage" in SINK
+assert "outputNonStorageRequiredHardwareBufferUsage" in SINK
 assert "vulkan_hardwarebuffer_input_usage_query_failed" in SINK
 assert "vulkan_hardwarebuffer_output_usage_query_failed" in SINK
-assert "queryAhbImageSupport(context, usage, nullptr, &requiredAhbUsage, role)" in JNI
+assert "queryAhbImageSupport(context, usage, nullptr, &requiredAhbUsage," in JNI
+assert 'outputRole && storage != JNI_TRUE ? "output_non_storage" : role' in JNI
+assert "output_non_storage" in JNI and "VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT" in JNI
 assert "stage=hardwarebuffer_usage_mismatch" in JNI
 assert "event=ahb_usage state=required" in JNI
 assert "media3FlowSink?.takeIf { it.isPreflightAvailable() }" in NATIVE_ENGINE

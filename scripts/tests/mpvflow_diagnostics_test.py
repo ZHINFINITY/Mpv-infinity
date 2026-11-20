@@ -21,16 +21,21 @@ LOG_REPOSITORY = (ROOT / "app/src/main/java/app/infinity/mpvz/presentation/crash
 CRASH_ACTIVITY = (ROOT / "app/src/main/java/app/infinity/mpvz/presentation/crash/CrashActivity.kt").read_text(encoding="utf-8")
 PLAYER_CONTROLS = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt").read_text(encoding="utf-8")
 MORE_SHEET = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/sheets/MoreSheet.kt").read_text(encoding="utf-8")
+VO_CAPTURE_PATCH = (ROOT / "scripts/patch_fongmi_vo_diagnostics.py").read_text(encoding="utf-8")
+DIAGNOSTICS_GUIDE = (ROOT / "docs/mpvflow-diagnostics.md").read_text(encoding="utf-8")
+FONGMI_HELPER_README = (ROOT / "app/src/main/cpp/mpvflow/fongmi/README.md").read_text(encoding="utf-8")
+LEGACY_PATCHER = (ROOT / "scripts/patch_fongmi_motion_artifact.py").read_text(encoding="utf-8")
 
 
 def require(source: str, fragment: str, message: str) -> None:
     assert fragment in source, message
 
 
-# The MPV runtime compiles FongMi's pinned native gpu-next implementation. The
-# former local patch remains provenance/history only and is not applied/copied.
+# The MPV runtime uses the pinned FongMi gpu-next implementation. The retained
+# local helper and app-owned shader patcher are not copied into that runtime.
 assert "FONGMI_PATCH" not in PREPARE
-assert "mpvflow_gpu.c" not in PREPARE
+assert "mpvflow/fongmi/motion.c" not in PREPARE
+assert "patch_fongmi_motion_artifact.py" not in PREPARE
 for marker in (
     '"video/out/gpu_next/motion.c"',
     '"motion-interpolation", OPT_INT(motion_fps)',
@@ -107,4 +112,22 @@ assert "!BuildConfig.MPV_HAS_MPVFLOW" not in capture_config, "FongMi capture mus
 require(BUILD_GRADLE, "val includeMpvFlowFongmiDiagnostics = false", "the pinned runtime must not advertise uninstrumented FongMi capture controls")
 assert "mpvFlowFongmiDiagnosticCapture" not in BUILD_GRADLE, "an independent Gradle request must not enable unsupported native capture"
 require(PREPARE, "MPVFLOW_DEBUG_CAPTURE is unsupported with the MPVRx-pinned FongMi 95ec motion core", "capture support must remain fail-closed until the pinned runtime is instrumented")
+require(VO_CAPTURE_PATCH, r"%80[^\t\r\n]", "STOP IDs must not absorb LF or CRLF line endings")
+require(VO_CAPTURE_PATCH, "p->fongmi_capture_output_pts = mpi0->pts + alpha * (mpi1->pts - mpi0->pts);", "capture PTS must remain in the source-media time domain")
+require(VO_CAPTURE_PATCH, r'\"resolution_limit\":[1920,1920]', "capture limits must apply independently to both axes")
+assert VO_CAPTURE_PATCH.count(r'\"capture_pixel_limit\":2073600') == 2, "successful and terminal settings must both report the area cap"
+assert abs((10.0 + 0.5 * (10.04 - 10.0)) - 10.02) < 1e-12
+warp_body = FONGMI_MOTION.split("static const char warp_body[] = GLSL(", 1)[1].split("\n);", 1)[0]
+require(warp_body, "vec2 displacement = (best_source - uv) * map_size;", "warp output must represent the source coordinate used by its residual")
+synthesis_body = FONGMI_MOTION.split("static const char synthesis_body[] = GLSL(", 1)[1].split("\n);", 1)[0]
+require(synthesis_body, "spatial_trust_consensus(forward, backward, uv, f, r)", "synthesis must use dispatch-bound sampler names")
+require(synthesis_body, "motion_field_medoid(forward, backward, uv, f, r, coherent0, coherent1, coherent_support)", "medoid fallback must use dispatch-bound sampler names")
+assert not re.search(r"\b(?:spatial_trust_consensus|motion_field_medoid)\(warp[01]\b", synthesis_body)
+scene_body = FONGMI_MOTION.split("static const char scene_body[] = GLSL(", 1)[1].split("\n);", 1)[0]
+require(scene_body, "cut = max(cut, min(spatial_cut, 0.44));", "spatial-only disagreement must not independently cross the 0.45 hard-hold threshold")
+require(DIAGNOSTICS_GUIDE, "does **not** expose FongMi one-shot capture", "the guide must accurately describe the currently disabled capture path")
+require(DIAGNOSTICS_GUIDE, "unavailable in the current build", "older capture instructions must not be presented as a current feature")
+require(LEGACY_PATCHER, "not supported for the ", "the legacy patcher must not imply compatibility with the runtime pin")
+require(LEGACY_PATCHER, "active MPVRx runtime revision 95ec8e929f8ad2f97c8415c486971493a0b408df", "the legacy patcher warning must name the exact unsupported runtime pin")
+require(FONGMI_HELPER_README, "not a supported current workflow", "the legacy patcher support boundary must be documented alongside runtime provenance")
 print("Native FongMi MPV and pre-FongMi Native Media3 diagnostic regression tests passed")

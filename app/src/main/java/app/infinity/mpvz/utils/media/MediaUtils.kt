@@ -230,6 +230,7 @@ object MediaUtils {
             playlistArtworkUrls = playlistArtworkUrls,
             isAudio = isAudio,
             playlistDurationsSeconds = playlistDurationsSeconds,
+            preparedQueueItems = preparedQueueItems,
           )
           context.startActivity(intent)
           return

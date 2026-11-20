@@ -14,7 +14,8 @@ def parse_steps(text: str) -> dict[str, str]:
     return dict(re.findall(r"^      - name: ([^\n]+)\n(.*?)(?=^      - name: |\Z)", text, re.M | re.S))
 
 STEPS = parse_steps(TEXT)
-DEBUG_APK_STEPS = parse_steps((ROOT / ".github/workflows/debug-apk.yml").read_text(encoding="utf-8"))
+DEBUG_APK_TEXT = (ROOT / ".github/workflows/debug-apk.yml").read_text(encoding="utf-8")
+DEBUG_APK_STEPS = parse_steps(DEBUG_APK_TEXT)
 RELEASE_STEPS = parse_steps((ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8"))
 CACHE_MISS = "if: ${{ steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' }}"
 MPV_SHA = "95ec8e929f8ad2f97c8415c486971493a0b408df"
@@ -66,7 +67,7 @@ class Arm64WorkflowTest(unittest.TestCase):
         self.assertIn("steps.mpvflow-runtime-cache.outputs.cache-hit == 'true'", STEPS["Use cached Flow-only MPVFlow arm64 runtime"])
 
     def test_generated_api391_headers_are_cached_and_revalidated(self):
-        generated = "app/build/mpvflow-generated/libplacebo-api-391"
+        generated = "app/mpvflow-generated/libplacebo-api-391"
         cache_steps = (
             (STEPS, ("Restore verified Flow-only MPVFlow arm64 runtime", "Save verified Flow-only MPVFlow arm64 runtime")),
             (DEBUG_APK_STEPS, ("Restore verified Flow-only MPVFlow arm64 runtime", "Save verified Flow-only MPVFlow arm64 runtime")),
@@ -150,6 +151,20 @@ class Arm64WorkflowTest(unittest.TestCase):
         self.assertIn("scripts/verify-region3-shader-apk.py", shader_step)
         self.assertIn("scripts/verify-pair-ghost-apk.py", shader_step)
         self.assertIn("if-no-files-found: error", STEPS["Upload arm64-v8a debug APK"])
+
+    def test_standard_arm64_debug_apk_verifies_motion_payload_before_upload(self):
+        verification = DEBUG_APK_STEPS["Verify APK package, ABI, integrity and signing identity"]
+        for script in (
+            "scripts/verify-debug-apk-artifact.py",
+            "scripts/verify-region3-shader-apk.py",
+            "scripts/verify-pair-ghost-apk.py",
+        ):
+            with self.subTest(script=script):
+                self.assertIn(f'python3 {script} "$apk"', verification)
+        self.assertLess(
+            DEBUG_APK_TEXT.index("- name: Verify APK package, ABI, integrity and signing identity"),
+            DEBUG_APK_TEXT.index("- name: Upload debug APKs"),
+        )
 
 
 if __name__ == "__main__":

@@ -85,9 +85,10 @@ CAMERA_FIT_SHADER = r"""static const char camera_fit_header[] = GLSL(
     {
         vec4 value = texelFetch(field, pixel, 0);
         centered = ((vec2(pixel) + 0.5) / vec2(grid) - 0.5) * image_size;
-        flow = value.xy;
+        flow = vec2(0.0);
         if (any(isnan(value)) || any(isinf(value)) || value.w <= 0.001)
             return 0.0;
+        flow = value.xy;
         vec2 uv = (vec2(pixel) + 0.5) / vec2(grid);
         vec2 reverse_uv = uv + flow / image_size;
         if (any(lessThan(reverse_uv, vec2(0.0))) ||
@@ -704,6 +705,15 @@ SOURCE_VISIBILITY_OUTPUT_BLOCK_LEGACY = SOURCE_VISIBILITY_OUTPUT_BLOCK_PINNED.re
 ).replace(
     "return source_blend * (1.0 - visibility_sum) +\n       warped0 * visibility.x + warped1 * visibility.y;",
     "color = source_blend * (1.0 - visibility_sum) +\n        warped0 * visibility.x + warped1 * visibility.y;",
+).replace(
+    "vec2 visibility_position = vec2(pixel);",
+    "vec2 source_position = vec2(pixel);",
+).replace(
+    "sample_rgba(source1, visibility_position -",
+    "sample_rgba(second, source_position -",
+).replace(
+    "sample_rgba(source0, visibility_position -",
+    "sample_rgba(first, source_position -",
 )
 SOURCE_VISIBILITY_OUTPUT_PATTERN = re.compile(
     r"(?m)^(?P<indent>[ \t]*)(?:color = mix\(source_blend, mix\(warped0, warped1, alpha\), clamp\(trust, 0\.0, 1\.0\)\);|"
@@ -828,7 +838,13 @@ def _has_spatial_trust_guard(source: str) -> bool:
     return (
         source.count(SPATIAL_TRUST_MARKER) == 1
         and source.count("float spatial_trust_consensus(sampler2D warp0, sampler2D warp1,") == 1
-        and source.count("spatial_trust_consensus(warp0, warp1, uv, f, r)") == 1
+        and sum(
+            source.count(call)
+            for call in (
+                "spatial_trust_consensus(warp0, warp1, uv, f, r)",
+                "spatial_trust_consensus(forward, backward, uv, f, r)",
+            )
+        ) == 1
         and re.search(r"(?m)^[ \t]*if \(total < 0\.25\)\n[ \t]+return -1\.0;", source) is not None
         and source.count("float spatial_island = max(0.0, clamp(trust, 0.0, 1.0) - spatial_consensus);") == 1
         and source.count("float spatial_guard_weight = 0.75 * boundary_activation *") == 1
@@ -847,7 +863,7 @@ def _has_spatial_trust_guard(source: str) -> bool:
         )
         and re.search(
             r"(?m)^[ \t]*if \(boundary_activation > 0\.0\) \{\n"
-            r"[ \t]+float spatial_consensus = spatial_trust_consensus\(warp0, warp1, uv, f, r\);",
+            r"[ \t]+float spatial_consensus = spatial_trust_consensus\((?:warp0, warp1|forward, backward), uv, f, r\);",
             source,
         ) is not None
     )
@@ -965,7 +981,13 @@ def _has_spatial_medoid_fallback(source: str) -> bool:
     return (
         source.count(SPATIAL_MEDOID_MARKER) == 1
         and source.count("void motion_field_medoid(sampler2D warp0, sampler2D warp1, vec2 uv,") == 1
-        and source.count("motion_field_medoid(warp0, warp1, uv, f, r, coherent0, coherent1, coherent_support);") == 1
+        and sum(
+            source.count(call)
+            for call in (
+                "motion_field_medoid(warp0, warp1, uv, f, r, coherent0, coherent1, coherent_support);",
+                "motion_field_medoid(forward, backward, uv, f, r, coherent0, coherent1, coherent_support);",
+            )
+        ) == 1
         and source.count("agreeing_support / 3.0") == 1
         and source.count("if (candidate_support <= 0.0)") == 1
         and source.count("if (support > 0.0 && !(isnan(distance) || isinf(distance)))") == 2
@@ -991,7 +1013,13 @@ def _patch_spatial_medoid_fallback(source: str) -> str:
             "spatial motion medoid helper",
         )
 
-    if source.count("motion_field_medoid(warp0, warp1, uv, f, r, coherent0, coherent1, coherent_support);"):
+    if any(
+        source.count(call)
+        for call in (
+            "motion_field_medoid(warp0, warp1, uv, f, r, coherent0, coherent1, coherent_support);",
+            "motion_field_medoid(forward, backward, uv, f, r, coherent0, coherent1, coherent_support);",
+        )
+    ):
         raise ValueError("FongMi spatial medoid output contains a partial fallback")
     anchors = (
         re.compile(r"(?m)^(?P<indent>[ \t]*)color = mix\(source_blend, mix\(warped0, warped1, alpha\), clamp\(trust, 0\.0, 1\.0\)\);$"),
@@ -1422,7 +1450,13 @@ def _has_scene_cut_guard(source: str) -> bool:
         and source.count("float spatial_cut = 0.0;") == 1
         and source.count("float local_luma_delta = abs(tile_luma_delta[i] / 16.0 - global_luma_delta);") == 1
         and source.count("if (local_luma_delta > 0.15)") == 1
-        and source.count("cut = max(cut, spatial_cut);") == 1
+        and sum(
+            source.count(expression)
+            for expression in (
+                "cut = max(cut, spatial_cut);",
+                "cut = max(cut, min(spatial_cut, 0.44));",
+            )
+        ) == 1
     )
 
 
@@ -1990,8 +2024,17 @@ def transform_source(source: str) -> tuple[str, bool]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("mpv_dir", type=Path, help="extracted, pinned FongMi MPV source tree")
+    parser = argparse.ArgumentParser(
+        description=(
+            "Legacy-only FongMi source transformer retained for its exact-anchor tests. "
+            "It is not part of the current build workflow and is not supported for the "
+            "active MPVRx runtime revision 95ec8e929f8ad2f97c8415c486971493a0b408df."
+        )
+    )
+    parser.add_argument(
+        "mpv_dir", type=Path,
+        help="legacy FongMi MPV source tree with the tested scalar trust-taper anchors; not the active MPVRx runtime",
+    )
     args = parser.parse_args()
     source_path = args.mpv_dir / SOURCE_RELATIVE
     if not source_path.is_file():

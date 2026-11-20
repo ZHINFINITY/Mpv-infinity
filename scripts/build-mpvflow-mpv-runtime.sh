@@ -382,7 +382,7 @@ MPV_DEPENDENCIES="$MPV_BUILD_DIR/meson-info/intro-dependencies.json"
 PLACEBO_LIBRARY="$MPV_PREFIX/libplacebo.so"
 PLACEBO_PC="$MPV_PREFIX/pkgconfig/libplacebo.pc"
 PLACEBO_INCLUDE_DIR="${MPV_PREFIX%/lib}/include/libplacebo"
-API391_HEADER_ROOT="$ROOT/app/build/mpvflow-generated/libplacebo-api-391"
+API391_HEADER_ROOT="$ROOT/app/mpvflow-generated/libplacebo-api-391"
 [[ -f "$MPV_LIBRARY" && -f "$PLACEBO_LIBRARY" && -f "$PLACEBO_PC" ]] || {
   echo "MPVFlow native prefix is missing libmpv, libplacebo, or libplacebo.pc" >&2
   exit 1

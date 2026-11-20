@@ -38,17 +38,17 @@ internal object PlayerControlVisibilityPolicy {
   fun shouldShowBufferingIndicator(
     nativeEngineActive: Boolean,
     nativeReady: Boolean,
-    nativeLoading: Boolean,
     nativeBuffering: Boolean,
     nativeEnded: Boolean,
     mpvLoading: Boolean,
     mpvBuffering: Boolean,
     torrentConnecting: Boolean,
     isSeeking: Boolean,
+    nativeFailed: Boolean = false,
   ): Boolean {
     if (isSeeking) return false
     return if (nativeEngineActive) {
-      !nativeEnded && (!nativeReady || nativeLoading || nativeBuffering)
+      !nativeFailed && !nativeEnded && (!nativeReady || nativeBuffering)
     } else {
       mpvLoading || mpvBuffering || torrentConnecting
     }

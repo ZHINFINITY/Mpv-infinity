@@ -29,6 +29,11 @@ VO_CAPTURE_SPEC = importlib.util.spec_from_file_location(
 assert VO_CAPTURE_SPEC and VO_CAPTURE_SPEC.loader
 VO_CAPTURE_PATCHER = importlib.util.module_from_spec(VO_CAPTURE_SPEC)
 VO_CAPTURE_SPEC.loader.exec_module(VO_CAPTURE_PATCHER)
+SOURCE_VERIFIER_PATH = ROOT / "scripts/mpvrx_motion_source.py"
+SOURCE_VERIFIER_SPEC = importlib.util.spec_from_file_location("mpvrx_motion_source", SOURCE_VERIFIER_PATH)
+assert SOURCE_VERIFIER_SPEC and SOURCE_VERIFIER_SPEC.loader
+SOURCE_VERIFIER = importlib.util.module_from_spec(SOURCE_VERIFIER_SPEC)
+SOURCE_VERIFIER_SPEC.loader.exec_module(SOURCE_VERIFIER)
 parser = argparse.ArgumentParser()
 parser.add_argument("--source", type=Path, help="active pinned FongMi motion.c built by the runtime workflow")
 args = parser.parse_args()
@@ -717,6 +722,16 @@ assert "sample_rgba(source1, vec2(pixel) + r.xy * scale - local_motion_offset)" 
 assert "return source_blend * (1.0 - visibility_sum) +" in pinned_patched
 assert "nearest_frame_weight" not in pinned_patched
 
+# Legacy color-assignment output must switch the witness sampler/coordinate names.
+legacy_source = fixture(output=BASE_OUTPUT)
+legacy_patched, legacy_changed = PATCHER.transform_source(legacy_source)
+assert legacy_changed and PATCHER._has_source_visibility(legacy_patched)
+assert "vec2 source_position = vec2(pixel);" in legacy_patched
+assert "sample_rgba(second, source_position -" in legacy_patched
+assert "sample_rgba(first, source_position -" in legacy_patched
+assert "sample_rgba(source1, visibility_position -" not in legacy_patched
+assert "sample_rgba(source0, visibility_position -" not in legacy_patched
+
 # An existing V3 synthesis patch is upgraded in place, then remains idempotent.
 old_reconstruction = PATCHER._indent_block(PATCHER.RECONSTRUCTION_BLOCK, "    ")
 legacy_v3 = patched.replace(
@@ -1132,6 +1147,10 @@ assert spatial_scene_cut_score(uniform_dark, uniform_bright) == 0.0
 retained_source = (ROOT / "app/src/main/cpp/mpvflow/fongmi/motion.c").read_text(encoding="utf-8")
 retained_result, retained_changed = PATCHER.transform_source(retained_source)
 assert not retained_changed and retained_result == retained_source, "retained snapshot should mirror active refinement, grid, synthesis, reconstruction, warp, and scene-cut safeguards"
+assert retained_source.count("vec2 displacement = (best_source - uv) * map_size;") == 1
+assert "vec2 displacement = -weight * f.xy;" not in retained_source
+assert "spatial_trust_consensus(forward, backward, uv, f, r)" in retained_source
+assert "motion_field_medoid(forward, backward, uv, f, r, coherent0, coherent1, coherent_support)" in retained_source
 assert "vec2 scene_change = texelFetch(scene, ivec2(0), 0).rg;" in retained_source
 assert "if (scene_change.r > 0.45 || scene_change.g > 0.08)" in retained_source
 assert "color = alpha < 0.5 ? original0 : original1;" in retained_source
@@ -1179,6 +1198,7 @@ def diagnostic_capture_size(width: int, height: int) -> tuple[int, int] | None:
 
 
 assert diagnostic_capture_size(2275, 1280) == (1920, 1080)
+assert diagnostic_capture_size(1080, 1920) == (1080, 1920)
 assert diagnostic_capture_size(4097, 1280) is None
 assert 1920 * 1080 * 4 * 7 <= 64 * 1024 * 1024
 assert "source_position = uv * source_extent - 0.5;" in motion_capture_patcher_source
@@ -1190,8 +1210,14 @@ assert "capture_width = m->diagnostic_width" in motion_capture_patcher_source
 
 if args.source:
     active_source = args.source.read_text(encoding="utf-8")
-    assert PATCHER.CAMERA_SIMILARITY_MARKER in active_source
-    assert PATCHER._has_camera_similarity_model(active_source)
+    mpv_dir = args.source.parents[3]
+    if MOTION_CAPTURE_PATCHER.SOURCE_MARKER in active_source:
+        assert PATCHER.CAMERA_SIMILARITY_MARKER in active_source
+        assert PATCHER._has_camera_similarity_model(active_source)
+    elif PATCHER.CAMERA_SIMILARITY_MARKER in active_source:
+        assert PATCHER._has_camera_similarity_model(active_source)
+    else:
+        SOURCE_VERIFIER.verify_mpv_source(mpv_dir)
     if MOTION_CAPTURE_PATCHER.SOURCE_MARKER in active_source:
         assert active_source.count(PATCHER.MARKER) == 1
         assert active_source.count(PATCHER.SOURCE_VISIBILITY_MARKER) == 1
@@ -1206,7 +1232,6 @@ if args.source:
     else:
         active_result, active_changed = PATCHER.transform_source(active_source)
         assert not active_changed and active_result == active_source, "active pinned shader must contain the verified refinement, grid, synthesis, reconstruction, and warp patches exactly once"
-    mpv_dir = args.source.parents[3]
     active_header = args.source.with_name("motion.h").read_text(encoding="utf-8")
     active_vo_path = mpv_dir / "video/out/vo_gpu_next.c"
     active_vo = active_vo_path.read_text(encoding="utf-8")

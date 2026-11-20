@@ -705,7 +705,7 @@ index bd3d1aa..75ffbb1 100644
 +    flow_update_context(vo);
 +    flow_prepare_input(vo, frame, mpi, fp);
 @@ -1118,0 +1811,1 @@ static void unmap_frame(pl_gpu gpu, struct pl_frame *frame,
-+    flow_release_frame(fp->vo, fp, false);
++    flow_release_frame(fp->vo, fp, true);
 @@ -1135,0 +1829,2 @@ static void discard_frame(const struct pl_source_frame *src)
 +    struct frame_priv *fp = mpi->priv;
 +    flow_release_frame(fp->vo, fp, true);
@@ -1488,7 +1488,8 @@ index bd3d1aa..75ffbb1 100644
 +                flow_wsi_set, p->flow_swapchain_diagnostics_enabled,
 +                flow_parent_msg_level, flow_parent_msg_level >= MSGL_V);
 +    }
-+    if (p->next_opts->mpvflow && !p->flow_wsi_created_logged) {
++    if (p->gpu && p->gpu->glsl.vulkan && p->next_opts->mpvflow &&
++        !p->flow_wsi_created_logged) {
 +        int requested_mode = VK_PRESENT_MODE_FIFO_KHR;
 +        int created_mode = VK_PRESENT_MODE_FIFO_KHR;
 +        int requested_depth = 0;

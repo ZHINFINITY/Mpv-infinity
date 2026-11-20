@@ -26,6 +26,10 @@ body = re.search(
     re.DOTALL,
 )
 assert header and body, "both camera-fit GLSL sections must be present in the versioned patcher"
+assert re.search(
+    r"flow = vec2\(0\.0\);\s*if \(any\(isnan\(value\)\) \|\| any\(isinf\(value\)\) \|\| value\.w <= 0\.001\)\s*return 0\.0;\s*flow = value\.xy;",
+    header.group(1),
+), "rejected non-finite flow must stay finite when its zero weight reaches reductions"
 
 shader = f"""#version 450
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
