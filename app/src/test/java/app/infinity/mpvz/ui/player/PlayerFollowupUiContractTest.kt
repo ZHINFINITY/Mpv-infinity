@@ -17,6 +17,8 @@ class PlayerFollowupUiContractTest {
     generateSequence(File(System.getProperty("user.dir"))) { it.parentFile }
       .first { File(it, "app/src/main/java/app/infinity/mpvz").isDirectory }
 
+  private fun read(path: String) = File(root, path).readText()
+
   @Test
   fun timeNetworkPillStartsCompactAndPersistsUntilTheNextTap() {
     val preferences = read("app/src/main/java/app/infinity/mpvz/preferences/AppearancePreferences.kt")
