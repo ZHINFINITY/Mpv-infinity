@@ -60,6 +60,8 @@ internal object BoundedProviderIo {
   ): T = providerReads.run(timeoutMs, fallback, onCancellation, operation)
 
   private class BoundedLane(threadName: String) {
+    // Keep this single daemon worker alive: an expiring core worker can race a new
+    // SynchronousQueue submission and reject it while the old worker is exiting.
     private val executor =
       ThreadPoolExecutor(
         1,
@@ -68,7 +70,7 @@ internal object BoundedProviderIo {
         TimeUnit.SECONDS,
         SynchronousQueue(),
         ThreadFactory { runnable -> Thread(runnable, threadName).apply { isDaemon = true } },
-      ).apply { allowCoreThreadTimeOut(true) }
+      )
 
     @OptIn(InternalCoroutinesApi::class)
     suspend fun <T> run(

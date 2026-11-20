@@ -663,7 +663,7 @@ class PlayerFollowupUiContractTest {
     assertTrue(viewModel.contains("PlaybackSession.getPropertyString(target.versionProperty) == expectedVersion"))
     assertTrue(viewModel.contains("fun callCustomButton(id: String) {\n    if (!isCustomButtonHandlerReady(id)) return"))
     assertTrue(viewModel.contains("fun callCustomButtonLongPress(id: String) {\n    if (!isCustomButtonHandlerReady(id)) return"))
-    assertTrue(viewModel.contains("customButtonsScriptVersions[language] ?: continue"))
+    assertTrue(viewModel.contains("scriptsSnapshot.versions[language] ?: continue"))
 
     val sink = read("app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowVideoSink.kt")
     assertTrue(sink.contains("destroyPresentationSlotTarget(slot)"))
