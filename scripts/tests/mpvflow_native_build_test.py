@@ -114,7 +114,7 @@ assert 'PlaybackSession.setOptionString("motion-interpolation", targetFps.toStri
 runtime_builder = BUILD.read_text(encoding="utf-8")
 for marker in (
     'EXPECTED_BUILDER_REVISION="1efc82739f6f7034cd63e7ee8b3ec5431df27467"',
-    'EXPECTED_MPV_REVISION="14b3999a1a3e322c217bc90ee4df5a8f1bc88f69"',
+    'EXPECTED_MPV_REVISION="95ec8e929f8ad2f97c8415c486971493a0b408df"',
     f'EXPECTED_FFMPEG_REVISION="{FFMPEG_SHA}"',
     f'EXPECTED_FFMPEG_REPOSITORY="{FFMPEG_REPOSITORY}"',
     'git -C "$MPV_BUILDER_DIR" rev-parse HEAD',
@@ -230,6 +230,11 @@ for marker in (
 capture_define = "#define MPVFLOW_DEBUG_CAPTURE 1\n"
 capture_default = prepare.configure_debug_capture_source(gpu_source, enabled=False)
 assert capture_define not in capture_default, "default MPV source preparation must not enable debug capture"
+prepare_source = PREPARE.read_text(encoding="utf-8")
+assert 'debug_capture_enabled = os.environ.get("MPVFLOW_DEBUG_CAPTURE") == "1"' in prepare_source
+assert "MPVFLOW_DEBUG_CAPTURE is unsupported with the MPVRx-pinned FongMi 95ec motion core" in prepare_source
+assert "Enabled bounded one-shot FongMi diagnostics for this debug runtime" not in prepare_source
+assert "FongMi one-shot diagnostics disabled; leaving motion/VO sources uninstrumented" in prepare_source
 capture_debug = prepare.configure_debug_capture_source(gpu_source, enabled=True)
 assert capture_debug.count(capture_define) == 1, "debug capture define must be injected exactly once"
 assert capture_debug.index("*/") < capture_debug.index(capture_define) < capture_debug.index("#include"), "debug capture define must follow the SPDX notice"
@@ -237,6 +242,10 @@ assert prepare.configure_debug_capture_source(capture_debug, enabled=True) == ca
 assert prepare.configure_debug_capture_source(capture_debug, enabled=False) == capture_default, "disabling debug capture must restore the default source"
 cmake_native = (ROOT / "app/src/main/cpp/CMakeLists.txt").read_text(encoding="utf-8")
 assert "target_compile_definitions(media3flow_vulkan PRIVATE\n        $<$<CONFIG:Debug>:MPVFLOW_DEBUG_CAPTURE=1>)" in cmake_native, "Media3 Vulkan capture define must be Debug-only"
+app_build = (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
+assert "val includeMpvFlowFongmiDiagnostics = false" in app_build
+assert 'project.findProperty("mpvFlowFongmiDiagnosticCapture")?.toString() == "true"' not in app_build
+assert 'buildConfigField("boolean", "MPV_HAS_FONGMI_DIAGNOSTICS", "false")' in app_build
 
 old_dependency = "vulkan = dependency('vulkan', version: '>= 1.3.238', required: vulkan_opt)"
 new_dependency = "vulkan = dependency('vulkan', required: vulkan_opt)"
@@ -620,6 +629,38 @@ for bad_wsi_recovery in (
         raise AssertionError("unexpected pinned WSI recovery changes must fail closed")
 patched_wsi_source = prepare.instrument_libplacebo_swapchain(wsi_source)
 prepare.validate_libplacebo_suboptimal_recovery(patched_wsi_source)
+direct_submit_block = (
+    "    int qidx = cmd->qindex;\n"
+    "    if (!CMD_SUBMIT(&cmd)) {\n"
+    "        pl_mutex_unlock(&p->lock);\n"
+    "        return false;\n"
+    "    }\n"
+)
+vk_tex_hold_block = (
+    "    int qidx;\n"
+    "    bool held = vk_tex_hold(gpu, pl_vulkan_hold_params(\n"
+    "        .tex = current->images.elem[idx],\n"
+    "    ), &p->frames_in_flight, &qidx);\n"
+    "    if (!held) {\n"
+    "        pl_mutex_unlock(&p->lock);\n"
+    "        return false;\n"
+    "    }\n"
+)
+assert wsi_source.count(direct_submit_block) == 1
+vk_tex_hold_wsi_source = wsi_source.replace(direct_submit_block, vk_tex_hold_block, 1)
+patched_vk_tex_hold_wsi_source = prepare.instrument_libplacebo_swapchain(vk_tex_hold_wsi_source)
+prepare.validate_libplacebo_suboptimal_recovery(patched_vk_tex_hold_wsi_source)
+assert 'FLOW_WSI_COMMAND_SUBMIT, "vk_tex_hold"' in patched_vk_tex_hold_wsi_source
+assert patched_vk_tex_hold_wsi_source.index("pl_clock_t flow_submit_start") < patched_vk_tex_hold_wsi_source.index(
+    "bool held = vk_tex_hold("
+), "vk_tex_hold host timing must start before the wrapper call"
+hold_call_pos = patched_vk_tex_hold_wsi_source.index("bool held = vk_tex_hold(")
+hold_report_pos = patched_vk_tex_hold_wsi_source.index('FLOW_WSI_COMMAND_SUBMIT, "vk_tex_hold"')
+hold_failure_pos = patched_vk_tex_hold_wsi_source.index("if (!held)", hold_call_pos)
+assert hold_call_pos < hold_report_pos < hold_failure_pos, (
+    "vk_tex_hold timing must report the host call result before preserving its original failure handling"
+)
+assert prepare.instrument_libplacebo_swapchain(patched_vk_tex_hold_wsi_source) == patched_vk_tex_hold_wsi_source
 fongmi_wsi_source = wsi_source.replace(
     "    bool has_swapchain_maintenance1;\n    struct pl_color_repr color_repr;",
     "    bool has_swapchain_maintenance1;\n    uint64_t generation;\n    struct pl_color_repr color_repr;",
@@ -647,6 +688,8 @@ prepare.validate_libplacebo_suboptimal_recovery(fongmi_patched_wsi_source)
 assert "uint64_t generation;\n    atomic_bool flow_diagnostics;" in fongmi_patched_wsi_source
 assert "bool recreate = p->suboptimal || p->needs_recreate || width_changed || height_changed;" in fongmi_patched_wsi_source
 assert "vk_present_submit(history, timing.presentID, begin, res);" in fongmi_patched_wsi_source
+assert fongmi_patched_wsi_source.count("pl_clock_t flow_queue_lock_end = flow_queue_lock_start ? pl_clock_now() : 0;") == 1
+assert fongmi_patched_wsi_source.count("pl_clock_t flow_present_start = flow_queue_lock_start ? pl_clock_now() : 0;") == 1
 bad_fongmi_resize = fongmi_wsi_source.replace("width_changed || height_changed", "false", 1)
 try:
     prepare.validate_libplacebo_suboptimal_recovery(bad_fongmi_resize)
@@ -758,7 +801,11 @@ for call in (
 assert "VK_TRUE, UINT64_MAX" in patched_wsi_source and "vk->ResetFences(vk->dev, 1, pfence);" in patched_wsi_source, (
     "WSI instrumentation must preserve the original present-fence wait/reset sequence"
 )
-for bad_wsi_source in ("unrecognized Vulkan swapchain source\n", wsi_source + "\n" + wsi_source):
+for bad_wsi_source in (
+    "unrecognized Vulkan swapchain source\n",
+    wsi_source + "\n" + wsi_source,
+    vk_tex_hold_wsi_source.replace("bool held = vk_tex_hold(", "bool held = vk_tex_hold_unrecognized(", 1),
+):
     try:
         prepare.instrument_libplacebo_swapchain(bad_wsi_source)
     except SystemExit:
@@ -807,6 +854,10 @@ assert '"--input", str(FONGMI_PATCH)' not in prepare_source
 assert '"mpvflow-vo-gpu-next.patch"' in prepare_source
 assert '"mpvflow-aimagereader-vulkan.patch"' in prepare_source
 assert '"video/out/gpu_next/motion.c"' in prepare_source
+assert 'scripts/patch_fongmi_motion_diagnostics.py' not in prepare_source
+assert 'scripts/patch_fongmi_vo_diagnostics.py' not in prepare_source
+assert 'subprocess.run([sys.executable, str(patcher), str(mpv_dir)], cwd=ROOT, check=True)' not in prepare_source
+assert "MPVFLOW_DEBUG_CAPTURE is unsupported with the MPVRx-pinned FongMi 95ec motion core" in prepare_source
 assert '"motion-interpolation", OPT_INT(motion_fps)' in prepare_source
 assert '"video/out/hwdec/hwdec_aimagereader_vk_direct.c"' in prepare_source
 assert '"motion-interpolation-info", mp_property_motion_info' in prepare_source
@@ -823,6 +874,9 @@ assert "FONGMI_PATCH" not in prepare_source, "MPV runtime must compile the pinne
 assert "mpvflow_gpu.c" in prepare_source, "MPVFlow renderer source must be staged into the runtime"
 prepare_call = 'python3 "$ROOT/scripts/prepare-mpvflow.py" --mpv-dir "$BUILDSCRIPTS/deps/mpv" --libplacebo-dir "$BUILDSCRIPTS/deps/libplacebo"'
 assert prepare_call in build, "the native build must patch pinned libplacebo before compilation"
+workflow_source = (ROOT / ".github/workflows/mpvflow-debug-arm64.yml").read_text(encoding="utf-8")
+assert "scripts/patch_fongmi_motion_diagnostics.py" not in workflow_source
+assert "scripts/patch_fongmi_vo_diagnostics.py" not in workflow_source
 native_cmake = (ROOT / "app/src/main/cpp/CMakeLists.txt").read_text(encoding="utf-8")
 assert "target_compile_options(media3flow_vulkan PRIVATE -fvisibility=hidden)" in native_cmake
 assert "target_link_options(media3flow_vulkan PRIVATE -Wl,--strip-all)" in native_cmake
@@ -933,6 +987,9 @@ assert flow_surface_initialize.index("initialized = sinkInitialized") < flow_sur
 assert build.index("./include/ci.sh install") < build.index(prepare_call) < build.index("./include/ci.sh build"), (
     "the libplacebo search-path correction must run after dependency checkout and before native builds"
 )
+assert build.index("./include/ci.sh build") < build.index('API391_HEADER_ROOT="$ROOT/app/mpvflow-generated/libplacebo-api-391"') < build.index('APK="$(find "$MPV_BUILDER_DIR/app/build/outputs/apk"'), (
+    "API-391 headers must be staged after native build and before runtime APK discovery"
+)
 required_fragments = (
     "1062752a891c95b2bfeed9e356562d88f9df84ac",
     "-DCMAKE_TOOLCHAIN_FILE=",
@@ -949,6 +1006,10 @@ required_fragments = (
     'MPV_BUILD_DIR="$BUILDSCRIPTS/deps/mpv/_build-arm64"',
     'MPV_DEPENDENCIES="$MPV_BUILD_DIR/meson-info/intro-dependencies.json"',
     'PLACEBO_PC="$MPV_PREFIX/pkgconfig/libplacebo.pc"',
+    'PLACEBO_INCLUDE_DIR="${MPV_PREFIX%/lib}/include/libplacebo"',
+    'API391_HEADER_ROOT="$ROOT/app/mpvflow-generated/libplacebo-api-391"',
+    "FONGMI_HEADERS.sha256",
+    "PL_API_VER",
     'PLACEBO_VERSION="$(sed -n \'s/^Version: *//p\' "$PLACEBO_PC")"',
     'readelf -d "$MPV_LIBRARY"',
     'python3 - "$MPV_DEPENDENCIES" "$PLACEBO_VERSION"',
@@ -1692,7 +1753,11 @@ with tempfile.TemporaryDirectory(prefix="mpvflow-builder-patch-test-") as tempor
     assert result.returncode == 0, f"builder patcher fixture failed:\n{result.stdout}{result.stderr}"
     patched_downloads = downloads.read_text(encoding="utf-8")
     assert "https://github.com/FongMi/libplacebo.git" in patched_downloads, "FongMi libplacebo source was lost"
-    assert "b89c10e1bdd5d7742ca576ebad94a906ddca91e8" in patched_downloads, "FongMi libplacebo pin was lost"
+    assert "63659d96d1bff7d7a5a1368e9538056a193fc6fb" in patched_downloads, "MPVRx-provenance FongMi libplacebo pin was lost"
+    assert "git -C libplacebo fetch --depth=1 origin 63659d96d1bff7d7a5a1368e9538056a193fc6fb" in patched_downloads
+    assert "git -C libplacebo checkout --detach FETCH_HEAD" in patched_downloads
+    assert 'libplacebo_actual" != "63659d96d1bff7d7a5a1368e9538056a193fc6fb"' in patched_downloads
+    assert "git -C libplacebo submodule update --init --recursive" in patched_downloads
     assert FFMPEG_REPOSITORY in patched_downloads, "FongMi FFmpeg source repository was lost"
     assert f"git -C ffmpeg fetch --depth=1 origin {FFMPEG_SHA}" in patched_downloads, "FongMi FFmpeg commit pin was lost"
     assert f'ffmpeg_actual" != "{FFMPEG_SHA}"' in patched_downloads, "FFmpeg checkout must be verified against the exact commit"

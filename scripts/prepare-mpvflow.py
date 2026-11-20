@@ -7,9 +7,15 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+from mpvrx_motion_source import verify_mpv_source
+
+ROOT = SCRIPT_DIR.parent
 VENDOR = ROOT / "app/src/main/cpp/mpvflow"
 VO_PATCH = VENDOR / "mpvflow-vo-gpu-next.patch"
 AIMAGE_VULKAN_PATCH = VENDOR / "mpvflow-aimagereader-vulkan.patch"
@@ -404,13 +410,18 @@ def instrument_libplacebo_swapchain(swapchain_c: str) -> str:
             'FLOW_WSI_FENCE_WAIT, "present_fence_wait"',
             'FLOW_WSI_FENCE_RESET, "vkResetFences"',
             'FLOW_WSI_IMAGE_INIT, "vk_sw_image_init"',
-            'FLOW_WSI_COMMAND_SUBMIT, "vk_cmd_submit_path"',
             'FLOW_WSI_PRESENT_QUEUE_LOCK, "present_queue_lock"',
             'FLOW_WSI_PRESENT, "vkQueuePresentKHR"',
             "pl_vulkan_swapchain_set_diagnostics(pl_swapchain sw, bool enabled)",
             "pl_vulkan_swapchain_get_diagnostics(",
         )
-        if all(item in swapchain_c for item in required):
+        submit_timing_markers = (
+            'FLOW_WSI_COMMAND_SUBMIT, "vk_cmd_submit_path"',
+            'FLOW_WSI_COMMAND_SUBMIT, "vk_tex_hold"',
+        )
+        if all(item in swapchain_c for item in required) and any(
+            item in swapchain_c for item in submit_timing_markers
+        ):
             return swapchain_c
         raise SystemExit("Pinned libplacebo WSI diagnostic patch is incomplete")
 
@@ -662,9 +673,9 @@ static void flow_report_created_swapchain(struct priv *p)
         "    pl_clock_t flow_queue_lock_start = atomic_load_explicit(&p->flow_diagnostics, memory_order_relaxed)\n"
         "        ? pl_clock_now() : 0;\n"
         "    vk->lock_queue(vk->queue_ctx, pool->qf, qidx);\n"
-        "    pl_clock_t flow_present_start = flow_queue_lock_start ? pl_clock_now() : 0;\n"
+        "    pl_clock_t flow_queue_lock_end = flow_queue_lock_start ? pl_clock_now() : 0;\n"
         "    if (flow_queue_lock_start)\n"
-        "        flow_report_wsi_call(p, FLOW_WSI_PRESENT_QUEUE_LOCK, \"present_queue_lock\", flow_queue_lock_start, flow_present_start, VK_SUCCESS);\n",
+        "        flow_report_wsi_call(p, FLOW_WSI_PRESENT_QUEUE_LOCK, \"present_queue_lock\", flow_queue_lock_start, flow_queue_lock_end, VK_SUCCESS);\n",
         "present queue-lock timing",
     )
     swapchain_c = replace_once(
@@ -740,22 +751,49 @@ static void flow_report_created_swapchain(struct priv *p)
         "            if (!flow_image_init_ok)\n                goto error;",
         "acquired swapchain image initialization timing",
     )
-    swapchain_c = replace_once(
-        swapchain_c,
-        "    int qidx = cmd->qindex;\n    if (!CMD_SUBMIT(&cmd)) {\n        pl_mutex_unlock(&p->lock);\n        return false;\n    }",
+    direct_submit = (
         "    int qidx = cmd->qindex;\n"
-        "    pl_clock_t flow_submit_start = atomic_load_explicit(&p->flow_diagnostics, memory_order_relaxed)\n"
-        "        ? pl_clock_now() : 0;\n"
-        "    bool flow_submit_ok = CMD_SUBMIT(&cmd);\n"
-        "    if (flow_submit_start)\n"
-        "        flow_report_wsi_call(p, FLOW_WSI_COMMAND_SUBMIT, \"vk_cmd_submit_path\", flow_submit_start, pl_clock_now(),\n"
-        "                             flow_submit_ok ? VK_SUCCESS : VK_ERROR_UNKNOWN);\n"
-        "    if (!flow_submit_ok) {\n"
+        "    if (!CMD_SUBMIT(&cmd)) {\n"
         "        pl_mutex_unlock(&p->lock);\n"
         "        return false;\n"
-        "    }",
-        "swapchain command-submit host timing",
+        "    }"
     )
+    if direct_submit in swapchain_c:
+        swapchain_c = replace_once(
+            swapchain_c,
+            direct_submit,
+            "    int qidx = cmd->qindex;\n"
+            "    pl_clock_t flow_submit_start = atomic_load_explicit(&p->flow_diagnostics, memory_order_relaxed)\n"
+            "        ? pl_clock_now() : 0;\n"
+            "    bool flow_submit_ok = CMD_SUBMIT(&cmd);\n"
+            "    if (flow_submit_start)\n"
+            "        flow_report_wsi_call(p, FLOW_WSI_COMMAND_SUBMIT, \"vk_cmd_submit_path\", flow_submit_start, pl_clock_now(),\n"
+            "                             flow_submit_ok ? VK_SUCCESS : VK_ERROR_UNKNOWN);\n"
+            "    if (!flow_submit_ok) {\n"
+            "        pl_mutex_unlock(&p->lock);\n"
+            "        return false;\n"
+            "    }",
+            "swapchain command-submit host timing",
+        )
+    else:
+        swapchain_c = replace_once(
+            swapchain_c,
+            "    int qidx;\n    bool held = vk_tex_hold(gpu, pl_vulkan_hold_params(\n",
+            "    int qidx;\n"
+            "    pl_clock_t flow_submit_start = atomic_load_explicit(&p->flow_diagnostics, memory_order_relaxed)\n"
+            "        ? pl_clock_now() : 0;\n"
+            "    bool held = vk_tex_hold(gpu, pl_vulkan_hold_params(\n",
+            "swapchain vk_tex_hold host timing start",
+        )
+        swapchain_c = replace_once(
+            swapchain_c,
+            "    ), &p->frames_in_flight, &qidx);\n",
+            "    ), &p->frames_in_flight, &qidx);\n"
+            "    if (flow_submit_start)\n"
+            "        flow_report_wsi_call(p, FLOW_WSI_COMMAND_SUBMIT, \"vk_tex_hold\", flow_submit_start, pl_clock_now(),\n"
+            "                             held ? VK_SUCCESS : VK_ERROR_UNKNOWN);\n",
+            "swapchain vk_tex_hold host timing result",
+        )
     swapchain_c = replace_once(
         swapchain_c,
         "bool pl_vulkan_swapchain_suboptimal(pl_swapchain sw)\n{\n"
@@ -1034,8 +1072,10 @@ def main() -> None:
     command_path = mpv_dir / "player/command.c"
     vo_path = mpv_dir / "video/out/vo_gpu_next.c"
     motion_path = mpv_dir / "video/out/gpu_next/motion.c"
+    motion_header_path = mpv_dir / "video/out/gpu_next/motion.h"
     hwdec_header_path = mpv_dir / "video/out/gpu/hwdec.h"
     vulkan_context_path = mpv_dir / "video/out/vulkan/context.c"
+    android_context_path = mpv_dir / "video/out/vulkan/context_android.c"
     glslang_meson_path = libplacebo_dir / "src/glsl/meson.build"
     glslang_source_path = libplacebo_dir / "src/glsl/glslang.cc"
     gpu_timer_path = libplacebo_dir / "src/vulkan/gpu.c"
@@ -1044,12 +1084,11 @@ def main() -> None:
     placebo_formats_path = libplacebo_dir / "src/vulkan/formats.c"
     placebo_vulkan_header_path = libplacebo_dir / "src/include/libplacebo/vulkan.h"
     placebo_stubs_path = libplacebo_dir / "src/vulkan/stubs.c"
-    placebo_formats_path = libplacebo_dir / "src/vulkan/formats.c"
     for path in (
-        meson_path, stats_lua_path, command_path, vo_path, motion_path, hwdec_header_path,
-        vulkan_context_path, placebo_options_path, glslang_meson_path, glslang_source_path, gpu_timer_path,
+        meson_path, stats_lua_path, command_path, vo_path, motion_path, motion_header_path,
+        hwdec_header_path, vulkan_context_path, android_context_path, placebo_options_path,
+        glslang_meson_path, glslang_source_path, gpu_timer_path,
         placebo_swapchain_path, placebo_vulkan_header_path, placebo_stubs_path, placebo_formats_path,
-        placebo_formats_path,
     ):
         if not path.is_file():
             raise SystemExit(f"Pinned native source is missing required file {path}")
@@ -1082,25 +1121,78 @@ def main() -> None:
         if not path.is_file():
             raise SystemExit(f"GPU Flow source is missing: {path}")
 
+    debug_capture_enabled = os.environ.get("MPVFLOW_DEBUG_CAPTURE") == "1"
+    if debug_capture_enabled:
+        raise SystemExit(
+            "MPVFLOW_DEBUG_CAPTURE is unsupported with the MPVRx-pinned FongMi 95ec motion core; "
+            "the retained diagnostic patchers target the older 14b source"
+        )
+    print("FongMi one-shot diagnostics disabled; leaving motion/VO sources uninstrumented")
+
+    try:
+        verify_mpv_source(mpv_dir)
+    except (OSError, ValueError) as exc:
+        raise SystemExit(f"MPVRx FongMi motion source verification failed: {exc}") from exc
+
+    native_fongmi_markers = (
+        "version: '>=7.387.0'",
+        "video/out/gpu_next/motion.c",
+        "libmpv_motion = static_library('mpv-motion'",
+        "video/out/hwdec/hwdec_aimagereader.c",
+        "video/out/hwdec/hwdec_aimagereader_vk_direct.c",
+        "mp_motion_prepare_view",
+        "mp_motion_render_views",
+    )
+
     meson = meson_path.read_text(encoding="utf-8")
     stats_lua = stats_lua_path.read_text(encoding="utf-8")
     command = command_path.read_text(encoding="utf-8")
     vo = vo_path.read_text(encoding="utf-8")
     motion = motion_path.read_text(encoding="utf-8")
-    native_fongmi_markers = (
-        "version: '>=7.387.0'",
-        "video/out/gpu_next/motion.c", "libmpv_motion = static_library('mpv-motion'",
-        "video/out/hwdec/hwdec_aimagereader.c", "video/out/hwdec/hwdec_aimagereader_vk_direct.c",
-        "mp_motion_prepare_view", "mp_motion_render_views",
-    )
+    motion_header = motion_header_path.read_text(encoding="utf-8")
+    android_context = android_context_path.read_text(encoding="utf-8")
+    motion_option_marker = '{"motion-interpolation", OPT_INT(motion_fps), M_RANGE(0, 240)}'
     if not all(marker in (meson + vo) for marker in native_fongmi_markers):
-        raise SystemExit("Pinned MPV source is not the coordinated FongMi native source")
-    if ('{"motion-interpolation", OPT_INT(motion_fps), M_RANGE(0, 240)}' not in vo
-            or "mp_motion_capture" not in vo or "mp_motion_render" not in vo
-            or "mp_motion_prepare_view" not in motion or "mp_motion_render_views" not in motion
-            or '{"motion-interpolation-info", mp_property_motion_info}' not in command
-            or 'mp.get_property_native("motion-interpolation-info")' not in stats_lua):
+        raise SystemExit(
+            "Pinned MPV source is not the coordinated FongMi native source; "
+            "refusing to apply the obsolete mpv-fongmi-android.patch or copy duplicate motion/AImageReader files"
+        )
+    if (
+        motion_option_marker not in vo
+        or "mp_motion_capture" not in vo
+        or "mp_motion_render" not in vo
+        or "mp_motion_prepare_view" not in motion
+        or "mp_motion_render_views" not in motion
+        or "MOTION_PASS_PREPARE" not in motion
+        or "pl_dispatch_prepare_compute" not in motion
+        or "mp_motion_render_owned" not in motion
+        or "mp_motion_capture_supported" not in motion_header
+        or "mp_motion_create(pl_gpu gpu, int max_dimension)" not in motion_header
+        or "mp_motion_create(p->gpu, 480);" not in vo
+        or "info->queue_display_time_only = true;" not in android_context
+        or "video/out/gpu_next/motion.c" not in meson
+        or "libmpv_motion" not in meson
+        or '{"motion-interpolation-info", mp_property_motion_info}' not in command
+        or 'mp.get_property_native("motion-interpolation-info")' not in stats_lua
+    ):
         raise SystemExit("The pinned native FongMi MEMC/Android/OSD source contract is incomplete")
+    capture_markers = (
+        "MPVFLOW_FONGMI_SINGLE_OUTPUT_CAPTURE_V2",
+        "MPVFLOW_FONGMI_VO_SINGLE_OUTPUT_CAPTURE_V2",
+        "video/out/gpu_next/mpvflow_capture_io.c",
+        "fongmi-diagnostic-control-file",
+        "mp_motion_source_is_hdr",
+        "diagnostic_hdr_rejected = m->diagnostic_source_hdr",
+        "fongmi_capture_source_frame_route(mix, pair)",
+        "active_route",
+        "source_is_hdr",
+        "fongmi_diagnostic_actual_hdr_source_unsupported",
+    )
+    capture_source = motion + vo + meson
+    if debug_capture_enabled and not all(marker in capture_source for marker in capture_markers):
+        raise SystemExit("Debug runtime requested FongMi one-shot capture but its full source contract is missing")
+    if not debug_capture_enabled and any(marker in capture_source for marker in capture_markers):
+        raise SystemExit("FongMi one-shot capture unexpectedly present in a non-debug runtime")
     validate_fongmi_frame_priv_members(vo)
     mapper_sources = tuple(mpv_dir / "video/out/hwdec" / name for name in (
         "hwdec_aimagereader.c", "hwdec_aimagereader_vk.c",

@@ -356,8 +356,9 @@ PL_LIBAV_API void pl_map_hdr_metadata(struct pl_hdr_metadata *out,
         const AVHDRPlusColorTransformParams *pars = &data->dhp->params[0];
         if (pars->num_distribution_maxrgb_percentiles >
                 FF_ARRAY_ELEMS(pars->distribution_maxrgb) ||
-            pars->num_bezier_curve_anchors >
-                FF_ARRAY_ELEMS(pars->bezier_curve_anchors))
+            (pars->tone_mapping_flag == 1 &&
+             pars->num_bezier_curve_anchors >
+                 FF_ARRAY_ELEMS(pars->bezier_curve_anchors)))
             return;
 
         out->scene_max[0] = 10000 * av_q2d(pars->maxscl[0]);
@@ -997,8 +998,9 @@ static bool pl_avdovi_rational_valid(AVRational value)
     return value.den && isfinite(av_q2d(value));
 }
 
-static bool pl_avdovi_metadata_valid(const AVDOVIMetadata *data, size_t size,
-                                     int color_depth)
+// RPU pivots use the base-layer bit-depth domain. FEL may reconstruct a higher-depth
+// output frame from that base layer; the mapping below normalizes pivots by bl_bit_depth.
+static bool pl_avdovi_metadata_valid(const AVDOVIMetadata *data, size_t size)
 {
     if (!data || size < sizeof(*data) ||
         !pl_avdovi_range_valid(data, data->header_offset,
@@ -1016,7 +1018,6 @@ static bool pl_avdovi_metadata_valid(const AVDOVIMetadata *data, size_t size,
     const AVDOVIDataMapping *mapping = av_dovi_get_mapping(data);
     const AVDOVIColorMetadata *color = av_dovi_get_color(data);
     if (header->bl_bit_depth < 8 || header->bl_bit_depth > 16 ||
-        (color_depth && header->bl_bit_depth != color_depth) ||
         (!header->disable_residual_flag &&
          (header->el_bit_depth < 8 || header->el_bit_depth > 16)) ||
         header->coef_log2_denom > 63 ||
@@ -1243,17 +1244,8 @@ PL_LIBAV_API bool pl_map_avframe_dovi_metadata(struct pl_color_space *color,
                                     _Alignof(AVDOVIMetadata)))
         return false;
 
-    const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(frame->format);
-    if (desc && (desc->flags & AV_PIX_FMT_FLAG_HWACCEL) &&
-        frame->hw_frames_ctx)
-    {
-        const AVHWFramesContext *hwfc =
-            (const AVHWFramesContext *) frame->hw_frames_ctx->data;
-        desc = hwfc ? av_pix_fmt_desc_get(hwfc->sw_format) : NULL;
-    }
-    int color_depth = desc && desc->nb_components ? desc->comp[0].depth : 0;
     const AVDOVIMetadata *metadata = (const AVDOVIMetadata *) sd->data;
-    if (!pl_avdovi_metadata_valid(metadata, sd->size, color_depth))
+    if (!pl_avdovi_metadata_valid(metadata, sd->size))
         return false;
 
     pl_map_avdovi_metadata(color, repr, dovi, metadata);
@@ -1607,6 +1599,7 @@ PL_LIBAV_API bool pl_map_avframe_ex(pl_gpu gpu, struct pl_frame *out,
     struct pl_avframe_priv *priv = malloc(sizeof(*priv));
     if (!priv)
         return false;
+    *priv = (struct pl_avframe_priv) {0};
 
     pl_frame_from_avframe(out, frame);
     priv->avframe = av_frame_clone(frame);
@@ -1774,7 +1767,7 @@ PL_LIBAV_API bool pl_download_avframe(pl_gpu gpu,
 
         if (!ok) {
             for (int i = 0; i < p; i++) {
-                if (done[i])
+                if (!gpu->limits.callbacks || done[i])
                     continue;
                 while (!done[i])
                     pl_tex_poll(gpu, frame->planes[i].texture, UINT64_MAX);
@@ -1783,9 +1776,11 @@ PL_LIBAV_API bool pl_download_avframe(pl_gpu gpu,
         }
     }
 
-    for (int p = 0; p < frame->num_planes - 1; p++) {
-        while (!done[p])
-            pl_tex_poll(gpu, frame->planes[p].texture, UINT64_MAX);
+    if (gpu->limits.callbacks) {
+        for (int p = 0; p < frame->num_planes - 1; p++) {
+            while (!done[p])
+                pl_tex_poll(gpu, frame->planes[p].texture, UINT64_MAX);
+        }
     }
 
     return true;

@@ -50,10 +50,11 @@ import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.pow
 
-private const val SAMPLE_WIDTH = 96
-private const val SAMPLE_HEIGHT = 54
-private const val DISPLAY_WIDTH = 48
-private const val DISPLAY_HEIGHT = 27
+// Keep the ambient layer soft, but avoid enlarging a 48x27 bitmap across the display.
+private const val SAMPLE_WIDTH = 384
+private const val SAMPLE_HEIGHT = 216
+private const val DISPLAY_WIDTH = 192
+private const val DISPLAY_HEIGHT = 108
 private const val DECIMATION = 2
 
 private const val CAPTURE_INTERVAL_MS = 350L
@@ -362,16 +363,20 @@ private class VideoAmbientPipeline : AutoCloseable {
     }
   }
 
-  private fun publish(): VideoAmbientFrame {
-    encodeAmbientPixels(currentGrid, outputPixels)
-    outputBitmapIndex = outputBitmapIndex xor 1
-    val bitmap = outputBitmaps[outputBitmapIndex]
-    bitmap.setPixels(outputPixels, 0, DISPLAY_WIDTH, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT)
-    return VideoAmbientFrame(
-      frame = bitmap.asImageBitmap(),
-      base = colorFromLinear(currentBase),
-      accent = colorFromLinear(currentAccent),
-    )
+  private suspend fun publish(): VideoAmbientFrame {
+    withContext(Dispatchers.Default) {
+      encodeAmbientPixels(currentGrid, outputPixels)
+    }
+    return withContext(Dispatchers.Main.immediate) {
+      outputBitmapIndex = outputBitmapIndex xor 1
+      val bitmap = outputBitmaps[outputBitmapIndex]
+      bitmap.setPixels(outputPixels, 0, DISPLAY_WIDTH, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT)
+      VideoAmbientFrame(
+        frame = bitmap.asImageBitmap(),
+        base = colorFromLinear(currentBase),
+        accent = colorFromLinear(currentAccent),
+      )
+    }
   }
 
   private fun resetScene() {

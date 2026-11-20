@@ -155,6 +155,31 @@ static const char match_body[] = GLSL(
 );
 
 static const char refine_header[] = GLSL(
+    // MPVFLOW_REFINEMENT_BOUNDARY_STEP_V1: clamp only the normal scalar to the feasible image interval.
+    bool bounded_aperture_candidate(vec2 vector, vec2 normal, float requested_step,
+                                    vec2 p, vec2 size, out vec2 candidate)
+    {
+        float lower_step = -1e20;
+        float upper_step = 1e20;
+        for (int axis = 0; axis < 2; axis++) {
+            float direction = normal[axis];
+            float minimum = -p[axis];
+            float maximum = size[axis] - 1.0 - p[axis];
+            if (abs(direction) > 0.000001) {
+                float first_step = (minimum - vector[axis]) / direction;
+                float second_step = (maximum - vector[axis]) / direction;
+                lower_step = max(lower_step, min(first_step, second_step));
+                upper_step = min(upper_step, max(first_step, second_step));
+            } else if (vector[axis] < minimum || vector[axis] > maximum) {
+                return false;
+            }
+        }
+        if (lower_step > upper_step)
+            return false;
+        candidate = vector + normal * clamp(requested_step, lower_step, upper_step);
+        return true;
+    }
+
     // Keep FP32 ordering scores exact in the supported RGBA16F format.
     vec4 pack_evidence(float evidence)
     {
@@ -359,6 +384,8 @@ static const char refine_body[] = GLSL(
         }
         residual = patch_cost(second, p, vector);
         // Exact zero motion is already the unique closest zero-cost candidate.
+        bool aperture_ambiguous = false;
+        vec2 aperture_normal = vec2(0.0);
         if (any(notEqual(vector, vec2(0))) || residual != 0.0) {
             // Choose an equivalent lattice representative before interpolation mixes
             // tangentially ambiguous vectors. Sampled edges need not produce an
@@ -367,10 +394,19 @@ static const char refine_body[] = GLSL(
                 tensor = patch_tensor(first, p);
             float xx = tensor.x, xy = tensor.y, yy = tensor.z;
             float trace = xx + yy;
-            if (trace > 0.000001) {
-                vec2 axis = xx > yy ? vec2(1, 0) : vec2(0, 1);
-                float projected = xx > yy ? vector.x + xy / xx * vector.y
-                                          : vector.y + xy / yy * vector.x;
+            // MPVFLOW_REFINEMENT_APERTURE_NORMAL_V1: refine edge-ambiguous flow along the principal gradient normal.
+            float tensor_discriminant = sqrt(max((xx - yy) * (xx - yy) + 4.0 * xy * xy, 0.0));
+            float lambda_min = max(0.5 * (trace - tensor_discriminant), 0.0);
+            float lambda_max = max(0.5 * (trace + tensor_discriminant), 0.0);
+            aperture_ambiguous = trace > 0.000001 &&
+                                 lambda_max > 0.000001 &&
+                                 lambda_min < 0.12 * lambda_max;
+            if (aperture_ambiguous) {
+                aperture_normal = abs(xy) > 0.000001
+                    ? normalize(vec2(lambda_max - yy, xy))
+                    : (xx >= yy ? vec2(1, 0) : vec2(0, 1));
+                // MPVFLOW_REFINEMENT_APERTURE_TANGENT_V1: preserve inherited tangential flow; refine only its normal projection.
+                float projected = dot(vector, aperture_normal);
                 // Bound acceptance by the original minimum, then rank candidates.
                 float limit = residual + 0.000001;
                 float lowest = 1e20;
@@ -379,10 +415,14 @@ static const char refine_body[] = GLSL(
                 vec2 selected = vector;
                 bool unique = false;
                 for (int offset = -1; offset <= 1; offset++) {
-                    vec2 candidate = clamp(axis * (round(projected) + float(offset)),
-                                           -p, size - 1.0 - p);
+                    vec2 candidate;
+                    if (!bounded_aperture_candidate(
+                            vector, aperture_normal,
+                            round(projected) + float(offset) - projected,
+                            p, size, candidate))
+                        continue;
                     float cost = patch_cost(second, p, candidate);
-                    float delta = abs(dot(candidate, axis) - projected);
+                    float delta = abs(dot(candidate, aperture_normal) - projected);
                     float norm = dot(candidate, candidate);
                     if (cost > limit)
                         continue;
@@ -408,17 +448,20 @@ static const char refine_body[] = GLSL(
         }
         // Dense support can observe motion missed by central-difference tensors.
         // Resolve equivalent axis vectors without increasing the original cost.
-        if (all(equal(motion_scale, vec2(1))) && any(notEqual(vector, vec2(0)))) {
+        if (all(equal(motion_scale, vec2(1))) && any(notEqual(vector, vec2(0))) && aperture_ambiguous) {
             vec2 cost = dense_pair_cost(first, second, p, vector);
             if (cost.x > cost.y) {
                 float limit = cost.y + 0.000001;
                 vec2 original = vector;
                 float magnitude = dot(vector, vector);
                 float distance = 0.0;
-                for (int index = 0; index < 2 * (2 * settings.z + 1); index++) {
-                    int offset = index % (2 * settings.z + 1) - settings.z;
-                    vec2 axis = index < 2 * settings.z + 1 ? vec2(1, 0) : vec2(0, 1);
-                    vec2 candidate = clamp(axis * float(offset), -p, size - 1.0 - p);
+                for (int offset = -settings.z; offset <= settings.z; offset++) {
+                    vec2 candidate;
+                    if (!bounded_aperture_candidate(
+                            vector, aperture_normal,
+                            float(offset) - dot(vector, aperture_normal),
+                            p, size, candidate))
+                        continue;
                     float norm = dot(candidate, candidate);
                     float delta = dot(candidate - original, candidate - original);
                     if ((norm < magnitude || (norm == magnitude && delta < distance)) &&
@@ -474,7 +517,9 @@ static const char reconstruction_body[] = GLSL(
                 ivec2 q = clamp(pixel + ivec2(x, y), ivec2(0), grid - 1);
                 float evidence = unpack_evidence(texelFetch(evidence_map, q, 0));
                 float distance = float(x * x + y * y);
-                if (!(evidence > best || (evidence == best && distance < nearest)))
+                // MPVFLOW_RECONSTRUCTION_POSITIVE_EVIDENCE_V1: only propagate measured motion.
+                if (!(evidence > 0.0 &&
+                      (evidence > best || (evidence == best && distance < nearest))))
                     continue;
                 vec2 position = (vec2(q) + 0.5) / vec2(grid);
                 vec4 value = texelFetch(forward, q, 0);
@@ -504,6 +549,9 @@ static const char scene_body[] = GLSL(
     }
     vec3 mean0 = vec3(0.0);
     vec3 mean1 = vec3(0.0);
+    float tile_luma_delta[16];
+    for (int i = 0; i < 16; i++)
+        tile_luma_delta[i] = 0.0;
     float residual = 0.0;
     for (int y = 0; y < 16; y++) {
         for (int x = 0; x < 16; x++) {
@@ -516,6 +564,8 @@ static const char scene_body[] = GLSL(
             hist1[ib] += 1.0;
             mean0 += a;
             mean1 += b;
+            int tile_index = (y / 4) * 4 + x / 4;
+            tile_luma_delta[tile_index] += dot(a - b, vec3(0.2126, 0.7152, 0.0722));
             residual += 0.5 * (textureLod(forward, uv, 0.0).z +
                                textureLod(backward, uv, 0.0).z);
         }
@@ -526,10 +576,22 @@ static const char scene_body[] = GLSL(
     vec3 mean_distance = abs(mean0 - mean1) / 256.0;
     float cut = max(histogram_distance / 512.0,
                     max(mean_distance.r, max(mean_distance.g, mean_distance.b)));
-    // A global brightness change contributes matching error without a cut.
-    float brightness_error = dot(mean_distance, vec3(0.25)) +
-        0.25 * abs(dot((mean0 - mean1) / 256.0, vec3(0.2126, 0.7152, 0.0722)));
-    color = vec4(cut, max(0.0, residual / 256.0 - brightness_error), 0.0, 1.0);
+    // MPVFLOW_SCENE_CUT_SPATIAL_V1: detect spatially rearranged cuts with shared colors.
+    float global_luma_delta = dot((mean0 - mean1) / 256.0,
+                                  vec3(0.2126, 0.7152, 0.0722));
+    float scene_brightness_error = dot(mean_distance, vec3(0.25)) +
+        0.25 * abs(global_luma_delta);
+    float scene_residual = max(0.0, residual / 256.0 - scene_brightness_error);
+    float spatial_cut = 0.0;
+    for (int i = 0; i < 16; i++) {
+        float local_luma_delta = abs(tile_luma_delta[i] / 16.0 - global_luma_delta);
+        if (local_luma_delta > 0.15)
+            spatial_cut += 1.0 / 16.0;
+    }
+    // Tile disagreement alone is ambiguous; require failed motion matching to distinguish cuts from translations.
+    bool spatial_corroborated = spatial_cut > 0.45 && scene_residual > 0.04;
+    cut = max(cut, spatial_corroborated ? 0.46 : min(spatial_cut, 0.44));
+    color = vec4(cut, scene_residual, 0.0, 1.0);
 );
 
 static const char synthesis_header[] = GLSL(
@@ -544,23 +606,193 @@ static const char synthesis_header[] = GLSL(
         return (1.0 - smoothstep(0.01, 0.08, vector.z)) *
                smoothstep(0.01, 0.15, vector.w);
     }
+
+    float relative_fit(float stationary_error, float warped_error)
+    {
+        return stationary_error > warped_error
+            ? (stationary_error - warped_error) / stationary_error : 0.0;
+    }
+
+    float neighborhood_quality(sampler2D field, vec2 uv, vec2 center)
+    {
+        ivec2 size = textureSize(field, 0);
+        ivec2 pixel = ivec2(uv * vec2(size));
+        ivec2 last = size - ivec2(1);
+        vec2 n0 = texelFetch(field, clamp(pixel + ivec2(-2, 0), ivec2(0), last), 0).xy;
+        vec2 n1 = texelFetch(field, clamp(pixel + ivec2(0, -2), ivec2(0), last), 0).xy;
+        vec2 n2 = texelFetch(field, clamp(pixel + ivec2(0, 2), ivec2(0), last), 0).xy;
+        vec2 n3 = texelFetch(field, clamp(pixel + ivec2(2, 0), ivec2(0), last), 0).xy;
+        float spread = 0.25 * (length(n0 - center) + length(n1 - center) +
+                               length(n2 - center) + length(n3 - center));
+        return 1.0 - smoothstep(0.65, 2.8, spread);
+    }
+
+    // MPVFLOW_SPATIAL_MEDOID_FALLBACK_V1: borrow only a supported neighboring motion pair when this pixel's path is weak.
+    float motion_pair_distance(vec4 f0, vec4 r0, vec4 f1, vec4 r1)
+    {
+        return 0.5 * (length(f0.xy - f1.xy) + length(r0.xy - r1.xy));
+    }
+
+    float motion_pair_support(vec4 f, vec4 r)
+    {
+        if (any(isnan(f)) || any(isinf(f)) || any(isnan(r)) || any(isinf(r)))
+            return 0.0;
+        return clamp(max(min(f.z, r.z), min(f.w, r.w)), 0.0, 1.0);
+    }
+
+    void motion_field_medoid(sampler2D warp0, sampler2D warp1, vec2 uv,
+                             vec4 center0, vec4 center1,
+                             out vec2 selected0, out vec2 selected1,
+                             out float selected_support)
+    {
+        ivec2 size = textureSize(warp0, 0);
+        ivec2 pixel = clamp(ivec2(uv * vec2(size)), ivec2(0), size - ivec2(1));
+        vec4 forward[5];
+        vec4 backward[5];
+        forward[0] = center0;
+        backward[0] = center1;
+        forward[1] = texelFetch(warp0, clamp(pixel + ivec2(-1, 0), ivec2(0), size - ivec2(1)), 0);
+        backward[1] = texelFetch(warp1, clamp(pixel + ivec2(-1, 0), ivec2(0), size - ivec2(1)), 0);
+        forward[2] = texelFetch(warp0, clamp(pixel + ivec2(1, 0), ivec2(0), size - ivec2(1)), 0);
+        backward[2] = texelFetch(warp1, clamp(pixel + ivec2(1, 0), ivec2(0), size - ivec2(1)), 0);
+        forward[3] = texelFetch(warp0, clamp(pixel + ivec2(0, -1), ivec2(0), size - ivec2(1)), 0);
+        backward[3] = texelFetch(warp1, clamp(pixel + ivec2(0, -1), ivec2(0), size - ivec2(1)), 0);
+        forward[4] = texelFetch(warp0, clamp(pixel + ivec2(0, 1), ivec2(0), size - ivec2(1)), 0);
+        backward[4] = texelFetch(warp1, clamp(pixel + ivec2(0, 1), ivec2(0), size - ivec2(1)), 0);
+
+        int best_index = 0;
+        float best_cost = 1e20;
+        float best_support = 0.0;
+        for (int i = 0; i < 5; i++) {
+            float candidate_support = motion_pair_support(forward[i], backward[i]);
+            if (candidate_support <= 0.0)
+                continue;
+            float total = 0.0;
+            float cost = 0.0;
+            for (int j = 0; j < 5; j++) {
+                float support = motion_pair_support(forward[j], backward[j]);
+                float distance = motion_pair_distance(forward[i], backward[i], forward[j], backward[j]);
+                if (support > 0.0 && !(isnan(distance) || isinf(distance))) {
+                    cost += support * distance;
+                    total += support;
+                }
+            }
+            if (total > 0.0)
+                cost /= total;
+            else
+                cost = 1e20;
+            if (cost < best_cost || (cost == best_cost && candidate_support > best_support)) {
+                best_index = i;
+                best_cost = cost;
+                best_support = candidate_support;
+            }
+        }
+
+        float agreeing_support = 0.0;
+        for (int i = 0; i < 5; i++) {
+            float support = motion_pair_support(forward[i], backward[i]);
+            float distance = motion_pair_distance(forward[best_index], backward[best_index],
+                                                  forward[i], backward[i]);
+            if (support > 0.0 && !(isnan(distance) || isinf(distance)))
+                agreeing_support += support * (1.0 - smoothstep(0.65, 2.8, distance));
+        }
+        selected0 = forward[best_index].xy;
+        selected1 = backward[best_index].xy;
+        // Three supported samples are the smallest local majority in this five-sample cross.
+        selected_support = best_support * clamp(agreeing_support / 3.0, 0.0, 1.0);
+    }
+
+    float spatial_trust_consensus(sampler2D warp0, sampler2D warp1,
+                                  vec2 uv, vec4 f, vec4 r)
+    {
+        vec2 texel_step = 1.0 / vec2(textureSize(warp0, 0));
+        vec4 f0 = textureLod(warp0, uv + vec2(-texel_step.x, 0.0), 0.0);
+        vec4 r0 = textureLod(warp1, uv + vec2(-texel_step.x, 0.0), 0.0);
+        vec4 f1 = textureLod(warp0, uv + vec2( texel_step.x, 0.0), 0.0);
+        vec4 r1 = textureLod(warp1, uv + vec2( texel_step.x, 0.0), 0.0);
+        vec4 f2 = textureLod(warp0, uv + vec2(0.0, -texel_step.y), 0.0);
+        vec4 r2 = textureLod(warp1, uv + vec2(0.0, -texel_step.y), 0.0);
+        vec4 f3 = textureLod(warp0, uv + vec2(0.0,  texel_step.y), 0.0);
+        vec4 r3 = textureLod(warp1, uv + vec2(0.0,  texel_step.y), 0.0);
+        float w0 = (any(isnan(f0)) || any(isinf(f0)) || any(isnan(r0)) || any(isinf(r0))) ? 0.0 :
+            1.0 - smoothstep(0.65, 2.8,
+            0.5 * (length(f0.xy - f.xy) + length(r0.xy - r.xy)));
+        float w1 = (any(isnan(f1)) || any(isinf(f1)) || any(isnan(r1)) || any(isinf(r1))) ? 0.0 :
+            1.0 - smoothstep(0.65, 2.8,
+            0.5 * (length(f1.xy - f.xy) + length(r1.xy - r.xy)));
+        float w2 = (any(isnan(f2)) || any(isinf(f2)) || any(isnan(r2)) || any(isinf(r2))) ? 0.0 :
+            1.0 - smoothstep(0.65, 2.8,
+            0.5 * (length(f2.xy - f.xy) + length(r2.xy - r.xy)));
+        float w3 = (any(isnan(f3)) || any(isinf(f3)) || any(isnan(r3)) || any(isinf(r3))) ? 0.0 :
+            1.0 - smoothstep(0.65, 2.8,
+            0.5 * (length(f3.xy - f.xy) + length(r3.xy - r.xy)));
+        float s0 = 0.0;
+        float s1 = 0.0;
+        float s2 = 0.0;
+        float s3 = 0.0;
+        if (!(any(isnan(f0)) || any(isinf(f0)) || any(isnan(r0)) || any(isinf(r0))))
+            s0 = max(min(f0.z, r0.z), min(f0.w, r0.w));
+        if (!(any(isnan(f1)) || any(isinf(f1)) || any(isnan(r1)) || any(isinf(r1))))
+            s1 = max(min(f1.z, r1.z), min(f1.w, r1.w));
+        if (!(any(isnan(f2)) || any(isinf(f2)) || any(isnan(r2)) || any(isinf(r2))))
+            s2 = max(min(f2.z, r2.z), min(f2.w, r2.w));
+        if (!(any(isnan(f3)) || any(isinf(f3)) || any(isnan(r3)) || any(isinf(r3))))
+            s3 = max(min(f3.z, r3.z), min(f3.w, r3.w));
+        float total = w0 + w1 + w2 + w3;
+        if (total < 0.25)
+            return -1.0;
+        return clamp((s0 * w0 + s1 * w1 + s2 * w2 + s3 * w3) / total,
+                     0.0, 1.0);
+    }
 );
 
 static const char warp_body[] = GLSL(
     vec2 uv = (vec2(gl_GlobalInvocationID.xy) + 0.5) / map_size;
+    vec4 initial_field = textureLod(forward, uv, 0.0);
+    vec2 initial_motion = initial_field.xy;
     vec2 source = uv;
-    for (int i = 0; i < 4; i++)
-        source = uv - weight * textureLod(forward, source, 0.0).xy / map_size;
-    vec4 f = textureLod(forward, source, 0.0);
-    vec2 displacement = -weight * f.xy;
+    // MPVFLOW_WARP_BEST_INVERSE_RESIDUAL_V1: keep the best closure among the initial and four solved positions.
+    vec2 best_source = source;
+    vec4 f = initial_field;
+    vec4 best_field = f;
+    float best_residual = 1e20;
+    float initial_residual = length((source + weight * f.xy / map_size - uv) * output_size);
+    if (!(any(isnan(f)) || any(isinf(f))) &&
+        !isnan(initial_residual) && !isinf(initial_residual))
+        best_residual = initial_residual;
+    for (int i = 0; i < 4; i++) {
+        source = uv - weight * f.xy / map_size;
+        f = textureLod(forward, source, 0.0);
+        float candidate_residual = length((source + weight * f.xy / map_size - uv) * output_size);
+        if (!(any(isnan(f)) || any(isinf(f))) &&
+            !isnan(candidate_residual) && !isinf(candidate_residual) &&
+            candidate_residual < best_residual) {
+            best_source = source;
+            best_field = f;
+            best_residual = candidate_residual;
+        }
+    }
+    source = best_source;
+    f = best_field;
+    vec2 motion_vector = f.xy;
+    // Preserve the selected solved coordinate in map-pixel units for synthesis.
+    vec2 displacement = (best_source - uv) * map_size;
     f.xy /= map_size;
     vec4 reverse = textureLod(backward, source + f.xy, 0.0);
     reverse.xy /= map_size;
     float cycle = length((f.xy + reverse.xy) * map_size);
-    float residual = length((source + weight * f.xy - uv) * output_size);
-    float trust = quality(f);
+    float residual = best_residual;
     float reliable = 1.0 - smoothstep(0.001, 0.01, max(f.z, reverse.z));
     reliable *= 1.0 - smoothstep(0.1, 0.5, cycle);
+    // MPVFLOW_WARP_TRAJECTORY_COHERENCE_V1: gate primary warp and uncertain recovery on path stability.
+    float trajectory_error = abs(weight) * length(motion_vector - initial_motion);
+    float trajectory_quality = 1.0 - smoothstep(0.125, 0.5, trajectory_error);
+    if (isnan(trajectory_quality) || isinf(trajectory_quality))
+        trajectory_quality = 0.0;
+    reliable *= trajectory_quality;
+    float trust = quality(f);
+    // MPVFLOW_WARP_PRIMARY_TRUST_CAP_V1: unstable inverse paths cannot bypass the gate via primary match confidence.
+    trust = min(trust, trajectory_quality);
     float geometry = (1.0 - smoothstep(0.5, 1.5, cycle)) *
                      (1.0 - smoothstep(0.25, 1.0, residual));
     geometry *= min(support(source, map_size), support(source + f.xy, map_size));
@@ -568,8 +800,6 @@ static const char warp_body[] = GLSL(
         any(isnan(reverse)) || any(isinf(reverse)) ||
         isnan(geometry) || isinf(geometry))
         geometry = 0.0;
-    // Use the solved vector directly. Subtracting normalized coordinates
-    // loses precision before half-float storage, even for integer translations.
     color = vec4(displacement,
                  trust * geometry, reliable * geometry);
 );
@@ -595,19 +825,148 @@ static const char synthesis_body[] = GLSL(
         vec2 scale = source_size / motion_size;
         vec4 warped0 = sample_rgba(first, source_position + f.xy * scale);
         vec4 warped1 = sample_rgba(second, source_position + r.xy * scale);
-        vec3 conflict = abs(warped0.rgb - warped1.rgb);
+        vec3 difference = warped0.rgb - warped1.rgb;
+        vec3 conflict = abs(difference);
         float color_error = max(conflict.r, max(conflict.g, conflict.b));
-        // An edge can constrain motion without a unique tangential match.
-        // Recover it only when both directions and full-size colors agree.
+        float luma_error = abs(dot(warped0.rgb, vec3(0.299, 0.587, 0.114)) -
+                               dot(warped1.rgb, vec3(0.299, 0.587, 0.114)));
+        float chroma_error = max(abs((warped0.r - warped0.g) - (warped1.r - warped1.g)),
+                                 abs((warped0.b - warped0.g) - (warped1.b - warped1.g)));
+        // Keep the old common-support certificate; boundary evidence only attenuates it.
         float reliable = min(f.w, r.w) *
                          (1.0 - smoothstep(0.002, 0.02, color_error));
         float trust = max(min(f.z, r.z), reliable);
-        trust *= 1.0 - smoothstep(0.03, 0.15,
-                                  color_error);
+        float boundary_trust = 1.0 - smoothstep(0.04, 0.08, luma_error);
+        boundary_trust *= 1.0 - smoothstep(0.08, 0.12, color_error) *
+                          smoothstep(0.03, 0.06, chroma_error);
+        boundary_trust *= 1.0 - (1.0 - smoothstep(0.04, 0.08, min(f.w, r.w))) *
+                          smoothstep(0.06, 0.10, color_error);
+        float boundary_activation = max(smoothstep(0.04, 0.06, luma_error),
+                                        smoothstep(0.06, 0.08, color_error));
+        float region3_local_trust = 1.0;
+        float local_quality = 1.0;
+        // Sample local vectors only where photometric disagreement makes a seam likely.
+        if (boundary_activation > 0.0) {
+            local_quality = min(neighborhood_quality(forward, uv, f.xy),
+                                neighborhood_quality(backward, uv, r.xy));
+            boundary_trust *= mix(1.0, smoothstep(0.45, 0.70, local_quality),
+                                  boundary_activation);
+            region3_local_trust = mix(1.0, smoothstep(0.30, 0.75, local_quality),
+                                      boundary_activation);
+        }
+        // Fade toward source-frame crossfade on conflict instead of forming block seams.
+        // MPVFLOW_ARTIFACT_GUARDS_V4 keeps the color taper continuous through 0.30.
+        trust *= 1.0 - smoothstep(0.03, 0.30,
+                                   color_error);
+        trust *= boundary_trust * region3_local_trust;
+        // MPVFLOW_SPATIAL_TRUST_DOWNWARD_CAP_V3: never restore confidence rejected by this pixel's photometric checks.
+        // MPVFLOW_SPATIAL_VISIBILITY_CAP_V1: preserve the same downward-only attenuation for independent source weights.
+        float spatial_visibility_scale = 1.0;
+        if (boundary_activation > 0.0) {
+            float spatial_consensus = spatial_trust_consensus(forward, backward, uv, f, r);
+            if (spatial_consensus >= 0.0) {
+                float spatial_island = max(0.0, clamp(trust, 0.0, 1.0) - spatial_consensus);
+                float spatial_guard_weight = 0.75 * boundary_activation *
+                                             smoothstep(0.08, 0.35, spatial_island);
+                float trust_before_spatial = clamp(trust, 0.0, 1.0);
+                trust = mix(trust, min(trust, spatial_consensus),
+                            clamp(spatial_guard_weight, 0.0, 0.75));
+                float trust_after_spatial = clamp(trust, 0.0, 1.0);
+                if (trust_before_spatial > 0.000001)
+                    spatial_visibility_scale = clamp(trust_after_spatial / trust_before_spatial, 0.0, 1.0);
+            }
+        }
+        vec2 local_motion_delta = (r.xy - f.xy) * scale;
+        float local_motion_length = length(local_motion_delta);
+        vec2 local_motion_offset = local_motion_delta /
+                                   max(local_motion_length, 0.0001) *
+                                   min(0.75, 0.08 * local_motion_length);
+        float local_motion_softness = 0.24 * (1.0 - clamp(trust, 0.0, 1.0)) *
+                                      boundary_activation * min(f.w, r.w) *
+                                      smoothstep(0.45, 0.70, local_quality) *
+                                      smoothstep(0.75, 3.0, local_motion_length);
+        if (isnan(local_motion_softness) || isinf(local_motion_softness))
+            local_motion_softness = 0.0;
         if (isnan(trust) || isinf(trust))
             trust = 0.0;
-        color = mix(mix(original0, original1, alpha),
-                     mix(warped0, warped1, alpha), clamp(trust, 0.0, 1.0));
+        // MPVFLOW_LOCAL_MOTION_SOFTENING_V1: two bounded directional taps soften only supported motion fallback.
+        vec4 source_blend = mix(original0, original1, alpha);
+        if (local_motion_softness > 0.001) {
+            vec4 soft0 = sample_rgba(first, source_position + f.xy * scale + local_motion_offset);
+            vec4 soft1 = sample_rgba(second, source_position + r.xy * scale - local_motion_offset);
+            vec4 motion_blend = mix(mix(warped0, soft0, 0.5),
+                                    mix(warped1, soft1, 0.5), alpha);
+            source_blend = mix(source_blend, motion_blend, local_motion_softness);
+        }
+        if (trust < 0.999 && boundary_activation > 0.0 && local_quality < 0.70) {
+            vec2 coherent0, coherent1;
+            float coherent_support;
+            motion_field_medoid(forward, backward, uv, f, r, coherent0, coherent1, coherent_support);
+            float coherent_delta = 0.5 * (length(coherent0 - f.xy) + length(coherent1 - r.xy));
+            vec4 coherent_warped0 = sample_rgba(first, source_position + coherent0 * scale);
+            vec4 coherent_warped1 = sample_rgba(second, source_position + coherent1 * scale);
+            float coherent_error = max(max(abs(coherent_warped0.r - coherent_warped1.r),
+                                           abs(coherent_warped0.g - coherent_warped1.g)),
+                                       abs(coherent_warped0.b - coherent_warped1.b));
+            float coherent_fallback = (1.0 - clamp(trust, 0.0, 1.0)) * coherent_support *
+                                      smoothstep(0.5, 1.5, coherent_delta) *
+                                      (1.0 - smoothstep(0.03, 0.30, coherent_error));
+            source_blend = mix(source_blend, mix(coherent_warped0, coherent_warped1, alpha),
+                               clamp(coherent_fallback, 0.0, 1.0));
+        }
+        // MPVFLOW_SOURCE_SPECIFIC_VISIBILITY_V1: retain each direction's supported trajectory through conflict.
+        vec2 phase = vec2(1.0 - alpha, alpha);
+        float certified = clamp(min(f.w, r.w), 0.0, 1.0);
+        float unique = min(min(f.z, r.z), certified);
+        float strongest = max(f.z, r.z);
+        float source_aperture = certified * (1.0 - smoothstep(0.002, 0.02, color_error));
+        float source_reliable = max(unique, source_aperture);
+        float conflict_weight = smoothstep(0.03, 0.15, color_error);
+        float phase_alpha = clamp(alpha, 0.000001, 0.999999);
+        float phase_remaining = 1.0 - phase_alpha;
+        vec2 projection_ratio = vec2(phase_remaining / phase_alpha,
+                                     phase_alpha / phase_remaining);
+        float stationary_error = 0.0;
+        if ((strongest > source_reliable ||
+             (strongest > 0.0 && conflict_weight > 0.0)) &&
+            !all(equal(original0.rgb, original1.rgb))) {
+            vec3 stationary = abs(original0.rgb - original1.rgb);
+            stationary_error = max(stationary.r, max(stationary.g, stationary.b));
+        }
+        vec2 source_confidence = max(vec2(f.z, r.z) *
+                                     relative_fit(stationary_error, color_error),
+                                     source_reliable);
+        vec2 visibility = phase * source_confidence * (1.0 - conflict_weight);
+        visibility *= 1.0 - smoothstep(0.03, 0.30, color_error);
+        visibility *= clamp(boundary_trust * region3_local_trust, 0.0, 1.0);
+        if (conflict_weight > 0.0 && stationary_error > 0.0 &&
+            alpha > 0.000001 && alpha < 0.999999) {
+            vec4 paired1 = sample_rgba(second, source_position -
+                                       f.xy * scale * projection_ratio.x);
+            vec4 paired0 = sample_rgba(first, source_position -
+                                       r.xy * scale * projection_ratio.y);
+            vec3 error0 = abs(warped0.rgb - paired1.rgb);
+            vec3 error1 = abs(paired0.rgb - warped1.rgb);
+            vec2 paired_error = vec2(max(error0.r, max(error0.g, error0.b)),
+                                     max(error1.r, max(error1.g, error1.b)));
+            vec2 support = vec2(1.0) - smoothstep(vec2(0.03), vec2(0.15), paired_error);
+            vec2 evidence = support * vec2(relative_fit(stationary_error, paired_error.x),
+                                           relative_fit(stationary_error, paired_error.y));
+            if (f.z <= 0.0) evidence.x = 0.0;
+            if (r.z <= 0.0) evidence.y = 0.0;
+            visibility += conflict_weight * phase * vec2(f.z, r.z) * evidence;
+        }
+        visibility *= clamp(spatial_visibility_scale, 0.0, 1.0);
+        if (any(isnan(visibility)) || any(isinf(visibility)))
+            visibility = vec2(0.0);
+        visibility = clamp(visibility, vec2(0.0), vec2(1.0));
+        float visibility_sum = visibility.x + visibility.y;
+        if (visibility_sum > 1.0) {
+            visibility /= visibility_sum;
+            visibility_sum = 1.0;
+        }
+        color = source_blend * (1.0 - visibility_sum) +
+                warped0 * visibility.x + warped1 * visibility.y;
     }
 );
 
@@ -697,9 +1056,25 @@ static bool downsample(struct mp_motion *m, pl_tex source, pl_tex target)
     return dispatch(m, target, &(struct pl_custom_shader) {
         .description = "motion pyramid sampling",
         .body = GLSL(
-            vec2 p = (vec2(gl_GlobalInvocationID.xy) + 0.5) *
-                     vec2(textureSize(source, 0)) / output_size - 0.5;
-            color = vec4(sample_color(source, p), 1.0);
+            vec2 source_scale = vec2(textureSize(source, 0)) / output_size;
+            vec2 p = (vec2(gl_GlobalInvocationID.xy) + 0.5) * source_scale - 0.5;
+            // MPVFLOW_ANALYSIS_DOWNSAMPLE_ANTIALIAS_V1: average bounded bilinear sub-block centers before motion matching.
+            vec2 tap_count = clamp(ceil(source_scale / 2.0), vec2(1.0), vec2(4.0));
+            vec3 sampled = vec3(0.0);
+            float sample_weight = 0.0;
+            for (int y = 0; y < 4; y++) {
+                if (float(y) >= tap_count.y)
+                    continue;
+                for (int x = 0; x < 4; x++) {
+                    if (float(x) >= tap_count.x)
+                        continue;
+                    vec2 subpixel = (vec2(x, y) + 0.5) / tap_count - 0.5;
+                    sampled += sample_color(source, p + subpixel * source_scale);
+                    sample_weight += 1.0;
+                }
+            }
+            sampled /= max(sample_weight, 1.0);
+            color = vec4(sampled, 1.0);
         ),
         .descriptors = &desc, .num_descriptors = 1,
         .variables = &var, .num_variables = 1,
@@ -737,7 +1112,13 @@ static bool analyze(struct mp_motion *m, pl_tex first, pl_tex second,
     height = fmax(8, lround(height * scale));
     pl_tex inputs[2] = {first, second};
     for (int level = 0; level < LEVELS; level++) {
-        int spacing = level == LEVELS - 1 ? 4 : 8;
+        // MPVFLOW_FINE_MOTION_GRID_V1: halve finest-level vector-cell pitch
+        // without enlarging the analysis image.
+        int spacing = (level == LEVELS - 1 || level == 0) ? 4 : 8;
+        // MPVFLOW_HIGH_RES_FINE_GRID_V1: refine only the finest grid when the
+        // 480px analysis cap downsamples 1440px+ source frames.
+        if (level == 0 && scale < 0.333334)
+            spacing = 3;
         for (int direction = 0; direction < 2; direction++) {
             if (!recreate(m, &m->images[level][direction], width, height) ||
                 !recreate(m, &m->vectors[level][direction],
@@ -1109,11 +1490,13 @@ static bool render_motion(struct mp_motion *m,
     bool synthesis_ok = destination->params.renderable
         ? dispatch(m, destination, &(struct pl_custom_shader) {
         .description = "motion compensated interpolation",
+        .header = synthesis_header,
         .body = synthesis_body,
         .descriptors = desc, .num_descriptors = 5,
         .variables = vars, .num_variables = 4,
     }) : dispatch_storage(m, destination, &(struct pl_custom_shader) {
         .description = "motion compensated interpolation",
+        .header = synthesis_header,
         .body = synthesis_body,
         .descriptors = desc, .num_descriptors = 5,
         .variables = vars, .num_variables = 4,

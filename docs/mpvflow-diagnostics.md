@@ -1,8 +1,15 @@
 # MPVFlow diagnostics and presentation checks
 
-The **Start marked capture** and **Start paired Soft Blend comparison** controls have been removed from the player's More sheet. Normal playback no longer exposes this capture panel. The capture implementation is retained for diagnostic tooling and existing captures; the legacy capture procedures below describe older debug builds, not controls available in the current player. For current on-device investigation, export **Debug Logs** for each engine playing the same scene. The separate Perfetto procedure below remains applicable.
+The current debug APK does **not** expose FongMi one-shot capture. The feature remains disabled because the active MPVRx-pinned FongMi runtime is not instrumented for diagnostic readback; ordinary debug and release builds do not include diagnostic capture UI or native shader instrumentation. Older diagnostic builds may have exposed the one-shot flow described below, but it is not available in the current build. Ordinary marked capture and paired Soft Blend comparison controls are also unavailable.
 
-## Legacy debug builds: capture a marked moment from each engine
+## Older diagnostic builds: one-shot FongMi capture (unavailable in the current build)
+
+1. Install the diagnostic debug APK, open the video in **MPV**, and seek to just before the artifact. Open **More** and press **Capture one bad frame**.
+2. Play through the troublesome moment. The next eligible FongMi interpolation output is captured; the session automatically completes after that one sample. If no eligible output arrives, press **Stop capture** or let the bounded watchdog end the request.
+3. The local ZIP contains `source0`, `source1`, `pre_confidence_warp` (before confidence weighting), `fallback_color` (source blend), `trust_map` (the clamped trust value actually used by the compositor), and `synthesized` (the FongMi result before final display conversion). When needed, all six RGBA8 planes are sampled onto the same aspect-preserving capture grid; the manifest records both original source dimensions and captured dimensions, along with source/output PTS, interpolation alpha, motion-grid size, route IDs, color-transfer notes, and any missing channels.
+4. The one-shot writer permits one pair and one output. Source images up to 4096×4096 (16,777,216 pixels) are accepted; captured planes are bounded to 1920 pixels per side, 2,073,600 pixels each, and a six-plane-plus-readback working set of at most 64 MiB. Vulkan readback is required; HDR input is refused rather than clipped or mislabeled. The ZIP is saved to `Downloads/Mpv∞/Flow Diagnostics/`; nothing is uploaded automatically. Captured images may contain video content, so keep the ZIP private unless you choose to share it.
+
+## Older debug builds: capture a marked moment from each engine
 
 Run the same SDR scene twice—once with **MPV** and once with **Media3**—so the two engines can be compared independently.
 

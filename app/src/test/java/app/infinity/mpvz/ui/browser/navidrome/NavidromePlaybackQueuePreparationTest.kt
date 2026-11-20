@@ -80,7 +80,7 @@ class NavidromePlaybackQueuePreparationTest {
       .substringBefore("val err = lastError")
     val savedServer = successfulConnection.indexOf("val savedServer = successfulServer.copy(id = savedId)")
     val activation = successfulConnection.indexOf("activateServer(savedServer, forceLoad = true)")
-    
+
 
     assertTrue(savedServer >= 0)
     assertTrue("Successful login must use the shared server activation path", activation > savedServer)

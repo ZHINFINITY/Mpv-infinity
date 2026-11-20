@@ -18,7 +18,7 @@ C_FIXTURE = r'''#include "mpvflow_capture_io.h"
 
 static struct MPVFlowCaptureMeta meta = {
     "mpv", "vulkan", 1920, 1080, 1920, 1080, 1920, 1080, 480, 270,
-    10.25, 11.5, 10.75, .5, "{\"x\":\"q\\\"\\n\"}", 0, 0, 0, 0
+    10.25, 11.5, 10.75, .5, "{\"x\":\"q\\\"\\n\"}", 0, 0, 0, 0, 0
 };
 
 int main(int argc, char **argv) {
@@ -55,6 +55,8 @@ int main(int argc, char **argv) {
             assert(!mpvflow_capture_io_write(session, pair, sample, "synthesized",
                 &meta, px, 2, 2, reason, sizeof(reason)));
     }
+    assert(mpvflow_capture_io_write(session, 0, 0, "trust_map",
+        &meta, px, 2, 2, reason, sizeof(reason)));
     assert(mpvflow_capture_io_write(session, 0, 0, "synthesized",
         &meta, px, 2, 2, reason, sizeof(reason)));
     assert(mpvflow_capture_io_write(session, 8, 0, "synthesized",
@@ -87,7 +89,7 @@ int main(int argc, char **argv) {
         "mpv", "vulkan", 2, 2, 2, 2, 640, 360, 160, 90,
         20.0, 20.04, 20.02, .5,
         "{\"visibility_resolver\":false,\"preserve_motion_blend_on_conflict\":true}",
-        1, 0, 0, 1
+        1, 0, 0, 1, 0
     };
     struct MPVFlowCaptureMeta invalid_paired_meta = paired_meta;
     invalid_paired_meta.effective_settings_json =
@@ -148,9 +150,85 @@ int main(int argc, char **argv) {
     assert(mpvflow_capture_io_stop(session) == 0);
     mpvflow_capture_io_destroy(session);
 
+    struct MPVFlowCaptureMeta single_meta = {
+        "mpv", "vulkan", 2, 2, 2, 2, 480, 270, 120, 68,
+        30.0, 30.04, 30.02, .5,
+        "{\"capture_mode\":\"one_output\",\"input_route\":\"fused_view\"}",
+        0, 0, 0, 0, 1
+    };
+    session = mpvflow_capture_io_start(argv[2], "fongmi_single", &single_meta,
+                                       reason, sizeof(reason));
+    assert(session);
+    const char *single_pair_channels[] = {"source0", "source1"};
+    for (size_t i = 0; i < sizeof(single_pair_channels) / sizeof(single_pair_channels[0]); i++)
+        assert(!mpvflow_capture_io_write(session, 0, -1, single_pair_channels[i],
+            &single_meta, px, 2, 2, reason, sizeof(reason)));
+    const char *single_sample_channels[] = {
+        "pre_confidence_warp", "fallback_color", "trust_map", "synthesized"
+    };
+    for (size_t i = 0; i < sizeof(single_sample_channels) / sizeof(single_sample_channels[0]); i++)
+        assert(!mpvflow_capture_io_write(session, 0, 0, single_sample_channels[i],
+            &single_meta, px, 2, 2, reason, sizeof(reason)));
+    assert(mpvflow_capture_io_write(session, 0, 1, "synthesized",
+        &single_meta, px, 2, 2, reason, sizeof(reason)));
+    assert(mpvflow_capture_io_write(session, 1, 0, "synthesized",
+        &single_meta, px, 2, 2, reason, sizeof(reason)));
+    assert(mpvflow_capture_io_write(session, 0, -1, "motion_forward",
+        &single_meta, px, 2, 2, reason, sizeof(reason)));
+    assert(mpvflow_capture_io_stop(session) == 0);
+    assert(!strcmp(mpvflow_capture_io_status(session), "complete"));
+    mpvflow_capture_io_destroy(session);
+
+    struct MPVFlowCaptureMeta oversized_single = single_meta;
+    oversized_single.source_width = oversized_single.output_width = 1921;
+    oversized_single.source_height = oversized_single.output_height = 1080;
+    assert(!mpvflow_capture_io_start(argv[2], "fongmi_single_oversized",
+        &oversized_single, reason, sizeof(reason)));
+
+    struct MPVFlowCaptureMeta bounded_single_meta = single_meta;
+    bounded_single_meta.source_width = 2275;
+    bounded_single_meta.source_height = 1280;
+    bounded_single_meta.output_width = 1920;
+    bounded_single_meta.output_height = 1080;
+    bounded_single_meta.analysis_width = 1920;
+    bounded_single_meta.analysis_height = 1080;
+    bounded_single_meta.grid_width = 480;
+    bounded_single_meta.grid_height = 270;
+    const int capture_width = bounded_single_meta.output_width;
+    const int capture_height = bounded_single_meta.output_height;
+    const size_t capture_bytes = (size_t) capture_width * capture_height * 4;
+    assert((int64_t) capture_width * capture_height * 4 * 7 <= MPVFLOW_CAPTURE_MAX_BYTES);
+    uint8_t *bounded_pixels = calloc(1, capture_bytes);
+    assert(bounded_pixels);
+    session = mpvflow_capture_io_start(argv[2], "bounded_single", &bounded_single_meta,
+                                       reason, sizeof(reason));
+    assert(session);
+    const char *bounded_channels[] = {
+        "source0", "source1", "pre_confidence_warp", "fallback_color",
+        "trust_map", "synthesized"
+    };
+    for (size_t i = 0; i < sizeof(bounded_channels) / sizeof(bounded_channels[0]); i++) {
+        const int sample_index = i < 2 ? -1 : 0;
+        assert(!mpvflow_capture_io_write(session, 0, sample_index, bounded_channels[i],
+            &bounded_single_meta, bounded_pixels, capture_width, capture_height,
+            reason, sizeof(reason)));
+    }
+    assert(mpvflow_capture_io_write(session, 0, 1, "synthesized",
+        &bounded_single_meta, bounded_pixels, capture_width, capture_height,
+        reason, sizeof(reason)));
+    assert(mpvflow_capture_io_stop(session) == 0);
+    assert(!strcmp(mpvflow_capture_io_status(session), "complete"));
+    mpvflow_capture_io_destroy(session);
+    free(bounded_pixels);
+
+    struct MPVFlowCaptureMeta too_large_source = bounded_single_meta;
+    too_large_source.source_width = 4097;
+    assert(!mpvflow_capture_io_start(argv[2], "fongmi_single_source_too_large",
+        &too_large_source, reason, sizeof(reason)));
+
     struct MPVFlowCaptureMeta differing_dimensions = {
         "native-media3", "vulkan", 512, 288, 1920, 1080, 512, 288, 128, 72,
-        20.0, 20.04, 20.02, .5, "{}", 0, 0, 0, 0
+        20.0, 20.04, 20.02, .5, "{}", 0, 0, 0, 0, 0
     };
     session = mpvflow_capture_io_start(argv[2], "differing_dimensions",
         &differing_dimensions, reason, sizeof(reason));
@@ -179,6 +257,10 @@ int main(int argc, char **argv) {
     assert(!mpvflow_capture_io_write_terminal_manifest(argv[2], "paired_terminal",
         "mpv", "unknown", "{\"visibility_resolver\":false}", 1,
         "hdr_dolby_vision_or_unknown_color_refused"));
+    assert(!mpvflow_capture_io_write_single_terminal_manifest(argv[2], "single_terminal",
+        "mpv", "unknown", "{\"capture_mode\":\"one_output\"}", "user_stopped_before_output"));
+    assert(!mpvflow_capture_io_write_single_terminal_manifest(argv[2], "single_terminal_unavailable",
+        "mpv", "unavailable", "{\"capture_mode\":\"one_output\"}", "unsupported_backend"));
     assert(mpvflow_capture_io_write_terminal_manifest(argv[2], "paired_terminal_bad",
         "mpv", "unknown", "{\"soft_blend\":false}", 1, "capture_refused"));
     assert(!mpvflow_capture_io_start(argv[2], "../oops", &meta, reason, sizeof(reason)));
@@ -195,6 +277,13 @@ int main(int argc, char **argv) {
     const size_t large_bytes = (size_t) large_width * large_height * 4;
     uint8_t *large = calloc(1, large_bytes);
     assert(large);
+    uint32_t random_state = 0x12345678u;
+    for (size_t i = 0; i < large_bytes; i++) {
+        random_state ^= random_state << 13;
+        random_state ^= random_state >> 17;
+        random_state ^= random_state << 5;
+        large[i] = (uint8_t) random_state;
+    }
     int failed_at = -1;
     for (int sample = 0; sample < 32; sample++) {
         const int pair = sample / 4;
@@ -268,6 +357,43 @@ with tempfile.TemporaryDirectory() as temp_dir:
     paired_terminal = json.loads((directory / "paired_terminal" / "manifest.json").read_text())
     assert paired_terminal["paired_output_diagnostic"] is True
     assert paired_terminal["paired_comparison"]["only_differing_setting"] == "soft_blend"
+    single_manifest = json.loads((directory / "fongmi_single" / "manifest.json").read_text())
+    assert single_manifest["status"] == "complete" and single_manifest["stopped"] is True
+    assert single_manifest["paired_output_diagnostic"] is False
+    assert single_manifest["single_output_diagnostic"] is True
+    assert single_manifest["limits"]["pairs"] == 1
+    assert single_manifest["limits"]["samples_per_pair"] == 1
+    assert single_manifest["image_policy"]["max_dimension"] == 1920
+    assert single_manifest["image_policy"]["color_images"] == (
+        "shared aspect-preserving RGBA8 downscale; source and captured dimensions recorded"
+    )
+    assert single_manifest["image_policy"]["maps"] == "captured output resolution; see captured_dimensions"
+    assert single_manifest["single_output_capture"]["scope"] == "one FongMi source pair and one synthesized sample"
+    assert {r["channel"] for r in single_manifest["records"]} == {
+        "source0", "source1", "pre_confidence_warp", "fallback_color", "trust_map", "synthesized"
+    }
+    assert all(r["sample_index"] == -1 for r in single_manifest["records"] if r["channel"] in {"source0", "source1"})
+    assert all(r["sample_index"] == 0 for r in single_manifest["records"] if r["channel"] not in {"source0", "source1"})
+    assert all(r["pts"] == {"source0": 30.0, "source1": 30.04, "output": 30.02, "timestep": 0.5}
+               for r in single_manifest["records"])
+    bounded_manifest = json.loads((directory / "bounded_single" / "manifest.json").read_text())
+    assert bounded_manifest["status"] == "complete"
+    assert bounded_manifest["source_dimensions"] == [2275, 1280]
+    assert bounded_manifest["output_dimensions"] == [1920, 1080]
+    assert bounded_manifest["single_output_diagnostic"] is True
+    assert bounded_manifest["pair_count"] == 1 and bounded_manifest["sample_count"] == 1
+    assert bounded_manifest["limits"] == {"pairs": 1, "samples_per_pair": 1, "bytes": 64 * 1024 * 1024}
+    assert bounded_manifest["bytes_written"] <= 64 * 1024 * 1024
+    assert len(bounded_manifest["records"]) == 6
+    assert all(record["captured_dimensions"] == [1920, 1080] for record in bounded_manifest["records"])
+    assert all(record["source_dimensions"] == [2275, 1280] for record in bounded_manifest["records"])
+    single_terminal = json.loads((directory / "single_terminal" / "manifest.json").read_text())
+    assert single_terminal["single_output_diagnostic"] is True
+    assert single_terminal["limits"]["pairs"] == 1 and single_terminal["limits"]["samples_per_pair"] == 1
+    assert single_terminal["image_policy"]["maps"] == "captured output resolution; dimensions unavailable before first sample"
+    unavailable_terminal = json.loads((directory / "single_terminal_unavailable" / "manifest.json").read_text())
+    assert unavailable_terminal["status"] == "failed" and unavailable_terminal["backend"] == "unavailable"
+    assert unavailable_terminal["terminal_reason"] == "unsupported_backend"
     paired_manifest = json.loads((directory / "paired" / "manifest.json").read_text())
     assert paired_manifest["paired_output_diagnostic"] is True
     assert paired_manifest["limits"]["pairs"] == 1
@@ -277,6 +403,7 @@ with tempfile.TemporaryDirectory() as temp_dir:
     assert paired_manifest["decision_capture"]["schema"] == "mpvflow-decision-mask-v1"
     assert paired_manifest["image_policy"]["max_dimension"] == 1920
     assert paired_manifest["image_policy"]["color_images"] == "native-resolution RGBA8; no resampling"
+    assert paired_manifest["image_policy"]["maps"] == "native motion-grid resolution; not full-resolution"
     assert paired_manifest["decision_capture"]["branches"]["10"] == "zero-weight source1"
     assert paired_manifest["decision_capture"]["branches"]["11"] == "lowconf source blend"
     assert paired_manifest["decision_capture"]["branches"]["12"] == "conflict source blend"

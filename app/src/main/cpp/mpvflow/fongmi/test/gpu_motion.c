@@ -587,6 +587,63 @@ static float bilinear(const float *pixels, int width, int height,
     return (a + (b - a) * fx) * (1 - fy) + (c + (d - c) * fx) * fy;
 }
 
+static void oblique_texture_translation(pl_gpu gpu, struct mp_motion *motion)
+{
+    const int shift_x = 8, shift_y = -6;
+    float *first = calloc(WIDTH * HEIGHT * 4, sizeof(float));
+    float *second = calloc(WIDTH * HEIGHT * 4, sizeof(float));
+    float *output = calloc(WIDTH * HEIGHT * 4, sizeof(float));
+    assert(first && second && output);
+    for (int y = 0; y < HEIGHT; y++) {
+        for (int x = 0; x < WIDTH; x++) {
+            int index = (y * WIDTH + x) * 4;
+            for (int c = 0; c < 4; c++) {
+                first[index + c] = c == 3 ? 1 : noise(x, y, c);
+                second[index + c] = c == 3 ? 1 :
+                    noise(x - shift_x, y - shift_y, c);
+            }
+        }
+    }
+    pl_tex a = upload(gpu, first);
+    pl_tex b = upload(gpu, second);
+    for (int step = 1; step <= 3; step++) {
+        float alpha = step * 0.25f;
+        pl_tex result;
+        assert(mp_motion_render(motion, a, b, 12, 13, alpha, &result));
+        readback(gpu, result, output);
+        double motion_error = 0, blend_error = 0;
+        int samples = 0;
+        for (int y = 24; y < HEIGHT - 24; y++) {
+            for (int x = 24; x < WIDTH - 24; x++) {
+                int index = (y * WIDTH + x) * 4;
+                for (int c = 0; c < 3; c++) {
+                    float expected = bilinear(first, WIDTH, HEIGHT,
+                        x - alpha * shift_x, y - alpha * shift_y, c);
+                    float blend = first[index + c] * (1 - alpha) +
+                                  second[index + c] * alpha;
+                    assert(isfinite(output[index + c]));
+                    motion_error += fabs(output[index + c] - expected);
+                    blend_error += fabs(blend - expected);
+                    samples++;
+                }
+            }
+        }
+        motion_error /= samples;
+        blend_error /= samples;
+        printf("oblique texture alpha=%.2f motion_error=%.6f blend_error=%.6f\n",
+               alpha, motion_error, blend_error);
+        fflush(stdout);
+        assert(motion_error < 0.08);
+        assert(motion_error < blend_error * 0.6);
+    }
+    mp_motion_reset(motion);
+    pl_tex_destroy(gpu, &a);
+    pl_tex_destroy(gpu, &b);
+    free(first);
+    free(second);
+    free(output);
+}
+
 static float matching_cost(const float *first, const float *second,
                            float x, float y, float dx, float dy)
 {
@@ -735,12 +792,14 @@ static void warp_policy(pl_gpu gpu)
     pl_tex target = policy_target(gpu);
     pl_dispatch dispatch = pl_dispatch_create(gpu->log, gpu);
     assert(dispatch);
-    for (int test = 0; test < 6; test++) {
+    for (int test = 0; test < 7; test++) {
         for (int y = 0; y < HEIGHT; y++) {
             for (int x = 0; x < WIDTH; x++) {
                 int index = (y * WIDTH + x) * 4;
-                pixels[0][index] = test == 3 ? WIDTH * 2 : 8;
-                pixels[1][index] = test == 1 ? 8 : -8;
+                pixels[0][index] = test == 6
+                    ? 3.0f * (x - 63.9f) + 0.2f
+                    : (test == 3 ? WIDTH * 2 : 8);
+                pixels[1][index] = test == 6 ? -0.5f : (test == 1 ? 8 : -8);
                 if (test == 4)
                     pixels[0][index] = NAN;
                 if (test == 5) {
@@ -748,6 +807,8 @@ static void warp_policy(pl_gpu gpu)
                     pixels[1][index] = x + 0.5f - WIDTH * 0.5f;
                 }
                 pixels[0][index + 2] = test == 2 ? 0.1f : 0;
+                pixels[0][index + 3] = test == 6 ? 1 : 0;
+                pixels[1][index + 3] = test == 6 ? 1 : 0;
             }
         }
         pl_tex a = upload(gpu, pixels[0]);
@@ -775,17 +836,28 @@ static void warp_policy(pl_gpu gpu)
             .shader = &shader, .target = target,
         )));
         readback(gpu, target, output);
-        int index = ((HEIGHT / 2) * WIDTH + WIDTH / 4) * 4;
+        int sample_x = test == 6 ? WIDTH / 2 : WIDTH / 4;
+        int index = ((HEIGHT / 2) * WIDTH + sample_x) * 4;
         assert(isfinite(output[index + 2]) && isfinite(output[index + 3]));
-        assert(output[index + 2] == 0);
+        printf("motion policy case=%d unique=%.3f recovered=%.6f\n",
+               test, output[index + 2], output[index + 3]);
+        fflush(stdout);
         if (test == 0) {
+            assert(output[index + 2] == 0);
             assert(fabs(output[index] + 4) < 0.001);
             assert(output[index + 3] > 0.99);
+        } else if (test == 5) {
+            assert(output[index + 2] == 0);
+            assert(fabs(output[index] + 10.5f) < 0.01f);
+            assert(output[index + 3] > 0.99f);
+        } else if (test == 6) {
+            assert(fabs(output[index] + 0.1f) < 0.01f);
+            assert(output[index + 2] > 0.99);
+            assert(output[index + 3] > 0.99);
         } else {
-            assert(output[index + 3] == 0);
+            assert(output[index + 2] == 0);
+            assert(output[index + 3] < 0.01f);
         }
-        printf("motion policy case=%d unique=%.3f recovered=%.3f\n",
-               test, output[index + 2], output[index + 3]);
         pl_tex_destroy(gpu, &a);
         pl_tex_destroy(gpu, &b);
     }
@@ -836,20 +908,28 @@ static void synthesis_policy(pl_gpu gpu)
         float size[] = {WIDTH, HEIGHT};
         float source_size[] = {WIDTH, HEIGHT};
         float alpha = 0.5f;
+        int linear_hdr = 0;
+        float projection_ratio[] = {1.0f, 1.0f};
         struct pl_shader_var variables[] = {
-            {.var = pl_var_vec2("motion_size"), .data = size},
             {.var = pl_var_vec2("output_size"), .data = size},
             {.var = pl_var_vec2("source_size"), .data = source_size},
+            {.var = pl_var_vec2("motion_size"), .data = size},
             {.var = pl_var_float("alpha"), .data = &alpha},
+            {.var = pl_var_int("linear_hdr"), .data = &linear_hdr},
+            {.var = pl_var_vec2("projection_ratio"), .data = projection_ratio},
         };
         pl_shader shader = pl_dispatch_begin(dispatch);
         assert(pl_shader_custom(shader, &(struct pl_custom_shader) {
             .header = test_sample_header,
+        }));
+        assert(pl_shader_custom(shader, &(struct pl_custom_shader) {
+            .header = test_synthesis_header,
             .body = test_synthesis_body,
             .compute = true, .compute_group_size = {8, 8},
             .output = PL_SHADER_SIG_COLOR,
             .descriptors = descriptors, .num_descriptors = 5,
-            .variables = variables, .num_variables = 4,
+            .variables = variables,
+            .num_variables = sizeof(variables) / sizeof(variables[0]),
         }));
         assert(pl_dispatch_finish(dispatch, pl_dispatch_params(
             .shader = &shader, .target = target,
@@ -857,8 +937,14 @@ static void synthesis_policy(pl_gpu gpu)
         readback(gpu, target, output);
         float value = output[((HEIGHT / 2) * WIDTH + 50) * 4];
         assert(isfinite(value));
-        assert(fabs(value - (test == 0 ? 1 : 0)) < 0.001);
         printf("synthesis policy case=%d midpoint=%.3f\n", test, value);
+        fflush(stdout);
+        if (test == 1) {
+            // Unreliable but locally coherent motion is softened only by the app's bounded taps.
+            assert(value > 0.10f && value < 0.14f);
+        } else {
+            assert(fabs(value - (test == 0 ? 1 : 0)) < 0.001);
+        }
         for (int input = 0; input < 5; input++)
             pl_tex_destroy(gpu, &inputs[input]);
     }
@@ -1371,7 +1457,10 @@ static void synthesis_sampling(pl_gpu gpu)
             };
             pl_shader shader = pl_dispatch_begin(dispatch);
             assert(pl_shader_custom(shader, &(struct pl_custom_shader) {
-                .header = test_sample_header, .body = test_synthesis_body,
+                .header = test_sample_header,
+            }));
+            assert(pl_shader_custom(shader, &(struct pl_custom_shader) {
+                .header = test_synthesis_header, .body = test_synthesis_body,
                 .compute = true, .compute_group_size = {8, 8},
                 .output = PL_SHADER_SIG_COLOR,
                 .descriptors = descriptors, .num_descriptors = 5,
@@ -1594,6 +1683,7 @@ int main(void)
     pyramid_reuse(vulkan->gpu);
     padding_sizes(vulkan->gpu);
     translated_pair(vulkan->gpu, motion);
+    oblique_texture_translation(vulkan->gpu, motion);
     affine_pair(vulkan->gpu, motion, 129, 97, 1);
     scaled_source_pair(vulkan->gpu, motion);
     foreground_pair(vulkan->gpu, motion, WIDTH, HEIGHT, 1);

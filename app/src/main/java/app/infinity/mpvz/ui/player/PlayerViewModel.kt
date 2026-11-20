@@ -1832,6 +1832,8 @@ class PlayerViewModel(
 
   @Volatile
   private var customButtonScriptsSnapshot = CustomButtonScriptsSnapshot(0L, emptyMap(), emptyMap())
+  @Volatile
+  private var customButtonsSetupComplete = false
 
   private val customButtonsScriptPaths: Map<CustomButtonScriptLanguage, String>
     get() = customButtonScriptsSnapshot.paths
@@ -2143,7 +2145,11 @@ class PlayerViewModel(
     scheduleAmbientUpdate(0)
     startMpvStateCollectors()
     isMpvReadyForCustomButtons = true
-    reloadCustomButtonsScript("mpv_core_initialized")
+    if (customButtonsSetupComplete || customButtonsSetupJob?.isActive == true) {
+      reloadCustomButtonsScript("mpv_core_initialized")
+    } else {
+      setupCustomButtons()
+    }
     startAndroidSystemInfoBridge()
   }
 
@@ -2461,6 +2467,7 @@ class PlayerViewModel(
   private fun setupCustomButtons() {
     customButtonsSetupJob?.cancel()
     val generation = synchronized(customButtonScriptsLock) {
+      customButtonsSetupComplete = false
       customButtonSetupGeneration.incrementAndGet().also { nextGeneration ->
         customButtonScriptsSnapshot = CustomButtonScriptsSnapshot(nextGeneration, emptyMap(), emptyMap())
       }
@@ -2620,6 +2627,10 @@ class PlayerViewModel(
                 }
               }
             }
+          }
+          synchronized(customButtonScriptsLock) {
+            if (!isCurrentCustomButtonSetup(generation)) throw CancellationException("Superseded custom-button setup")
+            customButtonsSetupComplete = true
           }
         } catch (cancelled: CancellationException) {
           throw cancelled
@@ -5176,7 +5187,12 @@ class PlayerViewModel(
     change: Int,
     showUi: Boolean = false,
   ) {
-    val isAudio = host.isCurrentMediaKnownAudio() || isAudioOnly.value
+    val attachedHost = hostReference.get()
+    val isAudio =
+      PlayerVolumeKeyPolicy.isAudioForVolumeCeiling(
+        isAudioOnly = isAudioOnly.value,
+        hostKnowsAudio = attachedHost?.isCurrentMediaKnownAudio(),
+      )
     val currentSystemVolume = syncCurrentSystemVolume()
     val mpvVolume = PlaybackSession.getPropertyInt("volume") ?: 100
     // Audio playback must not apply gain boost (>100%). Boost is a video-only feature,

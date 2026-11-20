@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pathlib
+import re
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 PREPARE = (ROOT / "scripts/prepare-mpvflow.py").read_text(encoding="utf-8")
@@ -14,21 +15,28 @@ MPV_CONFIG = (ROOT / "app/src/main/java/app/infinity/mpvz/preferences/MpvConfigO
 MEDIA3_SINK = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowVideoSink.kt").read_text(encoding="utf-8")
 MEDIA3_NATIVE = (ROOT / "app/src/main/cpp/media3flow_vulkan_jni.cpp").read_text(encoding="utf-8")
 CMAKE = (ROOT / "app/src/main/cpp/CMakeLists.txt").read_text(encoding="utf-8")
+BUILD_GRADLE = (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
 FLOW_GPU_CORE = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_gpu.c").read_text(encoding="utf-8")
 LOG_REPOSITORY = (ROOT / "app/src/main/java/app/infinity/mpvz/presentation/crash/DebugLogRepository.kt").read_text(encoding="utf-8")
 CRASH_ACTIVITY = (ROOT / "app/src/main/java/app/infinity/mpvz/presentation/crash/CrashActivity.kt").read_text(encoding="utf-8")
 PLAYER_CONTROLS = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt").read_text(encoding="utf-8")
 MORE_SHEET = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/sheets/MoreSheet.kt").read_text(encoding="utf-8")
+VO_CAPTURE_PATCH = (ROOT / "scripts/patch_fongmi_vo_diagnostics.py").read_text(encoding="utf-8")
+DIAGNOSTICS_GUIDE = (ROOT / "docs/mpvflow-diagnostics.md").read_text(encoding="utf-8")
+FONGMI_HELPER_README = (ROOT / "app/src/main/cpp/mpvflow/fongmi/README.md").read_text(encoding="utf-8")
+LEGACY_PATCHER = (ROOT / "scripts/patch_fongmi_motion_artifact.py").read_text(encoding="utf-8")
+MOTION_POLICY_TEST = (ROOT / "scripts/tests/fongmi_motion_artifact_policy_test.py").read_text(encoding="utf-8")
 
 
 def require(source: str, fragment: str, message: str) -> None:
     assert fragment in source, message
 
 
-# The MPV runtime compiles FongMi's pinned native gpu-next implementation. The
-# former local patch remains provenance/history only and is not applied/copied.
+# The MPV runtime uses the pinned FongMi gpu-next implementation. The retained
+# local helper and app-owned shader patcher are not copied into that runtime.
 assert "FONGMI_PATCH" not in PREPARE
-assert "mpvflow_gpu.c" not in PREPARE
+assert "mpvflow/fongmi/motion.c" not in PREPARE
+assert "patch_fongmi_motion_artifact.py" not in PREPARE
 for marker in (
     '"video/out/gpu_next/motion.c"',
     '"motion-interpolation", OPT_INT(motion_fps)',
@@ -79,9 +87,60 @@ require(PLAYER_CONTROLS, "NativeStatsDisplay.interpolationFps", "the player must
 for removed_capture_ui in (
     "Start marked capture",
     "Start paired Soft Blend comparison",
-    "startFlowDiagnosticsCapture",
-    "stopFlowDiagnosticsCapture",
 ):
     assert removed_capture_ui not in MORE_SHEET, f"the More sheet must not expose {removed_capture_ui}"
-
+require(MORE_SHEET, "One-shot FongMi diagnostic", "the FongMi one-shot action must be explicitly labeled")
+require(MORE_SHEET, "collectFlowAsState()", "capture state must use Compose's StateFlow collector")
+assert re.search(
+    r"if\s*\(\s*BuildConfig\.DEBUG\s*&&\s*BuildConfig\.MPV_HAS_FONGMI_DIAGNOSTICS"
+    r"\s*&&\s*activeEngine\s*==\s*PlaybackEngineMode\.MPV\s*&&\s*activity\s*!=\s*null\s*\)",
+    MORE_SHEET,
+    re.S,
+), "the capture control must be debug-only, diagnostic-build-only, and MPV-only"
+require(MORE_SHEET, "activity.startFlowDiagnosticsCapture(singleOutput = true)", "the UI must request the bounded one-output mode")
+require(MORE_SHEET, "activity.stopFlowDiagnosticsCapture()", "the user must be able to stop an armed capture")
+require(MORE_SHEET, "nothing is uploaded", "the UI must state that captures stay local")
+require(MORE_SHEET, "Saved: $location", "the UI must show where the local diagnostic ZIP was exported")
+assert MORE_SHEET.count("startFlowDiagnosticsCapture(") == 1
+assert re.search(
+    r"fongmiDiagnosticCaptureEnabled\s*=\s*BuildConfig\.DEBUG\s*&&"
+    r"\s*BuildConfig\.MPV_HAS_FONGMI_DIAGNOSTICS\s*&&\s*mpvFlowFrameInterpolationActive",
+    MPV_VIEW,
+), "the capture option must be diagnostic-build-only and follow active FongMi interpolation"
+require(MPV_VIEW, 'PlaybackSession.setIntegrationOptionString("fongmi-diagnostic-control-file", optionValue)', "the native VO must receive the dedicated FongMi control file")
+capture_config = MPV_VIEW[MPV_VIEW.index("private fun configureMpvFlowCaptureControl"):MPV_VIEW.index("/** Arms the MPV VO")]
+assert "!BuildConfig.MPV_HAS_MPVFLOW" not in capture_config, "FongMi capture must not require the separate MPVFlow renderer"
+require(BUILD_GRADLE, "val includeMpvFlowFongmiDiagnostics = false", "the pinned runtime must not advertise uninstrumented FongMi capture controls")
+assert "mpvFlowFongmiDiagnosticCapture" not in BUILD_GRADLE, "an independent Gradle request must not enable unsupported native capture"
+require(PREPARE, "MPVFLOW_DEBUG_CAPTURE is unsupported with the MPVRx-pinned FongMi 95ec motion core", "capture support must remain fail-closed until the pinned runtime is instrumented")
+require(VO_CAPTURE_PATCH, r"%80[^\t\r\n]", "STOP IDs must not absorb LF or CRLF line endings")
+require(VO_CAPTURE_PATCH, "p->fongmi_capture_output_pts = mpi0->pts + alpha * (mpi1->pts - mpi0->pts);", "capture PTS must remain in the source-media time domain")
+require(VO_CAPTURE_PATCH, r'\"resolution_limit\":[1920,1920]', "capture limits must apply independently to both axes")
+assert VO_CAPTURE_PATCH.count(r'\"capture_pixel_limit\":2073600') == 2, "successful and terminal settings must both report the area cap"
+require(VO_CAPTURE_PATCH, 'if (!strcmp(backend, "vulkan") || !strcmp(backend, "vulkan-spirv"))', "Vulkan aliases must normalize to a supported terminal label")
+require(VO_CAPTURE_PATCH, 'if (!strcmp(backend, "opencl") || !strcmp(backend, "opencl-qcom"))', "OpenCL aliases must normalize to a supported terminal label")
+require(VO_CAPTURE_PATCH, 'return "unavailable";', "unsupported renderer names must still permit terminal refusal manifests")
+require(VO_CAPTURE_PATCH, 'if (strcmp(fongmi_capture_backend(p), "vulkan"))', "single-output readback must remain Vulkan-only")
+require(FONGMI_HELPER_README, "synthetic inputs to that unsupported legacy transformer", "the retained oblique fixture must not be described as active-runtime coverage")
+require(FONGMI_HELPER_README, "not active-runtime or device coverage", "legacy synthetic fixtures must not imply active GPU/device validation")
+assert abs((10.0 + 0.5 * (10.04 - 10.0)) - 10.02) < 1e-12
+warp_body = FONGMI_MOTION.split("static const char warp_body[] = GLSL(", 1)[1].split("\n);", 1)[0]
+require(warp_body, "vec2 displacement = (best_source - uv) * map_size;", "warp output must represent the source coordinate used by its residual")
+synthesis_body = FONGMI_MOTION.split("static const char synthesis_body[] = GLSL(", 1)[1].split("\n);", 1)[0]
+require(synthesis_body, "spatial_trust_consensus(forward, backward, uv, f, r)", "synthesis must use dispatch-bound sampler names")
+require(synthesis_body, "motion_field_medoid(forward, backward, uv, f, r, coherent0, coherent1, coherent_support)", "medoid fallback must use dispatch-bound sampler names")
+assert not re.search(r"\b(?:spatial_trust_consensus|motion_field_medoid)\(warp[01]\b", synthesis_body)
+scene_body = FONGMI_MOTION.split("static const char scene_body[] = GLSL(", 1)[1].split("\n);", 1)[0]
+require(scene_body, "bool spatial_corroborated = spatial_cut > 0.45 && scene_residual > 0.04;", "spatial disagreement must be corroborated by motion residual")
+require(scene_body, "cut = max(cut, spatial_corroborated ? 0.46 : min(spatial_cut, 0.44));", "only corroborated spatial disagreement may affect the hard-hold threshold")
+require(DIAGNOSTICS_GUIDE, "does **not** expose FongMi one-shot capture", "the guide must accurately describe the currently disabled capture path")
+require(DIAGNOSTICS_GUIDE, "unavailable in the current build", "older capture instructions must not be presented as a current feature")
+require(LEGACY_PATCHER, "no legacy upstream/runtime revision is supported", "the legacy patcher must remain test-only without claiming support for an upstream runtime revision")
+require(LEGACY_PATCHER, "does not support active MPVRx runtime revision", "the legacy patcher warning must explicitly reject the active runtime pin")
+require(LEGACY_PATCHER, "95ec8e929f8ad2f97c8415c486971493a0b408df", "the legacy patcher warning must name the exact unsupported runtime pin")
+require(FONGMI_HELPER_README, "There is no supported legacy upstream/runtime revision", "the legacy patcher support boundary must be documented alongside runtime provenance")
+require(MOTION_POLICY_TEST, "exact MPVRx-pinned runtime motion.c", "the optional runtime source check must name its exact pin contract")
+source_mode = MOTION_POLICY_TEST.split("if args.source:", 1)[1].split('print(\n    "FongMi artifact policy passed', 1)[0]
+require(source_mode, "SOURCE_VERIFIER.verify_mpv_source(mpv_dir)", "the runtime source option must verify the exact source revision and hashes")
+assert not re.search(r"\bPATCHER\.transform_source\(active_source\)", source_mode), "the active runtime source must not be routed through the legacy transformer"
 print("Native FongMi MPV and pre-FongMi Native Media3 diagnostic regression tests passed")

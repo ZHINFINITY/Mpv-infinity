@@ -17,8 +17,8 @@ def test_standard_workflow_is_flow_only() -> None:
 
     cache_step_name = "- name: Restore verified Flow-only MPVFlow arm64 runtime"
     builder_sha = "1efc82739f6f7034cd63e7ee8b3ec5431df27467"
-    mpv_sha = "14b3999a1a3e322c217bc90ee4df5a8f1bc88f69"
-    placebo_sha = "b89c10e1bdd5d7742ca576ebad94a906ddca91e8"
+    mpv_sha = "95ec8e929f8ad2f97c8415c486971493a0b408df"
+    placebo_sha = "63659d96d1bff7d7a5a1368e9538056a193fc6fb"
     ffmpeg_sha = "f2c5162b7c4b3e8835de270ff78cecc524decad1"
     vulkan_headers_sha = "a4f8ada9f4f97c45b8c89c57997be9cebaae65d2"
 
@@ -28,10 +28,11 @@ def test_standard_workflow_is_flow_only() -> None:
 
     manual_cache_key = runtime_cache_key(workflow)
     push_cache_key = runtime_cache_key(flow_workflow)
-    assert manual_cache_key == push_cache_key, "manual and push builds must share the same verified native runtime cache"
+    assert manual_cache_key == push_cache_key, "all MPV builds must reuse the same uninstrumented MPVRx runtime"
     for native_input in (
         "scripts/build-mpvflow-mpv-runtime.sh",
         "scripts/prepare-mpvflow.py",
+        "scripts/mpvrx_motion_source.py",
         "scripts/prepare-mpvflow-vulkan-headers.py",
         "scripts/patch-ffmpeg-symver.py",
         "scripts/patches/mpvlibandroid-fongmi/**",
@@ -40,10 +41,13 @@ def test_standard_workflow_is_flow_only() -> None:
         "app/src/main/assets/mpv/licenses/**",
     ):
         assert native_input in manual_cache_key, f"native cache key must include {native_input}"
+        assert native_input in push_cache_key, f"diagnostic native cache key must include {native_input}"
+    assert "scripts/patch_fongmi_motion_artifact.py" not in manual_cache_key
+    assert "scripts/patch_fongmi_motion_artifact.py" not in push_cache_key
     assert ".github/workflows/debug-apk.yml" not in manual_cache_key
     assert ".github/workflows/mpvflow-debug-arm64.yml" not in manual_cache_key
     for pin in (
-        f"mpvflow-arm64-runtime-v6-builder-{builder_sha[:16]}-mpv-fongmi-{mpv_sha}-libplacebo-fongmi-{placebo_sha}-ffmpeg-fongmi-{ffmpeg_sha}-vulkan-headers-khronos-{vulkan_headers_sha}-cores2-",
+        f"mpvflow-arm64-runtime-v7-builder-{builder_sha[:16]}-mpv-fongmi-{mpv_sha}-libplacebo-fongmi-{placebo_sha}-ffmpeg-fongmi-{ffmpeg_sha}-vulkan-headers-khronos-{vulkan_headers_sha}-cores2-",
         "mpvflow-runtime-cache.outputs.cache-hit",
     ):
         assert pin in manual_cache_key or all(pin in candidate for candidate in (workflow, flow_workflow)), (
@@ -66,6 +70,7 @@ def test_standard_workflow_is_flow_only() -> None:
         for required_input in (
             "scripts/build-mpvflow-mpv-runtime.sh",
             "scripts/prepare-mpvflow.py",
+            "scripts/mpvrx_motion_source.py",
             "scripts/patch-ffmpeg-symver.py",
             "scripts/patches/mpvlibandroid-fongmi/**",
             "app/src/main/cpp",
@@ -148,10 +153,10 @@ def test_standard_workflow_is_flow_only() -> None:
     assert "exit 1" in apk_check
     region3_verifier = (ROOT / "scripts/verify-region3-shader-apk.py").read_text(encoding="utf-8")
     pair_verifier = (ROOT / "scripts/verify-pair-ghost-apk.py").read_text(encoding="utf-8")
-    assert "libraries = ['lib/arm64-v8a/libmedia3flow_vulkan.so']" in region3_verifier
-    assert "lib/arm64-v8a/libmpv.so" not in region3_verifier
-    assert 'LIBS = ("lib/arm64-v8a/libmedia3flow_vulkan.so",)' in pair_verifier
-    assert "lib/arm64-v8a/libmpv.so" not in pair_verifier
+    for verifier in (region3_verifier, pair_verifier):
+        assert 'MPV_LIBRARY = "lib/arm64-v8a/libmpv.so"' in verifier
+        assert 'NATIVE_LIBRARY = "lib/arm64-v8a/libmedia3flow_vulkan.so"' in verifier
+        assert 'FONGMI_MEMC_OPTION = b"motion-interpolation"' in verifier
     assert workflow.index("- name: Run focused interpolation regression tests") < workflow.index(
         "- name: Build debug APK"
     )

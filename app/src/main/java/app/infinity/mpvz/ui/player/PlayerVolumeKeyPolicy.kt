@@ -13,4 +13,7 @@ internal object PlayerVolumeKeyPolicy {
     isAudioLaunch: Boolean,
   ): Boolean =
     isAudioOnly || isKnownAudio || isAudioLaunch
+
+  fun isAudioForVolumeCeiling(isAudioOnly: Boolean, hostKnowsAudio: Boolean?): Boolean =
+    isAudioOnly || hostKnowsAudio == true
 }

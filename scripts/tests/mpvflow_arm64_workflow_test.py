@@ -5,11 +5,21 @@ import re
 import sys
 import unittest
 
-DEFAULT = Path(__file__).resolve().parents[2] / ".github/workflows/mpvflow-debug-arm64.yml"
+ROOT = Path(__file__).resolve().parents[2]
+DEFAULT = ROOT / ".github/workflows/mpvflow-debug-arm64.yml"
 WORKFLOW = Path(sys.argv.pop()) if len(sys.argv) > 1 else DEFAULT
 TEXT = WORKFLOW.read_text(encoding="utf-8")
-STEPS = dict(re.findall(r"^      - name: ([^\n]+)\n(.*?)(?=^      - name: |\Z)", TEXT, re.M | re.S))
+
+def parse_steps(text: str) -> dict[str, str]:
+    return dict(re.findall(r"^      - name: ([^\n]+)\n(.*?)(?=^      - name: |\Z)", text, re.M | re.S))
+
+STEPS = parse_steps(TEXT)
+DEBUG_APK_TEXT = (ROOT / ".github/workflows/debug-apk.yml").read_text(encoding="utf-8")
+DEBUG_APK_STEPS = parse_steps(DEBUG_APK_TEXT)
+RELEASE_STEPS = parse_steps((ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8"))
 CACHE_MISS = "if: ${{ steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' }}"
+MPV_SHA = "95ec8e929f8ad2f97c8415c486971493a0b408df"
+PLACEBO_SHA = "63659d96d1bff7d7a5a1368e9538056a193fc6fb"
 FFMPEG_SHA = "f2c5162b7c4b3e8835de270ff78cecc524decad1"
 VULKAN_HEADERS_SHA = "a4f8ada9f4f97c45b8c89c57997be9cebaae65d2"
 
@@ -29,22 +39,52 @@ class Arm64WorkflowTest(unittest.TestCase):
     def test_runtime_cache_is_source_pinned_and_has_no_legacy_fallback(self):
         restore = STEPS["Restore verified Flow-only MPVFlow arm64 runtime"]
         for pin in (
-            "mpvflow-arm64-runtime-v6-builder-1efc82739f6f7034",
-            "mpv-fongmi-14b3999a1a3e322c217bc90ee4df5a8f1bc88f69",
-            "libplacebo-fongmi-b89c10e1bdd5d7742ca576ebad94a906ddca91e8",
+            "mpvflow-arm64-runtime-v7-builder-1efc82739f6f7034",
+            f"mpv-fongmi-{MPV_SHA}",
+            f"libplacebo-fongmi-{PLACEBO_SHA}",
             f"ffmpeg-fongmi-{FFMPEG_SHA}",
             f"vulkan-headers-khronos-{VULKAN_HEADERS_SHA}",
+            "scripts/mpvrx_motion_source.py",
             "scripts/prepare-mpvflow-vulkan-headers.py",
             "scripts/prepare-mpvflow.py",
             "scripts/patches/mpvlibandroid-fongmi/**",
             "app/src/main/cpp/**",
         ):
             self.assertIn(pin, restore)
-        for obsolete in ("runtime-legacy", "mpvflow-arm64-runtime-v4", "mpvflow-arm64-runtime-v5", "c1529642089bfebfc928a1c1664638a7a5d219ba", "restore-keys:"):
+        for obsolete in (
+            "runtime-legacy",
+            "mpvflow-arm64-runtime-v4",
+            "mpvflow-arm64-runtime-v5",
+            "mpvflow-arm64-runtime-v6",
+            "14b3999a1a3e322c217bc90ee4df5a8f1bc88f69",
+            "b89c10e1bdd5d7742ca576ebad94a906ddca91e8",
+            "c1529642089bfebfc928a1c1664638a7a5d219ba",
+            "restore-keys:",
+        ):
             self.assertNotIn(obsolete, restore + TEXT)
         self.assertIn("id: mpvflow-runtime-cache", restore)
         self.assertEqual(TEXT.count("uses: actions/cache/restore@v4"), 1)
         self.assertIn("steps.mpvflow-runtime-cache.outputs.cache-hit == 'true'", STEPS["Use cached Flow-only MPVFlow arm64 runtime"])
+
+    def test_generated_api391_headers_are_cached_and_revalidated(self):
+        generated = "app/mpvflow-generated/libplacebo-api-391"
+        cache_steps = (
+            (STEPS, ("Restore verified Flow-only MPVFlow arm64 runtime", "Save verified Flow-only MPVFlow arm64 runtime")),
+            (DEBUG_APK_STEPS, ("Restore verified Flow-only MPVFlow arm64 runtime", "Save verified Flow-only MPVFlow arm64 runtime")),
+            (RELEASE_STEPS, ("Restore verified Flow-only MPVFlow arm64 runtime",)),
+        )
+        for workflow_steps, names in cache_steps:
+            for name in names:
+                with self.subTest(cache_step=name):
+                    self.assertIn(generated, workflow_steps[name])
+        command = "scripts/tests/mpvflow_placebo_api_headers_test.py --require-api391-snapshot"
+        self.assertIn(command, STEPS["Verify generated FongMi API-391 libplacebo headers"])
+        self.assertIn(command, DEBUG_APK_STEPS["Run focused interpolation regression tests"])
+        self.assertIn(command, RELEASE_STEPS["Overlay Flow-only runtime and build Standard arm64-v8a release"])
+        self.assertLess(
+            TEXT.index("- name: Overlay MPVFlow MPV/FFmpeg arm64 runtime into MPV∞ AAR"),
+            TEXT.index("- name: Verify generated FongMi API-391 libplacebo headers"),
+        )
 
     def test_focused_invariants_run_before_the_runtime_build(self):
         focused = STEPS["Test complete MPVFlow focused invariants"]
@@ -64,10 +104,13 @@ class Arm64WorkflowTest(unittest.TestCase):
         self.assertTrue(core_runner.stat().st_mode & 0o111, "the workflow invokes the core runner directly")
         for script in (
             "scripts/tests/mpvflow_fongmi_native_source_test.py",
+            "scripts/tests/mpvrx_motion_source_test.py",
             "scripts/tests/mpvflow_android_subprocess_test.py",
             "scripts/tests/mpvflow_vulkan_headers_prepare_test.py",
             "scripts/tests/mpvflow_placebo_api_headers_test.py",
             "scripts/tests/verify_mpv_aar_lgpl_test.py",
+            "scripts/tests/verify_region3_shader_apk_test.py",
+            "scripts/tests/verify_pair_ghost_apk_test.py",
         ):
             self.assertIn(script, core_runner.read_text(encoding="utf-8"))
         self.assertLess(TEXT.index("- name: Run MPVFlow core and GPU shader regression tests"), TEXT.index("- name: Assemble arm64-v8a debug APK after Kotlin checks"))
@@ -104,7 +147,24 @@ class Arm64WorkflowTest(unittest.TestCase):
                 self.assertIn(command, STEPS[name])
                 self.assertNotIn("        if:", STEPS[name])
                 self.assertLess(TEXT.index("- name: " + name), upload)
+        shader_step = STEPS["Verify arm64 DTS wrapper dynamically links the existing FFmpeg runtime"]
+        self.assertIn("scripts/verify-region3-shader-apk.py", shader_step)
+        self.assertIn("scripts/verify-pair-ghost-apk.py", shader_step)
         self.assertIn("if-no-files-found: error", STEPS["Upload arm64-v8a debug APK"])
+
+    def test_standard_arm64_debug_apk_verifies_motion_payload_before_upload(self):
+        verification = DEBUG_APK_STEPS["Verify APK package, ABI, integrity and signing identity"]
+        for script in (
+            "scripts/verify-debug-apk-artifact.py",
+            "scripts/verify-region3-shader-apk.py",
+            "scripts/verify-pair-ghost-apk.py",
+        ):
+            with self.subTest(script=script):
+                self.assertIn(f'python3 {script} "$apk"', verification)
+        self.assertLess(
+            DEBUG_APK_TEXT.index("- name: Verify APK package, ABI, integrity and signing identity"),
+            DEBUG_APK_TEXT.index("- name: Upload debug APKs"),
+        )
 
 
 if __name__ == "__main__":

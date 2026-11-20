@@ -6,7 +6,7 @@ MPV_BUILDER_DIR="${MPV_BUILDER_DIR:-$ROOT/native-builder}"
 MPV_SOURCE_DIR="${MPV_SOURCE_DIR:-$ROOT/mpv-source}"
 BUILDSCRIPTS="$MPV_BUILDER_DIR/buildscripts"
 EXPECTED_BUILDER_REVISION="1efc82739f6f7034cd63e7ee8b3ec5431df27467"
-EXPECTED_MPV_REVISION="14b3999a1a3e322c217bc90ee4df5a8f1bc88f69"
+EXPECTED_MPV_REVISION="95ec8e929f8ad2f97c8415c486971493a0b408df"
 EXPECTED_FFMPEG_REVISION="f2c5162b7c4b3e8835de270ff78cecc524decad1"
 EXPECTED_FFMPEG_REPOSITORY="https://github.com/FongMi/FFmpeg.git"
 
@@ -122,16 +122,27 @@ print(f"Pinned FongMi/FFmpeg {ffmpeg_revision} from {ffmpeg_repository}")
 libplacebo_clone = "[ ! -d libplacebo ] && git clone --recursive https://github.com/haasn/libplacebo"
 if download.count(libplacebo_clone) != 1:
     raise SystemExit(f"Expected one unpinned libplacebo clone in {download_path}")
-libplacebo_revision = "b89c10e1bdd5d7742ca576ebad94a906ddca91e8"
-libplacebo_fongmi_clone = "[ ! -d libplacebo ] && git clone --recursive https://github.com/FongMi/libplacebo.git"
+libplacebo_revision = "63659d96d1bff7d7a5a1368e9538056a193fc6fb"
+libplacebo_fongmi_clone = (
+    "if [ ! -d libplacebo ]; then\n"
+    "\tgit clone https://github.com/FongMi/libplacebo.git libplacebo\n"
+    "fi"
+)
 download = download.replace(
     libplacebo_clone,
     libplacebo_fongmi_clone + "\n" +
-    f"git -C libplacebo checkout --detach {libplacebo_revision}\n" +
+    "git -C libplacebo remote set-url origin https://github.com/FongMi/libplacebo.git\n" +
+    f"git -C libplacebo fetch --depth=1 origin {libplacebo_revision}\n" +
+    "git -C libplacebo checkout --detach FETCH_HEAD\n" +
+    f'libplacebo_actual="$(git -C libplacebo rev-parse HEAD)"\n' +
+    f'if [ "$libplacebo_actual" != "{libplacebo_revision}" ]; then\n' +
+    '    echo "Unexpected FongMi libplacebo source: $libplacebo_actual" >&2\n' +
+    "    exit 1\n" +
+    "fi\n" +
     "git -C libplacebo submodule update --init --recursive",
     1,
 )
-print(f"Pinned FongMi/libplacebo {libplacebo_revision} for native FongMi MEMC renderer APIs")
+print(f"Pinned MPVRx-provenance FongMi/libplacebo {libplacebo_revision}")
 
 glslang_revision = "1062752a891c95b2bfeed9e356562d88f9df84ac"
 glslang_insert_after = "git -C libplacebo submodule update --init --recursive\n"
@@ -370,6 +381,8 @@ MPV_BUILD_DIR="$BUILDSCRIPTS/deps/mpv/_build-arm64"
 MPV_DEPENDENCIES="$MPV_BUILD_DIR/meson-info/intro-dependencies.json"
 PLACEBO_LIBRARY="$MPV_PREFIX/libplacebo.so"
 PLACEBO_PC="$MPV_PREFIX/pkgconfig/libplacebo.pc"
+PLACEBO_INCLUDE_DIR="${MPV_PREFIX%/lib}/include/libplacebo"
+API391_HEADER_ROOT="$ROOT/app/mpvflow-generated/libplacebo-api-391"
 [[ -f "$MPV_LIBRARY" && -f "$PLACEBO_LIBRARY" && -f "$PLACEBO_PC" ]] || {
   echo "MPVFlow native prefix is missing libmpv, libplacebo, or libplacebo.pc" >&2
   exit 1
@@ -434,6 +447,44 @@ if actual_version != expected_version:
 print(f"Verified MPV Meson libplacebo dependency version {actual_version}")
 PY
 echo "Verified libmpv.so dynamically uses shared libplacebo $PLACEBO_VERSION, matching Native Media3 Flow"
+# Native Media3 must compile against the exact API-391 headers that built libplacebo.so.
+python3 - "$PLACEBO_INCLUDE_DIR" "$API391_HEADER_ROOT" <<'PY'
+import hashlib
+import re
+import shutil
+import sys
+from pathlib import Path
+
+source = Path(sys.argv[1])
+destination = Path(sys.argv[2])
+config = source / "config.h"
+if not config.is_file():
+    raise SystemExit(f"Installed libplacebo headers are missing: {source}")
+config_text = config.read_text(encoding="utf-8")
+if not re.search(r"^#define\s+PL_API_VER\s+391\s*$", config_text, re.MULTILINE):
+    raise SystemExit(f"Expected installed libplacebo PL_API_VER 391 in {config}")
+required = ("config.h", "common.h", "gpu.h", "log.h", "renderer.h", "shaders.h", "vulkan.h")
+missing = [name for name in required if not (source / name).is_file()]
+if missing:
+    raise SystemExit(f"Installed API-391 libplacebo headers are incomplete: {missing}")
+if destination.exists():
+    shutil.rmtree(destination)
+target = destination / "libplacebo"
+destination.mkdir(parents=True, exist_ok=True)
+shutil.copytree(source, target)
+files = sorted(path for path in target.rglob("*") if path.is_file())
+if not files:
+    raise SystemExit(f"No installed libplacebo headers found under {target}")
+manifest = destination / "FONGMI_HEADERS.sha256"
+manifest.write_text(
+    "".join(
+        f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.relative_to(destination).as_posix()}\n"
+        for path in files
+    ),
+    encoding="utf-8",
+)
+print(f"Staged {len(files)} matching FongMi API-391 libplacebo headers: {destination}")
+PY
 APK="$(find "$MPV_BUILDER_DIR/app/build/outputs/apk" -type f -path '*/debug/*' -name '*arm64-v8a-debug*.apk' -print -quit)"
 if [[ -z "$APK" ]]; then
   echo "Android MPVFlow runtime build finished but no arm64-v8a debug APK was found" >&2
