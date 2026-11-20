@@ -241,7 +241,7 @@
      }
 
      tick /= 2; // Convert to 45kHz clock ticks
-@@ -1783,18 +1858,25 @@
+@@ -1783,18 +1858,27 @@
      if (bd->title &&
          tick < bd->title->duration) {
 
@@ -323,7 +323,7 @@
 
          if (is_uo_mask_checked && _is_uo_masked(bd, uo_mask_idx)) {
              BD_DEBUG(DBG_BLURAY | DBG_CRIT, "bd_seek_chapter(%u) UO %d restricted\n", chapter, uo_mask_idx);
-@@ -1856,21 +1948,47 @@
+@@ -1856,21 +1948,49 @@
              ret_pos = -1;
          } else {
              /* Seek chapter */

@@ -1,11 +1,11 @@
 # MPV-RX FongMi libbluray patch set
 
-These patches are copied byte-for-byte from the FongMi build branch of [Riteshp2001/mpvlibAndroid](https://github.com/Riteshp2001/mpvlibAndroid/tree/d04217abe8e72e4a099269f045855bf69b87d53b), immutable commit `d04217abe8e72e4a099269f045855bf69b87d53b` (the `mpvlib 1.1.8` preparation commit). MPV-RX declares the matching `mpvlib-fongmi` AAR version `1.1.8`. The upstream mpvlibAndroid wrapper/build-helper MIT notice is retained at `app/src/main/assets/mpv/licenses/mpvlibAndroid-LICENSE-MIT`.
+These patches are based on the FongMi build branch of [Riteshp2001/mpvlibAndroid](https://github.com/Riteshp2001/mpvlibAndroid/tree/d04217abe8e72e4a099269f045855bf69b87d53b), immutable commit `d04217abe8e72e4a099269f045855bf69b87d53b` (the `mpvlib 1.1.8` preparation commit). The checked-seek patch has two locally corrected unified-diff hunk-length headers; its intended libbluray source changes are unchanged. MPV-RX declares the matching `mpvlib-fongmi` AAR version `1.1.8`. The upstream mpvlibAndroid wrapper/build-helper MIT notice is retained at `app/src/main/assets/mpv/licenses/mpvlibAndroid-LICENSE-MIT`.
 
 The target is the unmodified VideoLAN libbluray 1.4.1 source archive, SHA-256 `76b5dc40097f28dca4ebb009c98ed51321b2927453f75cc72cf74acd09b9f449`. The patches are applied in the same order as the upstream FongMi AAR builder, with zero fuzz and forward/reverse dry-run checks:
 
 1. `libbluray-1.4.1-still-eof.patch` — SHA-256 `cc0a15ee88b1ead665dadbc3ac363c2686e5184fc1e04a76713665cad57c0fc7`
-2. `libbluray-1.4.1-checked-seek.patch` — SHA-256 `0124542e530f03d41f5770386f00836523333c635fe5216c5f0729181550219d`
+2. `libbluray-1.4.1-checked-seek.patch` — SHA-256 `58ef2e5649b2bd592352ac5823c226b534de43dcadbf346f4d472bb3aa16926b` (hunk-length metadata correction only)
 3. `libbluray-1.4.1-menu-info.patch` — SHA-256 `17a1b88c72c3b467ba6ac8d9419f003c93f694733b9214deee13bad5ebfedb5c`
 4. `libbluray-1.4.1-bdj-pointer.patch` — SHA-256 `232ce1e634335af5d69a705745a57ea5cd5da8d7160b9441b5ba154e7b3dec85`
 
