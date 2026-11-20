@@ -2,6 +2,8 @@
 """Guard the Android MPVFlow native compiler and Vulkan build configuration."""
 from __future__ import annotations
 
+import re
+
 import importlib.util
 import json
 from pathlib import Path
@@ -66,6 +68,15 @@ assert "mp_motion_" not in media3_native, "Native Media3 must remain on its pre-
 assert "mpvflow_gpu_synthesize_with_policy_to_texture(" in media3_native
 vo_patch = VO_PATCH.read_text(encoding="utf-8")
 assert "flow_release_frame(fp->vo, fp, true);" in vo_patch
+patch_hunks = re.split(r"(?m)(?=^@@ )", vo_patch)
+unmap_hunk = next((hunk for hunk in patch_hunks if hunk.startswith("@@") and "static void unmap_frame" in hunk.splitlines()[0]), "")
+discard_hunk = next((hunk for hunk in patch_hunks if hunk.startswith("@@") and "static void discard_frame" in hunk.splitlines()[0]), "")
+assert "flow_release_frame(fp->vo, fp, true);" in unmap_hunk, (
+    "MPVFlow must release prepared source textures on terminal unmap"
+)
+assert "flow_release_frame(fp->vo, fp, true);" in discard_hunk, (
+    "MPVFlow must release prepared source textures when a source frame is discarded"
+)
 release_frame = vo_patch.split("+static void flow_release_frame(", 1)[1].split("\n+}", 1)[0]
 assert "if (discard) flow_release_pair_for_frame(p, fp->frame_id);" in release_frame
 assert "if (discard && fp->flow_source)" in release_frame and "if (discard && fp->flow_input)" in release_frame
@@ -78,8 +89,21 @@ for marker in (
 ):
     assert marker in vo_patch, f"MPV renderer-fusion integration missing {marker!r}"
 prepare_source = PREPARE.read_text(encoding="utf-8")
-for marker in ("MPVFLOW_HAVE_RENDERER_HOOK", "features.get('libplacebo', false)", "pl_shader_custom", "pl_shader_is_compute"):
+for marker in (
+    "MPVFLOW_HAVE_RENDERER_HOOK",
+    "features.get('libplacebo', false)",
+    "pl_shader_custom",
+    "pl_shader_is_compute",
+    "cc.has_header_symbol('libplacebo/shaders/custom.h', 'pl_shader_custom', dependencies: libplacebo)",
+    "cc.has_header_symbol('libplacebo/shaders.h', 'pl_shader_is_compute', dependencies: libplacebo)",
+):
     assert marker in prepare_source, f"MPV Meson renderer hook must be capability-gated: missing {marker!r}"
+assert "add_project_arguments('-DMPVFLOW_HAVE_RENDERER_HOOK=1', language: 'c')" in prepare_source, (
+    "MPV Meson renderer hook must use the C project-arguments API"
+)
+assert "c_args += ['-DMPVFLOW_HAVE_RENDERER_HOOK=1']" not in prepare_source, (
+    "renderer hook must not use an undefined Meson c_args variable"
+)
 
 cmake_config = (ROOT / "app/src/main/cpp/CMakeLists.txt").read_text(encoding="utf-8")
 runtime_packager = (ROOT / "scripts/package-mpv-runtime-aar.py").read_text(encoding="utf-8")
@@ -185,6 +209,11 @@ else:
     raise AssertionError("hook-count adapter accepted an unverified upstream helper")
 gpu_source = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_gpu.c").read_text(encoding="utf-8")
 gpu_header = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_gpu.h").read_text(encoding="utf-8")
+assert "const int output_w = (int) state->source0->params.w;" in gpu_source
+assert "const int output_h = (int) state->source0->params.h;" in gpu_source
+assert ".output_w = output_w," in gpu_source and ".output_h = output_h," in gpu_source
+assert "result.rect.x1 - result.rect.x0 != output_w" in gpu_source
+assert "result.rect.y1 - result.rect.y0 != output_h" in gpu_source
 for marker in (
     "MPVFLOW_GPU_PASS_PAIR_GATE_FIRST = 1u << 7",
     "MPVFLOW_GPU_PASS_PAIR_GATE_REDUCE = 1u << 8",
@@ -1027,7 +1056,7 @@ for marker in (
     "displayRefreshRate == null || flowDisplayFpsOverrideRc == 0",
     "snapshotDisplayRefreshRateOnMain()",
     "else cachedDisplayRefreshRate",
-    "val mpvFlowFrameInterpolationEnabled =",
+    "var mpvFlowFrameInterpolationEnabled =",
     "mpvFlowFrameInterpolationCandidate && flowTimingOptionsReady",
     'PlaybackSession.setOptionString("motion-interpolation", targetFps.toString())',
     'PlaybackSession.setOptionString("video-sync", "audio")',

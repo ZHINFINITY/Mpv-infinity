@@ -1343,7 +1343,7 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeGetComputeApiName(
 
 extern "C" JNIEXPORT jlong JNICALL
 Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeGetRequiredHardwareBufferUsage(
-    JNIEnv *, jobject, jlong contextHandle, jboolean output) {
+    JNIEnv *, jobject, jlong contextHandle, jboolean output, jboolean storage) {
     auto *context = reinterpret_cast<FlowContext *>(contextHandle);
     if (!context)
         return 0;
@@ -1355,7 +1355,7 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeGetRequiredHardwar
     uint64_t requiredAhbUsage = 0;
     const char *role = outputRole ? "output" : "input";
     bool storageOutput = false;
-    if (outputRole) {
+    if (outputRole && storage == JNI_TRUE) {
         const VkImageUsageFlags storageUsage = usage | VK_IMAGE_USAGE_STORAGE_BIT;
         storageOutput = queryAhbImageSupport(
             context, storageUsage, nullptr, &requiredAhbUsage,
@@ -1365,7 +1365,8 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeGetRequiredHardwar
             usage = storageUsage;
     }
     if (!storageOutput &&
-        !queryAhbImageSupport(context, usage, nullptr, &requiredAhbUsage, role))
+        !queryAhbImageSupport(context, usage, nullptr, &requiredAhbUsage,
+                              outputRole && storage != JNI_TRUE ? "output_non_storage" : role))
         return 0;
     logFlow(ANDROID_LOG_INFO,
             "MPVFLOW_DIAGNOSTIC component=native-media3 event=ahb_usage state=required "

@@ -1488,7 +1488,8 @@ index bd3d1aa..75ffbb1 100644
 +                flow_wsi_set, p->flow_swapchain_diagnostics_enabled,
 +                flow_parent_msg_level, flow_parent_msg_level >= MSGL_V);
 +    }
-+    if (p->next_opts->mpvflow && !p->flow_wsi_created_logged) {
++    if (p->gpu && p->gpu->glsl.vulkan && p->next_opts->mpvflow &&
++        !p->flow_wsi_created_logged) {
 +        int requested_mode = VK_PRESENT_MODE_FIFO_KHR;
 +        int created_mode = VK_PRESENT_MODE_FIFO_KHR;
 +        int requested_depth = 0;

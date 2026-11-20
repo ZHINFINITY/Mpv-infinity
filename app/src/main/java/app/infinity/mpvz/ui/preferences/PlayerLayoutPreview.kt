@@ -69,6 +69,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -570,6 +571,10 @@ private fun PreviewSeekbar(
             contentDescription = "Simulated playback position"
             stateDescription = "${(progress.floatValue * 100f).roundToInt()} percent"
             progressBarRangeInfo = ProgressBarRangeInfo(progress.floatValue, 0f..1f)
+            setProgress { value ->
+              progress.floatValue = value.coerceIn(0f, 1f)
+              true
+            }
           }
           .pointerInput(widthPx) {
             detectTapGestures { position ->

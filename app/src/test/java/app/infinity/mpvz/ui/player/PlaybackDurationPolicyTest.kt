@@ -8,6 +8,7 @@ package app.infinity.mpvz.ui.player
 
 import java.io.File
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -84,5 +85,90 @@ class PlaybackDurationPolicyTest {
     assertTrue(readySync.contains("phase != PlaybackPhase.READY && phase != PlaybackPhase.BACKGROUND"))
     assertTrue(readySync.contains("PlaybackSession.state.value.generation == generation"))
     assertTrue(readySync.contains("syncMediaDurationForCurrentItem()"))
+  }
+  @Test
+  fun durationSamplesAreRejectedAfterGenerationOrItemChanges() {
+    assertTrue(
+      PlaybackDurationPolicy.isCurrentSample(
+        sampleGeneration = 8L,
+        sampleStableId = "stable-item",
+        sampleOriginalUri = "content://media/8",
+        currentGeneration = 8L,
+        currentStableId = "stable-item",
+        currentOriginalUri = "content://media/8",
+      ),
+    )
+    assertFalse(
+      PlaybackDurationPolicy.isCurrentSample(
+        sampleGeneration = 8L,
+        sampleStableId = "stable-item",
+        sampleOriginalUri = "content://media/8",
+        currentGeneration = 9L,
+        currentStableId = "next-item",
+        currentOriginalUri = "content://media/9",
+      ),
+    )
+    assertFalse(
+      PlaybackDurationPolicy.isCurrentSample(
+        sampleGeneration = 8L,
+        sampleStableId = "stable-item",
+        sampleOriginalUri = "content://media/8",
+        currentGeneration = 8L,
+        currentStableId = "stable-item",
+        currentOriginalUri = "content://media/other-uri",
+      ),
+    )
+  }
+
+  @Test
+  fun durationSamplesRequireTheLoadedItemToMatchStateAndSelection() {
+    assertTrue(
+      PlaybackDurationPolicy.isCurrentLoadedItem(
+        loadedGeneration = 8L,
+        loadedStableId = "stable-item",
+        loadedOriginalUri = "content://media/8",
+        stateGeneration = 8L,
+        stateStableId = "stable-item",
+        stateOriginalUri = "content://media/8",
+        selectedStableId = "stable-item",
+        selectedOriginalUri = "content://media/8",
+      ),
+    )
+    assertFalse(
+      PlaybackDurationPolicy.isCurrentLoadedItem(
+        loadedGeneration = 8L,
+        loadedStableId = "stable-item",
+        loadedOriginalUri = "content://media/8",
+        stateGeneration = 8L,
+        stateStableId = "stable-item",
+        stateOriginalUri = "content://media/8",
+        selectedStableId = "next-item",
+        selectedOriginalUri = "content://media/9",
+      ),
+    )
+    assertFalse(
+      PlaybackDurationPolicy.isCurrentLoadedItem(
+        loadedGeneration = 8L,
+        loadedStableId = "stable-item",
+        loadedOriginalUri = "content://media/8",
+        stateGeneration = 9L,
+        stateStableId = "stable-item",
+        stateOriginalUri = "content://media/8",
+        selectedStableId = "stable-item",
+        selectedOriginalUri = "content://media/8",
+      ),
+    )
+  }
+
+  @Test
+  fun durationRefreshReadsFeedTheLatestValueFlow() {
+    val root = File("src/main/java").takeIf { it.exists() } ?: File("app/src/main/java")
+    val session = File(root, "app/infinity/mpvz/ui/player/PlaybackSession.kt").readText()
+    val flow = session.substringAfter("MutableSharedFlow<DurationSample>(").substringBefore(")")
+    val refresh = session.substringAfter("private fun publishTimelinePropertiesLocked()").substringBefore("private fun parseEndFileReason(")
+
+    assertTrue(flow.contains("replay = 1"))
+    assertTrue(flow.contains("onBufferOverflow = BufferOverflow.DROP_OLDEST"))
+    assertTrue(refresh.contains("publishDurationSampleLocked(value)"))
   }
 }

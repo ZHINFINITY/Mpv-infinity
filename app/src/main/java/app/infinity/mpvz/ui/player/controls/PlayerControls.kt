@@ -502,6 +502,7 @@ fun PlayerControls(
       nativeReady = nativeSnapshot.isReady,
       nativeBuffering = nativeSnapshot.isBuffering,
       nativeEnded = nativeSnapshot.isEnded,
+      nativeFailed = nativeSnapshot.hasError,
       mpvLoading = playbackSessionState.phase == PlaybackPhase.LOADING,
       mpvBuffering = bufferingState.visible,
       torrentConnecting = isTorrentConnecting,

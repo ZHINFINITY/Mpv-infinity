@@ -31,7 +31,7 @@ class InterpolationShortcutFeedbackContractTest {
     val restart = activity.substringAfter("private fun requestMpvInterpolationRestart")
       .substringBefore("private fun handleNativePlaybackEnded")
     assertTrue(restart.contains("MpvInterpolationRestartTransaction.run(snapshot"))
-    assertTrue(restart.contains("PlaybackSession.load("))
+    assertTrue(restart.contains("PlaybackSession.loadWithBoundedProviderResolution("))
     assertTrue(restart.contains("positionRestoreOverride = PlaybackPositionRestoreOverride(state.positionSeconds, paused = true)"))
     for (resource in listOf("toast_interpolation_restarting_mpv", "toast_interpolation_restarted_mpv",
       "toast_interpolation_configured_mpv", "toast_interpolation_applied_live")) {

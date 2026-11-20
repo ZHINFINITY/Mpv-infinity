@@ -197,6 +197,58 @@ class PlaybackModelsTest {
   }
 
   @Test
+  fun staleLoadCannotReplaceNewerQueueItemWithSameStableId() {
+    val original = PlaybackItem(stableId = "shared", originalUri = "https://media.example/item", title = "Original")
+    val snapshot = PlaybackQueueState(items = listOf(original), currentIndex = 0)
+    val newerItem = original.copy(title = "Newer metadata")
+    val current = snapshot.copy(items = listOf(newerItem))
+
+    val updated =
+      PlaybackQueueReducer.replaceCurrentItemIfUnchanged(
+        previous = current,
+        expectedItem = snapshot.currentItem,
+        replacement = original.copy(playableUri = "https://media.example/resolved"),
+      )
+
+    assertEquals(current, updated)
+  }
+
+  @Test
+  fun loadCanUpdateCurrentQueueItemWhenItsStartingSnapshotIsUnchanged() {
+    val original = PlaybackItem(stableId = "shared", originalUri = "https://media.example/item")
+    val snapshot = PlaybackQueueState(items = listOf(original), currentIndex = 0)
+    val resolved = original.copy(playableUri = "https://media.example/resolved")
+
+    val updated =
+      PlaybackQueueReducer.replaceCurrentItemIfUnchanged(
+        previous = snapshot,
+        expectedItem = snapshot.currentItem,
+        replacement = resolved,
+      )
+
+    assertEquals(resolved, updated.currentItem)
+  }
+
+  @Test
+  fun queueMoveDoesNotPreventUpdatingTheSameCurrentItem() {
+    val original = PlaybackItem(stableId = "shared", originalUri = "https://media.example/item")
+    val other = PlaybackItem(stableId = "other", originalUri = "https://media.example/other")
+    val snapshot = PlaybackQueueState(items = listOf(original, other), currentIndex = 0)
+    val moved = PlaybackQueueReducer.move(snapshot, from = 1, to = 0)!!
+    val resolved = original.copy(playableUri = "https://media.example/resolved")
+
+    val updated =
+      PlaybackQueueReducer.replaceCurrentItemIfUnchanged(
+        previous = moved,
+        expectedItem = snapshot.currentItem,
+        replacement = resolved,
+      )
+
+    assertEquals(1, updated.currentIndex)
+    assertEquals(resolved, updated.currentItem)
+  }
+
+  @Test
   fun rapidQueueAdvancesKeepCurrentItemAndIndexAligned() {
     val items = listOf(
       PlaybackItem("a", "file:///a", title = "A"),

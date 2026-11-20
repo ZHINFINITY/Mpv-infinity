@@ -140,7 +140,9 @@ data class ControlLayoutEditorScreen(
     var selectedButtons by remember(region, activeControlsValue) {
       mutableStateOf(parseButtons(activeControlsValue))
     }
+    var hasLocalEdits by remember(region, prefToEdit) { mutableStateOf(false) }
     val latestSelectedButtons by rememberUpdatedState(selectedButtons)
+    val latestHasLocalEdits by rememberUpdatedState(hasLocalEdits)
 
     val playbackControlsPosition by preferences.playbackControlsPosition.collectAsState()
     val previewTopRightButtons =
@@ -155,15 +157,22 @@ data class ControlLayoutEditorScreen(
     // Coalesce rapid reorder updates, but apply the final layout while this editor remains open.
     LaunchedEffect(region, activeControlsValue, selectedButtons) {
       val serialized = selectedButtons.joinToString(",")
-      if (serialized == activeControlsValue) return@LaunchedEffect
+      if (serialized == activeControlsValue) {
+        hasLocalEdits = false
+        return@LaunchedEffect
+      }
+      if (!hasLocalEdits) return@LaunchedEffect
       delay(180)
-      if (prefToEdit.get() == activeControlsValue) prefToEdit.set(serialized)
+      if (hasLocalEdits && prefToEdit.get() == activeControlsValue) {
+        prefToEdit.set(serialized)
+        hasLocalEdits = false
+      }
     }
 
     DisposableEffect(region, prefToEdit) {
       onDispose {
         val serialized = latestSelectedButtons.joinToString(",")
-        if (prefToEdit.get() != serialized) prefToEdit.set(serialized)
+        if (latestHasLocalEdits && prefToEdit.get() != serialized) prefToEdit.set(serialized)
       }
     }
 
@@ -186,6 +195,7 @@ data class ControlLayoutEditorScreen(
         onConfirm = {
           prefToEdit.delete()
           selectedButtons = parseButtons(prefToEdit.get())
+          hasLocalEdits = false
           showResetDialog = false
         },
         onCancel = {
@@ -238,6 +248,7 @@ data class ControlLayoutEditorScreen(
                 selectedButtons.toMutableList().apply {
                   add(toIndex, removeAt(fromIndex))
                 }
+              hasLocalEdits = true
             }
           }
 
@@ -264,13 +275,17 @@ data class ControlLayoutEditorScreen(
               portraitBottomButtons = previewPortraitBottomButtons,
               modifier = Modifier.padding(bottom = 4.dp),
               onPreviewButtonTap = { button ->
-                if (button in selectedButtons) selectedButtons = selectedButtons - button
+                if (button in selectedButtons) {
+                  selectedButtons = selectedButtons - button
+                  hasLocalEdits = true
+                }
               },
               onPreviewReorder = { fromButton, toButton ->
                 val fromIndex = selectedButtons.indexOf(fromButton)
                 val toIndex = selectedButtons.indexOf(toButton)
                 if (fromIndex in selectedButtons.indices && toIndex in selectedButtons.indices && fromIndex != toIndex) {
                   selectedButtons = selectedButtons.toMutableList().apply { add(toIndex, removeAt(fromIndex)) }
+                  hasLocalEdits = true
                 }
               },
             )
@@ -383,7 +398,10 @@ data class ControlLayoutEditorScreen(
                   PlayerButtonChip(
                     button = button,
                     enabled = true,
-                    onClick = { selectedButtons = selectedButtons - button },
+                    onClick = {
+                      selectedButtons = selectedButtons - button
+                      hasLocalEdits = true
+                    },
                     badgeIcon = Icons.RoundedFilled.RemoveCircle,
                     badgeColor = Color(0xFFEF5350),
                   )
@@ -423,7 +441,10 @@ data class ControlLayoutEditorScreen(
                   PlayerButtonChip(
                     button = button,
                     enabled = isEnabled,
-                    onClick = { selectedButtons = selectedButtons + button },
+                    onClick = {
+                      selectedButtons = selectedButtons + button
+                      hasLocalEdits = true
+                    },
                     badgeIcon = Icons.RoundedFilled.AddCircle,
                     badgeColor =
                       if (isEnabled) {

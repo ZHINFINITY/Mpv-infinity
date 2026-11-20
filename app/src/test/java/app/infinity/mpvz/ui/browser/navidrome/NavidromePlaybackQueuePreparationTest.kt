@@ -48,7 +48,12 @@ class NavidromePlaybackQueuePreparationTest {
     assertFalse("The initial screen must not wait on the 500-album endpoint", initialLoad.contains("size = 500"))
     assertTrue(viewModel.contains("if (tab == NavidromeMusicTab.ALBUMS) loadAlbumsIfNeeded()"))
     assertTrue(albumLoader.contains("type = \"alphabeticalByName\", size = 500"))
-    assertTrue(viewModel.contains("activeConnectionChanged"))
+    assertTrue(viewModel.contains("activateServer(newActive, servers = servers)"))
+    assertTrue(viewModel.contains("playbackLaunchJob?.cancel()"))
+    assertTrue(viewModel.contains("val shouldResetState = connectionChanged || forceLoad"))
+    assertTrue(viewModel.contains("albumLoadRequestId++"))
+    assertTrue(viewModel.contains("if (_uiState.value.activeTab == NavidromeMusicTab.ALBUMS) loadAlbumsIfNeeded()"))
+    assertTrue(viewModel.contains("isActiveServerForPlayback(server)"))
   }
 
   @Test
@@ -74,12 +79,15 @@ class NavidromePlaybackQueuePreparationTest {
     val successfulConnection = viewModel.substringAfter("if (successfulServer != null) {")
       .substringBefore("val err = lastError")
     val savedServer = successfulConnection.indexOf("val savedServer = successfulServer.copy(id = savedId)")
-    val stateActivation = successfulConnection.indexOf("activeServer = savedServer")
-    val initialLoad = successfulConnection.indexOf("loadAllData()")
+    val activation = successfulConnection.indexOf("activateServer(savedServer, forceLoad = true)")
+    
 
     assertTrue(savedServer >= 0)
-    assertTrue("The saved server must be activated before loading", stateActivation > savedServer)
-    assertTrue("Successful login must trigger the initial catalog load", initialLoad > stateActivation)
+    assertTrue("Successful login must use the shared server activation path", activation > savedServer)
+    assertTrue(viewModel.contains("if ((connectionChanged || forceLoad) && server != null)"))
+    assertTrue(viewModel.contains("playbackLaunchRequestId++"))
+    assertTrue(viewModel.contains("isActiveServerForPlayback(server)"))
+    assertTrue(viewModel.contains("loadAllData()"))
     assertTrue(viewModel.contains("requestId == catalogLoadRequestId"))
     assertTrue(viewModel.contains("catalogLoadJob?.cancel()"))
   }
