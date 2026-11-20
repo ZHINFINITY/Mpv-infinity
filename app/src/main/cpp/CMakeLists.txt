@@ -159,6 +159,21 @@ if(MPVFLOW_ENABLE_VULKAN_BACKEND)
         endif()
     endforeach()
 
+    set(MPVFLOW_HAS_CUSTOM_SHADER_API FALSE)
+    set(MPVFLOW_HAS_SHADER_COMPUTE_QUERY FALSE)
+    foreach(MPVFLOW_EXPORT_LINE IN LISTS MPVFLOW_PLACEBO_EXPORT_LINES)
+        if(MPVFLOW_EXPORT_LINE MATCHES "[ \t]pl_shader_custom(@[^ \t]+)?$")
+            set(MPVFLOW_HAS_CUSTOM_SHADER_API TRUE)
+        elseif(MPVFLOW_EXPORT_LINE MATCHES "[ \t]pl_shader_is_compute(@[^ \t]+)?$")
+            set(MPVFLOW_HAS_SHADER_COMPUTE_QUERY TRUE)
+        endif()
+    endforeach()
+    set(MPVFLOW_HAS_RENDERER_HOOK FALSE)
+    if(MPVFLOW_HAS_CUSTOM_SHADER_API AND MPVFLOW_HAS_SHADER_COMPUTE_QUERY)
+        set(MPVFLOW_HAS_RENDERER_HOOK TRUE)
+    endif()
+    message(STATUS "MPVFlow renderer-fused synthesis API: ${MPVFLOW_HAS_RENDERER_HOOK}")
+
     add_library(mpvflow_placebo_api_from_aar SHARED IMPORTED GLOBAL)
     set_target_properties(mpvflow_placebo_api_from_aar PROPERTIES
         IMPORTED_LOCATION "${MPVFLOW_PLACEBO_API_SO}")
@@ -179,6 +194,9 @@ if(MPVFLOW_ENABLE_VULKAN_BACKEND)
         CXX_STANDARD_REQUIRED ON)
     target_compile_definitions(media3flow_vulkan PRIVATE
         $<$<CONFIG:Debug>:MPVFLOW_DEBUG_CAPTURE=1>)
+    if(MPVFLOW_HAS_RENDERER_HOOK)
+        target_compile_definitions(media3flow_vulkan PRIVATE MPVFLOW_HAVE_RENDERER_HOOK=1)
+    endif()
     target_include_directories(media3flow_vulkan PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/third_party/libplacebo/include"
         "${CMAKE_CURRENT_SOURCE_DIR}/mpvflow")

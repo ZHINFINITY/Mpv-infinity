@@ -13,6 +13,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import androidx.lifecycle.repeatOnLifecycle
 import app.infinity.mpvz.ui.player.AudioPlaybackResumeStore
 import app.infinity.mpvz.ui.player.AudioPlaybackResumeSnapshot
+import app.infinity.mpvz.ui.player.EmbeddedMotionArtwork
+import app.infinity.mpvz.ui.player.MotionArtworkImage
+import app.infinity.mpvz.ui.player.rememberMotionArtworkDrawable
+import app.infinity.mpvz.presentation.components.RemoteImageLoader
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
@@ -112,6 +116,7 @@ import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.DeclaredPlaybackMediaKind
 import app.infinity.mpvz.ui.player.MediaPlaybackService
+import app.infinity.mpvz.ui.player.controls.MiniPlayerDismissGesturePolicy
 import app.infinity.mpvz.ui.player.PlaybackPhase
 import app.infinity.mpvz.ui.player.PlaybackSession
 import app.infinity.mpvz.ui.player.PlayerActivity
@@ -133,6 +138,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import org.koin.compose.koinInject
+import okhttp3.OkHttpClient
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import app.infinity.mpvz.ui.player.browserMusicSheetDrag
@@ -447,7 +453,8 @@ private fun MiniPlayerContent(
     )
   }
   val density = LocalDensity.current
-  val dismissThresholdPx = with(density) { 100.dp.toPx() }
+  val dismissThresholdPx = with(density) { 64.dp.toPx() }
+  val dismissVelocityThresholdPxPerSecond = with(density) { 800.dp.toPx() }
   val expandThresholdPx = with(density) { 48.dp.toPx() }
 
   val useInAppSheet = isAudioOnlyItem && musicSheet?.isAvailable == true
@@ -487,6 +494,7 @@ private fun MiniPlayerContent(
           MediaPlaybackService.ACTION_NOTIFICATION_STOP,
         ),
       )
+      Unit
     }
   }
 
@@ -509,9 +517,23 @@ private fun MiniPlayerContent(
         }
       }
       .pointerInput(Unit) {
+        val velocityTracker = VelocityTracker()
+        var trackedHorizontalDragPx = 0f
         detectHorizontalDragGestures(
+          onDragStart = {
+            velocityTracker.resetTracking()
+            trackedHorizontalDragPx = 0f
+          },
           onDragEnd = {
-            if (abs(offsetX) > dismissThresholdPx) {
+            val velocityX = runCatching { velocityTracker.calculateVelocity().x }.getOrDefault(0f)
+            if (MiniPlayerDismissGesturePolicy.shouldDismissHorizontally(
+                offsetX,
+                velocityX,
+                dismissThresholdPx,
+                dismissVelocityThresholdPxPerSecond,
+              )
+            ) {
+              offsetX = 0f
               dismissPlayer()
             } else {
               coroutineScope.launch {
@@ -528,7 +550,12 @@ private fun MiniPlayerContent(
               }
             }
           },
-          onHorizontalDrag = { _, dragAmount ->
+          onHorizontalDrag = { change, dragAmount ->
+            trackedHorizontalDragPx += dragAmount
+            velocityTracker.addPosition(
+              change.uptimeMillis,
+              androidx.compose.ui.geometry.Offset(trackedHorizontalDragPx, 0f),
+            )
             offsetX += dragAmount
           },
         )
@@ -539,6 +566,9 @@ private fun MiniPlayerContent(
             state = musicSheet,
             fromMiniPlayer = true,
             onDown = musicSheet::prewarm,
+            dismissThresholdPx = dismissThresholdPx,
+            dismissVelocityThresholdPxPerSecond = dismissVelocityThresholdPxPerSecond,
+            onDismissDown = dismissPlayer,
           )
         } else {
           Modifier.pointerInput(Unit) {
@@ -554,9 +584,20 @@ private fun MiniPlayerContent(
                 change.consume()
               },
               onDragEnd = {
-                val upwardVelocity = -runCatching { velocityTracker.calculateVelocity().y }.getOrDefault(0f)
+                val velocityY = runCatching { velocityTracker.calculateVelocity().y }.getOrDefault(0f)
+                val upwardVelocity = -velocityY
                 val expandVelocityPxPerSecond = with(density) { 300.dp.toPx() }
-                if (verticalDrag < -expandThresholdPx || upwardVelocity > expandVelocityPxPerSecond) launchPlayer()
+                if (MiniPlayerDismissGesturePolicy.shouldDismissDownward(
+                    verticalDrag,
+                    velocityY,
+                    dismissThresholdPx,
+                    dismissVelocityThresholdPxPerSecond,
+                  )
+                ) {
+                  dismissPlayer()
+                } else if (verticalDrag < -expandThresholdPx || upwardVelocity > expandVelocityPxPerSecond) {
+                  launchPlayer()
+                }
                 verticalDrag = 0f
               },
               onDragCancel = { verticalDrag = 0f },
@@ -758,8 +799,11 @@ private fun MiniPlayerContent(
             .background(MaterialTheme.colorScheme.surfaceVariant),
           contentAlignment = Alignment.Center,
         ) {
-          val artworkImageBitmap = remember(coverArt) { coverArt?.asImageBitmap() }
-          if (artworkImageBitmap != null) {
+          val artworkImageBitmap = remember(coverArt?.bitmap) { coverArt?.bitmap?.asImageBitmap() }
+          val animatedDrawable = rememberMotionArtworkDrawable(coverArt?.motionArtwork)
+          if (animatedDrawable != null) {
+            MotionArtworkImage(animatedDrawable, isPlaying, modifier = Modifier.fillMaxSize())
+          } else if (artworkImageBitmap != null) {
             Image(
               bitmap = artworkImageBitmap,
               contentDescription = null,
@@ -928,50 +972,83 @@ private fun MiniPlayerGlassButton(
   }
 }
 
-/**
- * Extracts embedded album art for the current track so the mini player can show a
- * square cover instead of a bare icon. Returns null when no artwork is available.
- */
+/** Resolved static-cover fallback plus optional bounded GIF/WebP bytes for the active track. */
+private data class MiniPlayerArtwork(
+  val bitmap: Bitmap?,
+  val motionArtwork: ByteArray?,
+)
+
 @Composable
 private fun rememberMiniPlayerCoverArt(
   pathOrUri: String?,
   artworkUri: String?,
-): Bitmap? {
+): MiniPlayerArtwork? {
   val context = LocalContext.current
-  var bitmap by remember { mutableStateOf<Bitmap?>(null) }
+  val httpClient = koinInject<OkHttpClient>()
+  var artwork by remember { mutableStateOf<MiniPlayerArtwork?>(null) }
   LaunchedEffect(pathOrUri, artworkUri) {
     if (pathOrUri.isNullOrBlank()) {
-      bitmap = null
+      artwork = null
       return@LaunchedEffect
     }
+    artwork = null
     withContext(Dispatchers.IO) {
-      runCatching {
-        EmbeddedArtworkResolver.decodeArtworkUri(context, artworkUri)?.let { return@runCatching it }
+      val loaded = runCatching {
+        val explicitArtworkBytes = artworkUri?.let {
+          RemoteImageLoader.loadEncodedBytes(context, httpClient, it, EmbeddedMotionArtwork.MaxEncodedBytes)
+        }
+        val explicitArtwork = explicitArtworkBytes?.let(EmbeddedArtworkResolver::decodeArtworkBytes)
+          ?: EmbeddedArtworkResolver.decodeArtworkUri(context, artworkUri)
+        val explicitArtworkSelected = explicitArtwork != null || EmbeddedMotionArtwork.animatedBytes(explicitArtworkBytes) != null
         val cleanPath =
           when {
             pathOrUri.startsWith("file://", ignoreCase = true) -> Uri.parse(pathOrUri).path
             pathOrUri.startsWith("content://", ignoreCase = true) -> null
             else -> pathOrUri
           }
-        val retriever = MediaMetadataRetriever()
-        try {
-          if (cleanPath != null) {
-            retriever.setDataSource(cleanPath)
-          } else {
-            retriever.setDataSource(context, Uri.parse(pathOrUri))
+        val embeddedArtwork =
+          runCatching {
+            val retriever = MediaMetadataRetriever()
+            try {
+              if (cleanPath != null) {
+                retriever.setDataSource(cleanPath)
+              } else {
+                retriever.setDataSource(context, Uri.parse(pathOrUri))
+              }
+              val pictureBytes = retriever.embeddedPicture
+              val resolvedArtwork = EmbeddedArtworkResolver.resolveEmbeddedArtwork(cleanPath, retriever, pictureBytes)
+              MiniPlayerArtwork(
+                bitmap = resolvedArtwork.bitmap,
+                motionArtwork = EmbeddedMotionArtwork.selectedAnimatedBytes(
+                  explicitArtworkSelected = false,
+                  explicitArtworkBytes = null,
+                  embeddedPictureBytes = resolvedArtwork.embeddedPictureBytes,
+                  sidecarPath = resolvedArtwork.sidecarPath,
+                ),
+              )
+            } finally {
+              runCatching { retriever.release() }
+            }
           }
-          EmbeddedArtworkResolver.decodeEmbeddedArtwork(cleanPath, retriever)
-        } finally {
-          runCatching { retriever.release() }
-        }
-      }.onSuccess { loaded ->
-        bitmap = loaded
-      }.onFailure {
-        bitmap = null
-      }
+            .getOrNull()
+        MiniPlayerArtwork(
+          bitmap = explicitArtwork ?: embeddedArtwork?.bitmap,
+          motionArtwork = if (explicitArtworkSelected) {
+            EmbeddedMotionArtwork.selectedAnimatedBytes(
+              explicitArtworkSelected = true,
+              explicitArtworkBytes = explicitArtworkBytes,
+              embeddedPictureBytes = null,
+              sidecarPath = null,
+            )
+          } else {
+            embeddedArtwork?.motionArtwork
+          },
+        )
+      }.getOrNull()
+      artwork = loaded
     }
   }
-  return bitmap
+  return artwork
 }
 
 /** Fixed-width edge fades: a short title is never washed out, and the first letters stay readable at rest. */

@@ -79,13 +79,12 @@ internal object RuntimeShaderSupport {
     specular: Float,
     fresnel: Float,
     strength: Float,
-    frostPx: Float,
   ): Boolean {
     if (Build.VERSION.SDK_INT < 33 || shader == null) return false
     return bindGlassOpticsApi33(
       shader, sourceShader, paint, paneWidth, paneHeight, originX, originY,
       sceneLeft, sceneTop, sceneWidth, sceneHeight, imageWidth, imageHeight,
-      radius, bevel, lightX, lightY, specular, fresnel, strength, frostPx,
+      radius, bevel, lightX, lightY, specular, fresnel, strength,
     )
   }
 
@@ -139,11 +138,10 @@ internal object RuntimeShaderSupport {
     specular: Float,
     fresnel: Float,
     strength: Float,
-    frostPx: Float,
   ): Boolean =
     AgslRuntimeShaders.bindGlassOptics(
       shader, sourceShader, paint, paneWidth, paneHeight, originX, originY,
       sceneLeft, sceneTop, sceneWidth, sceneHeight, imageWidth, imageHeight,
-      radius, bevel, lightX, lightY, specular, fresnel, strength, frostPx,
+      radius, bevel, lightX, lightY, specular, fresnel, strength,
     )
 }

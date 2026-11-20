@@ -176,6 +176,14 @@ internal fun PlaybackItem.declaredMediaKind(videoHint: Boolean = false): Declare
 internal fun PlaybackItem.isDefinitelyAudioOnly(): Boolean =
   declaredMediaKind() == DeclaredPlaybackMediaKind.AUDIO
 
+/** Internal network-browser items have trusted direct-media provenance even without MIME/extension. */
+internal fun PlaybackItem.isTrustedNetworkVideoSource(): Boolean =
+  networkSource != null && declaredMediaKind() != DeclaredPlaybackMediaKind.AUDIO
+
+/** The optional MKV tail-duration compatibility probe can add an EOF seek to HTTP playback. */
+internal fun shouldSkipRemoteMkvDurationProbe(playableUri: String): Boolean =
+  playableUri.startsWith("http://", ignoreCase = true) || playableUri.startsWith("https://", ignoreCase = true)
+
 /**
  * Auto engine uses Native for HDR-family video because Media3 preserves HDR/Dolby Vision output;
  * ordinary video continues to use MPV. The queued item carries the server/file metadata and title
@@ -200,8 +208,11 @@ private fun String.mediaUriLeaf(): String =
     .substringAfterLast('/')
 
 /** Native cannot open a webpage URL as media; keep it on MPV until yt-dlp resolves a stream. */
-internal fun PlaybackItem.requiresWebPageResolutionBeforeNative(): Boolean {
+internal fun PlaybackItem.requiresWebPageResolutionBeforeNative(videoHint: Boolean = false): Boolean {
   if (requiresTorrentResolution()) return true
+  // Only trusted, already-direct media paths may supply this hint (for example a playable Stream
+  // result or a yt-dlp-resolved video). Generic extensionless HTTP links remain webpages.
+  if (videoHint) return false
   val url = playableUri.trim()
   if (!url.startsWith("http://", ignoreCase = true) && !url.startsWith("https://", ignoreCase = true)) {
     return false
@@ -218,8 +229,9 @@ internal fun PlaybackItem.requiresWebPageResolutionBeforeNative(): Boolean {
 internal fun resolvePlaybackEngineMode(
   configuredEngine: PlaybackEngineMode,
   item: PlaybackItem,
+  videoHint: Boolean = false,
 ): PlaybackEngineMode {
-  if (item.requiresWebPageResolutionBeforeNative()) return PlaybackEngineMode.MPV
+  if (item.requiresWebPageResolutionBeforeNative(videoHint)) return PlaybackEngineMode.MPV
   return when (configuredEngine) {
     PlaybackEngineMode.AUTO -> if (item.isHdrOrDolbyVision()) PlaybackEngineMode.NATIVE else PlaybackEngineMode.MPV
     else -> configuredEngine
@@ -318,6 +330,23 @@ internal object PlaybackQueueReducer {
     } else {
       rebuildShuffle(selected)
     }
+  }
+
+  fun replaceCurrentItemIfUnchanged(
+    previous: PlaybackQueueState,
+    expectedItem: PlaybackItem?,
+    replacement: PlaybackItem,
+  ): PlaybackQueueState {
+    val currentItem = previous.currentItem
+    if (
+      currentItem != expectedItem ||
+      currentItem?.stableId != replacement.stableId
+    ) {
+      return previous
+    }
+    return previous.copy(
+      items = previous.items.toMutableList().apply { set(previous.currentIndex, replacement) },
+    )
   }
 
   fun move(

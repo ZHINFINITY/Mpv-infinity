@@ -22,7 +22,7 @@ class PopupGlassAndSheetLatencyPolicyTest {
     assertEquals(200L, GlassSamplingPolicy.settleDelay(now = 1_000L, settleUntil = 1_200L, hasFrame = true))
     assertEquals(0L, GlassSamplingPolicy.settleDelay(now = 1_000L, settleUntil = 1_200L, hasFrame = false))
     assertEquals(0L, GlassSamplingPolicy.settleDelay(now = 1_300L, settleUntil = 1_200L, hasFrame = true))
-    assertTrue(GlassSamplingPolicy.TransitionSettleMs in 200L..400L)
+    assertTrue(GlassSamplingPolicy.TransitionSettleMs in 400L..500L)
   }
 
   @Test
@@ -81,5 +81,33 @@ class PopupGlassAndSheetLatencyPolicyTest {
     assertTrue(dialog.contains("private fun Modifier.popupInnerFill("))
     assertTrue(dialog.contains("selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.20f)"))
     assertFalse("selected chips must be visible", dialog.contains("selectedContainerColor = Color.Transparent"))
+  }
+
+  @Test
+  fun playlistUsesOneSampledPaneAndHoistsTheInsetEnableState() {
+    val playlist = source("src/main/java/app/infinity/mpvz/ui/player/controls/components/sheets/PlaylistSheet.kt")
+    assertEquals(1, Regex("appearancePreferences\\.liquidGlassSurfaces\\.collectAsState\\(\\)").findAll(playlist).count())
+    assertTrue(playlist.contains("glassEnabled = liquidGlassSurfaces"))
+
+    val helper = playlist.substringAfter("private fun Modifier.playlistItemGlass(")
+      .substringBefore("@Composable\nprivate fun DragHandle")
+    assertFalse("the playlist helper must not duplicate the sheet enable-state collector", helper.contains("collectAsState()"))
+    assertTrue(helper.contains("return glassInsetSurface("))
+    assertTrue(helper.contains("shape = RoundedCornerShape(cornerRadius)"))
+    assertTrue(helper.contains("fillAlpha = 0.30f"))
+    assertTrue(helper.contains("borderAlpha = 0.18f"))
+  }
+
+  @Test
+  fun pixelCopyReusesTheMainHandlerAndMoreSheetUsesALightweightInset() {
+    val backdrop = source("src/main/java/app/infinity/mpvz/ui/theme/LiquidGlassBackdrop.kt")
+    assertEquals(1, Regex("Handler\\(Looper\\.getMainLooper\\(\\)\\)").findAll(backdrop).count())
+    assertTrue(backdrop.contains("private val glassPixelCopyHandler"))
+    assertTrue(backdrop.contains("}, glassPixelCopyHandler)"))
+
+    val moreSheet = source("src/main/java/app/infinity/mpvz/ui/player/controls/components/sheets/MoreSheet.kt")
+    assertTrue("MoreSheet keeps an inset material inside the sampled sheet", moreSheet.contains("glassInsetSurface("))
+    assertTrue(moreSheet.contains("appearancePreferences.liquidGlassSurfaces.collectAsState()"))
+    assertTrue(moreSheet.contains("color = androidx.compose.ui.graphics.Color.Transparent"))
   }
 }

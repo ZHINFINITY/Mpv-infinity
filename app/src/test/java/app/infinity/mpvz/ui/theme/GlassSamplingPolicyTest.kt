@@ -27,12 +27,14 @@ class GlassSamplingPolicyTest {
   }
 
   @Test fun pausedAndFailedSourcesDoNotPollAtPlaybackCadence() {
-    // Regression: 200 ms (5 fps) made video behind decoder/subtitle sheets visibly slower.
-    assertEquals(33L, GlassSamplingPolicy.PlayingIntervalMs)
-    assertEquals(33L, GlassSamplingPolicy.interval(true, 0))
-    assertEquals(33L, GlassSamplingPolicy.interval(true, 0, thermalStatus = 1))
-    assertEquals(66L, GlassSamplingPolicy.WarmPlayingIntervalMs)
-    assertEquals(66L, GlassSamplingPolicy.interval(true, 0, thermalStatus = 2))
+    // PixelCopy plus CPU frosting is not a display-rate backdrop; the material stays responsive at 15 fps.
+    assertEquals(66L, GlassSamplingPolicy.PlayingIntervalMs)
+    assertEquals(66L, GlassSamplingPolicy.interval(true, 0))
+    assertEquals(66L, GlassSamplingPolicy.interval(true, 0, thermalStatus = 1))
+    assertEquals(100L, GlassSamplingPolicy.ControlsPlayingIntervalMs)
+    assertEquals(100L, GlassSamplingPolicy.interval(true, 0, largeSurface = false))
+    assertEquals(120L, GlassSamplingPolicy.WarmPlayingIntervalMs)
+    assertEquals(120L, GlassSamplingPolicy.interval(true, 0, thermalStatus = 2))
     assertEquals(1000L, GlassSamplingPolicy.interval(false, 0, thermalStatus = 0))
     assertEquals(1000L, GlassSamplingPolicy.interval(false, 0))
     assertEquals(1200L, GlassSamplingPolicy.interval(true, 1))

@@ -12,6 +12,7 @@ import android.content.SharedPreferences
 import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import javax.crypto.AEADBadTagException
 import java.util.UUID
 import org.json.JSONArray
 import org.json.JSONObject
@@ -185,14 +186,20 @@ internal object AudioPlaybackResumeStore {
   fun load(context: Context): AudioPlaybackResumeSnapshot? {
     cachedQueue = null
     val preferences = preferences(context) ?: return null
-    val queueEncoded =
-      runCatching { preferences.getString(QUEUE_KEY, null) }
-        .onFailure { error -> Log.e(TAG, "Unable to read the audio playback queue", error) }
-        .getOrNull()
-    val stateEncoded =
-      runCatching { preferences.getString(STATE_KEY, null) }
-        .onFailure { error -> Log.e(TAG, "Unable to read the audio playback state", error) }
-        .getOrNull()
+    var authenticationFailure: Throwable? = null
+    fun readString(key: String, label: String): String? =
+      runCatching { preferences.getString(key, null) }
+        .onFailure { error ->
+          Log.e(TAG, "Unable to read $label", error)
+          if (isEncryptedPreferencesAuthenticationFailure(error)) authenticationFailure = error
+        }.getOrNull()
+
+    val queueEncoded = readString(QUEUE_KEY, "the audio playback queue")
+    val stateEncoded = readString(STATE_KEY, "the audio playback state")
+    if (authenticationFailure != null) {
+      resetUnreadablePreferences(context, authenticationFailure!!)
+      return null
+    }
 
     if (queueEncoded != null && stateEncoded != null) {
       val decoded =
@@ -213,7 +220,12 @@ internal object AudioPlaybackResumeStore {
       }
     }
 
-    return loadLegacyAndMigrate(preferences, queueEncoded != null || stateEncoded != null)
+    val legacyEncoded = readString(LEGACY_SNAPSHOT_KEY, "the legacy audio playback snapshot")
+    if (authenticationFailure != null) {
+      resetUnreadablePreferences(context, authenticationFailure!!)
+      return null
+    }
+    return loadLegacyAndMigrate(preferences, queueEncoded != null || stateEncoded != null, legacyEncoded)
   }
 
   /**
@@ -241,11 +253,8 @@ internal object AudioPlaybackResumeStore {
   private fun loadLegacyAndMigrate(
     preferences: SharedPreferences,
     hasPartialSplitRecords: Boolean,
+    legacyEncoded: String?,
   ): AudioPlaybackResumeSnapshot? {
-    val legacyEncoded =
-      runCatching { preferences.getString(LEGACY_SNAPSHOT_KEY, null) }
-        .onFailure { error -> Log.e(TAG, "Unable to read the legacy audio playback snapshot", error) }
-        .getOrNull()
     if (legacyEncoded == null) {
       cachedQueue = null
       if (hasPartialSplitRecords) removeSplitRecords(preferences)
@@ -324,20 +333,52 @@ internal object AudioPlaybackResumeStore {
     cachedPreferences?.let { return it }
     return synchronized(this) {
       preferencesOverrideForTests?.let { return@synchronized it }
-      cachedPreferences ?: runCatching {
+      cachedPreferences ?: run {
         val appContext = context.applicationContext
-        val masterKey = MasterKey.Builder(appContext).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build()
-        EncryptedSharedPreferences.create(
-          appContext,
-          PREFS_NAME,
-          masterKey,
-          EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-          EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-        ).also { preferences -> cachedPreferences = preferences }
-      }.onFailure { error ->
-        Log.e(TAG, "Encrypted playback preferences are unavailable", error)
-      }.getOrNull()
+        runCatching { createEncryptedPreferences(appContext) }
+          .onSuccess { preferences -> cachedPreferences = preferences }
+          .getOrElse { error ->
+            if (!isEncryptedPreferencesAuthenticationFailure(error)) {
+              Log.e(TAG, "Encrypted playback preferences are unavailable", error)
+              return@run null
+            }
+            Log.w(TAG, "Discarding the unreadable audio-resume preference file after an authentication failure", error)
+            runCatching {
+              appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit().clear().apply()
+              createEncryptedPreferences(appContext).also { preferences -> cachedPreferences = preferences }
+            }.onFailure { retryError ->
+              Log.e(TAG, "Encrypted playback preferences remain unavailable after recovery", retryError)
+            }.getOrNull()
+          }
+      }
     }
+  }
+
+  internal fun isEncryptedPreferencesAuthenticationFailure(error: Throwable): Boolean =
+    generateSequence(error) { it.cause }.any { it is AEADBadTagException }
+
+  private fun resetUnreadablePreferences(context: Context, error: Throwable) {
+    if (!isEncryptedPreferencesAuthenticationFailure(error)) return
+    cachedPreferences = null
+    cachedQueue = null
+    runCatching {
+      val appContext = context.applicationContext
+      appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit().clear().apply()
+      createEncryptedPreferences(appContext).also { preferences -> cachedPreferences = preferences }
+    }.onFailure { recoveryError ->
+      Log.e(TAG, "Unable to recover the unreadable audio-resume preference file", recoveryError)
+    }
+  }
+
+  private fun createEncryptedPreferences(context: Context): SharedPreferences {
+    val masterKey = MasterKey.Builder(context).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build()
+    return EncryptedSharedPreferences.create(
+      context,
+      PREFS_NAME,
+      masterKey,
+      EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+      EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+    )
   }
 
   private fun encodeQueue(revision: String, items: List<PlaybackItem>): String =

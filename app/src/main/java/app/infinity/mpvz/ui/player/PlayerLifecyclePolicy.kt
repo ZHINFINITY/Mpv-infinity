@@ -283,6 +283,10 @@ internal object PlayerLifecyclePolicy {
   /** Reloading media before Android recreates the Surface leaves ColorOS on a black frame. */
   fun shouldWaitForSurfaceBeforeRebuild(surfaceReady: Boolean): Boolean = !surfaceReady
 
+  /** A saved track index is meaningful only for the same media item; missing old identity is best-effort. */
+  fun shouldRestoreVideoTrack(savedMediaId: String?, currentMediaId: String?): Boolean =
+    savedMediaId.isNullOrBlank() || savedMediaId == currentMediaId
+
   /** Music keeps its own session. Video must remember time-pos before OEM Surface teardown. */
   fun shouldCaptureForegroundResumePosition(isAudioMedia: Boolean): Boolean = !isAudioMedia
 

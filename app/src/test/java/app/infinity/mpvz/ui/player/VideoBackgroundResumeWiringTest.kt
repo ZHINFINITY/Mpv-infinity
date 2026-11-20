@@ -85,14 +85,9 @@ class VideoBackgroundResumeWiringTest {
       "restoreForegroundResumePositionIfNeeded()",
     )
     // MPV defers the rebuild until Android hands back a Surface (ColorOS black frame).
-    val surfaceReadyStart = activity.indexOf("player.onSurfaceReady = {")
-    assertTrue("missing player.onSurfaceReady callback", surfaceReadyStart >= 0)
-    val surfaceReadyEnd = activity.indexOf(
-      "\n    }\n\n    // NOW initialize MPV",
-      surfaceReadyStart,
-    )
-    assertTrue("unterminated player.onSurfaceReady callback", surfaceReadyEnd > surfaceReadyStart)
-    val surfaceReady = activity.substring(surfaceReadyStart, surfaceReadyEnd)
+    assertTrue(body("private fun setupMPV()").contains("configureMpvSurfaceCallback()"))
+    assertTrue(body("private fun startMpvCorePreparation()").contains("configureMpvSurfaceCallback()"))
+    val surfaceReady = body("private fun configureMpvSurfaceCallback()")
     assertInOrder(
       surfaceReady,
       "player.onSurfaceReady = {",
@@ -100,6 +95,30 @@ class VideoBackgroundResumeWiringTest {
       "rebuildRendererAfterLongBackground()",
       "restoreForegroundResumePositionIfNeeded()",
     )
+  }
+
+  @Test
+  fun longBackgroundRestoreWaitsForLoadedMediaAndReattachedSurface() {
+    val event = body("internal fun event(eventId: Int)")
+    assertInOrder(
+      event,
+      "MPV_EVENT_FILE_LOADED",
+      "handleFileLoaded(loadGeneration)",
+      "pendingVideoTrackRestoreAfterRebuild",
+      "enableVideoAfterBackground()",
+    )
+
+    val restore = body("private fun enableVideoAfterBackground()")
+    assertInOrder(
+      restore,
+      "MediaPlaybackService.activityForeground",
+      "if (!player.isSurfaceReady)",
+      "PlaybackSession.state.value.phase !in setOf(PlaybackPhase.READY, PlaybackPhase.BACKGROUND)",
+      "PlayerLifecyclePolicy.shouldRestoreVideoTrack(lastVidMediaId, currentMediaId)",
+      "PlaybackSession.setPropertyInt(\"vid\", lastVid)",
+    )
+    assertTrue(body("private fun rebuildRendererAfterLongBackground()")
+      .contains("pendingVideoTrackRestoreAfterRebuild = lastVid > 0"))
   }
 
   @Test
@@ -151,7 +170,7 @@ class VideoBackgroundResumeWiringTest {
     val nativeEngine = File(root, "app/infinity/mpvz/ui/player/NativeMedia3Engine.kt").readText()
     assertTrue(nativeEngine.contains(".setMediaId(mediaId?.takeIf(String::isNotBlank).orEmpty())"))
     assertTrue(activity.contains("mediaId = nativeItem.stableId"))
-    assertTrue(activity.contains("mediaId = currentItem?.stableId ?: mediaIdentifier"))
+    assertTrue(activity.contains("mediaId = currentItem?.stableId ?: handoffMediaIdentifier"))
   }
 
   @Test

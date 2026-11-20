@@ -6,6 +6,7 @@
  */
 package app.infinity.mpvz.ui.player
 
+import app.infinity.mpvz.ui.player.controls.MiniPlayerDismissGesturePolicy
 import app.infinity.mpvz.ui.player.controls.MusicMinimizeTransitionPolicy
 import android.content.ContentResolver
 import android.content.Context
@@ -272,9 +273,10 @@ fun rememberBrowserMusicSheetState(): BrowserMusicSheetState {
 }
 
 /**
- * Vertical drag that moves the sheet. On the mini player ([fromMiniPlayer]) only an upward drag
- * is claimed; on the full player only a downward one, so lists and lyrics keep their own scrolling.
- * Positions are measured in window space because the full player moves with the finger.
+ * Vertical drag that moves the sheet. On the mini player ([fromMiniPlayer]) upward motion expands;
+ * downward motion can dismiss it. On the full player only a downward drag is claimed, so lists and
+ * lyrics keep their own scrolling. Positions are measured in window space because the full player
+ * moves with the finger.
  *
  * Every exit path ends in [BrowserMusicSheetState.release] or [BrowserMusicSheetState.cancelDrag],
  * including the pointer coroutine being cancelled, so a drag can never be abandoned half-way.
@@ -284,12 +286,15 @@ fun Modifier.browserMusicSheetDrag(
   fromMiniPlayer: Boolean,
   enabled: Boolean = true,
   onDown: () -> Unit = {},
+  dismissThresholdPx: Float = 64f,
+  dismissVelocityThresholdPxPerSecond: Float = 800f,
+  onDismissDown: () -> Unit = {},
 ): Modifier {
   if (!enabled) return this
   val coordinatesHolder = arrayOfNulls<LayoutCoordinates>(1)
   return this
     .onGloballyPositioned { coordinatesHolder[0] = it }
-    .pointerInput(state, fromMiniPlayer) {
+    .pointerInput(state, fromMiniPlayer, dismissThresholdPx, dismissVelocityThresholdPxPerSecond, onDismissDown) {
       awaitEachGesture {
         val down = awaitFirstDown(requireUnconsumed = false)
         // The full page only reacts while it is on screen; see browserMusicSheetPresence.
@@ -298,18 +303,50 @@ fun Modifier.browserMusicSheetDrag(
         val tracker = VelocityTracker()
         fun windowY(local: androidx.compose.ui.geometry.Offset): Float =
           coordinatesHolder[0]?.takeIf { it.isAttached }?.localToWindow(local)?.y ?: local.y
-        var lastWindowY = windowY(down.position)
+        val initialWindowY = windowY(down.position)
+        var lastWindowY = initialWindowY
         tracker.addPosition(down.uptimeMillis, androidx.compose.ui.geometry.Offset(0f, lastWindowY))
         var claimed = false
+        var downwardDismiss = false
         val afterSlop =
           awaitVerticalTouchSlopOrCancellation(down.id) { change, overSlop ->
             val wanted = if (fromMiniPlayer) overSlop < 0f else overSlop > 0f
             if (wanted) {
               change.consume()
               claimed = true
+            } else if (fromMiniPlayer && overSlop > 0f) {
+              change.consume()
+              claimed = true
+              downwardDismiss = true
             }
           }
         if (afterSlop == null || !claimed) return@awaitEachGesture
+        if (downwardDismiss) {
+          var totalDown = windowY(afterSlop.position) - initialWindowY
+          tracker.addPosition(afterSlop.uptimeMillis, androidx.compose.ui.geometry.Offset(0f, windowY(afterSlop.position)))
+          var completed = false
+          try {
+            completed =
+              verticalDrag(afterSlop.id) { change ->
+                val y = windowY(change.position)
+                totalDown = y - initialWindowY
+                tracker.addPosition(change.uptimeMillis, androidx.compose.ui.geometry.Offset(0f, y))
+                change.consume()
+              }
+          } finally {
+            val velocityY = runCatching { tracker.calculateVelocity().y }.getOrDefault(0f)
+            if (completed && MiniPlayerDismissGesturePolicy.shouldDismissDownward(
+                totalDown,
+                velocityY,
+                dismissThresholdPx,
+                dismissVelocityThresholdPxPerSecond,
+              )
+            ) {
+              onDismissDown()
+            }
+          }
+          return@awaitEachGesture
+        }
         if (!state.beginDrag(fromMiniPlayer)) return@awaitEachGesture
         var completed = false
         try {

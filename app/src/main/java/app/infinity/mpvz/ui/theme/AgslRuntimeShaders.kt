@@ -115,7 +115,6 @@ internal object AgslRuntimeShaders {
     specular: Float,
     fresnel: Float,
     strength: Float,
-    frostPx: Float,
   ): Boolean =
     runCatching {
       val runtime = shader as RuntimeShader
@@ -132,7 +131,6 @@ internal object AgslRuntimeShaders {
       runtime.setFloatUniform("specular", specular)
       runtime.setFloatUniform("fresnel", fresnel)
       runtime.setFloatUniform("strength", strength)
-      runtime.setFloatUniform("frost", frostPx)
       paint.shader = runtime
     }.isSuccess
 }

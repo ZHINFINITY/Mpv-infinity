@@ -78,13 +78,34 @@ class PreparedQueueAutoEngineContractTest {
   @Test
   fun loadAndPreferenceHandoffUseTheSharedAutoResolver() {
     val activity = playerActivitySource()
-    assertTrue(activity.contains("currentQueueItem != null -> resolvePlaybackEngineMode(engine, currentQueueItem)"))
+    assertTrue(activity.contains("val currentNativeVideoHint = currentQueueItem?.stableId == nativeVideoHintMediaId"))
+    assertTrue(activity.contains("currentQueueItem != null -> resolvePlaybackEngineMode(engine, currentQueueItem, videoHint = currentNativeVideoHint)"))
+    assertTrue(activity.contains("sourceIntent.getBooleanExtra(\"stream_direct_media\", false)"))
 
     val load =
       activity.substringAfter("val selectedEngine =")
         .substringBefore("val nativeResolvedUri =")
-    assertTrue(load.contains("resolvePlaybackEngineMode(configuredEngine, playbackItem)"))
-    assertTrue(load.contains("!playbackItem.requiresWebPageResolutionBeforeNative()"))
+    assertTrue(load.contains("resolvePlaybackEngineMode(configuredEngine, playbackItem, videoHint = nativeVideoHint)"))
+    assertTrue(load.contains("playbackItem.requiresWebPageResolutionBeforeNative(videoHint = nativeVideoHint)"))
+    val nativeEligibility = activity.substringAfter("val canUseNative =").substringBefore("Log.i(")
+    assertTrue(nativeEligibility.contains("nativeItem.declaredMediaKind(videoHint = nativeVideoHint) == DeclaredPlaybackMediaKind.VIDEO"))
+  }
+
+  @Test
+  fun removingStreamTabKeepsSharedOnlinePlaybackAvailable() {
+    val streamScreenFiles =
+      sequenceOf(
+        File("src/main/java/app/infinity/mpvz/ui/browser/catalog/StreamScreen.kt"),
+        File("app/src/main/java/app/infinity/mpvz/ui/browser/catalog/StreamScreen.kt"),
+      )
+    val mainScreen = mainScreenSource()
+    val activity = playerActivitySource()
+
+    assertFalse(streamScreenFiles.any(File::exists))
+    assertFalse(mainScreen.contains("MainTab.STREAMS"))
+    assertFalse(mainScreen.contains("StreamScreen"))
+    assertTrue(activity.contains("YtdlpManager.requiresYtdlp"))
+    assertTrue(activity.contains("YtdlpManager.resolveDirectMediaUrl"))
   }
 
   private fun playerActivitySource(): String =
@@ -97,5 +118,11 @@ class PreparedQueueAutoEngineContractTest {
     sequenceOf(
       File("src/main/java/app/infinity/mpvz/utils/media/MediaUtils.kt"),
       File("app/src/main/java/app/infinity/mpvz/utils/media/MediaUtils.kt"),
+    ).first(File::exists).readText()
+
+  private fun mainScreenSource(): String =
+    sequenceOf(
+      File("src/main/java/app/infinity/mpvz/ui/browser/MainScreen.kt"),
+      File("app/src/main/java/app/infinity/mpvz/ui/browser/MainScreen.kt"),
     ).first(File::exists).readText()
 }

@@ -80,6 +80,8 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
 
+private val glassPixelCopyHandler = Handler(Looper.getMainLooper())
+
 /** Immutable frame snapshot: window coordinates prevent every control showing the entire frame. */
 /** [underlayLuma] is the frosted sample's bright-percentile sRGB luma (1 = assume a white backdrop). */
 data class LiquidGlassFrame(
@@ -139,12 +141,14 @@ fun LiquidGlassBackdropHost(
   val allowed = eligible && visible
   GlassStartupWatch(active = allowed)
   val tuning = LocalGlassCustomization.current
-  val frostPasses = GlassCustomizationPolicy.frostPasses(tuning.frost)
+  val sampledFrost = GlassCustomizationPolicy.sampledFrostStrength(tuning.frost, largeSurfaceVisible)
+  val frostPasses = GlassCustomizationPolicy.frostPasses(sampledFrost)
   val frame = remember { mutableStateOf<LiquidGlassFrame?>(null) }
   val captureBuffers = remember { GlassCaptureBuffers() }
   DisposableEffect(Unit) { onDispose { captureBuffers.recycle() } }
   val ready by rememberUpdatedState(isReady)
   val playing by rememberUpdatedState(isPlaying)
+  val currentFrost by rememberUpdatedState(sampledFrost)
   val aspect by rememberUpdatedState(sampleAspect)
   val thermalNow by rememberUpdatedState(thermal)
   val largeSurface by rememberUpdatedState(largeSurfaceVisible)
@@ -214,24 +218,27 @@ fun LiquidGlassBackdropHost(
           continue
         }
         // Only the tiny UI copy is cropped/frosted. The actual video surface remains untouched.
-        val sampled = captureBuffers.sampleMutex.withLock {
-          val target = captureBuffers.acquire(dimensions.first, dimensions.second)
-          if (target == null) null
-          else try {
-            val copied = copyGlassFrame(source, crop, target, captureBuffers)
-            val frosted = copied?.let { copiedBitmap ->
-              frostGlassFrame(
-                copiedBitmap,
-                tuning.frost,
-                captureBuffers.pixels,
-                captureBuffers.frostOutput,
-                captureBuffers.frostScratch,
-                captureBuffers.lumaBins,
-              )
+        val frostStrength = currentFrost
+        val sampled = withContext(Dispatchers.Default) {
+          captureBuffers.sampleMutex.withLock {
+            val target = captureBuffers.acquire(dimensions.first, dimensions.second)
+            if (target == null) null
+            else try {
+              val copied = copyGlassFrame(source, crop, target, captureBuffers)
+              val frosted = copied?.let { copiedBitmap ->
+                frostGlassFrame(
+                  copiedBitmap,
+                  frostStrength,
+                  captureBuffers.pixels,
+                  captureBuffers.frostOutput,
+                  captureBuffers.frostScratch,
+                  captureBuffers.lumaBins,
+                )
+              }
+              if (frosted != null && captureBuffers.markPublished(target)) frosted else null
+            } finally {
+              captureBuffers.release(target)
             }
-            if (frosted != null && captureBuffers.markPublished(target)) frosted else null
-          } finally {
-            captureBuffers.release(target)
           }
         }
         val bitmap = sampled?.first
@@ -400,7 +407,7 @@ private suspend fun copyGlassFrame(
         } finally {
           releaseRequestLease()
         }
-      }, Handler(Looper.getMainLooper()))
+      }, glassPixelCopyHandler)
     } catch (_: RuntimeException) {
       releaseRequestLease()
       if (continuation.isActive) continuation.resume(null)
@@ -591,9 +598,6 @@ fun Modifier.liquidGlassPane(
             val lensAllowed = scene.refractionEnabled &&
               if (materialRole == GlassSurfacePolicy.MaterialRole.Regular) size.maxDimension <= 1024.dp.toPx()
               else size.minDimension <= 128.dp.toPx() && size.maxDimension <= 512.dp.toPx()
-            val frostDp = if (materialRole == GlassSurfacePolicy.MaterialRole.Regular)
-              maxOf(GlassSurfacePolicy.RegularMinimumFrostDp, 10f * tuning.frost * material.frostMultiplier)
-            else 10f * tuning.frost * material.frostMultiplier
             val mapped = RuntimeShaderSupport.bindGlassOpticsOrNull(
               shader = shader,
               sourceShader = sourceShader,
@@ -616,7 +620,6 @@ fun Modifier.liquidGlassPane(
               fresnel = bevel.fresnel,
               strength = if (lensAllowed) 4.dp.toPx() * material.refractionMultiplier *
                 GlassSurfacePolicy.refractionStrength(tuning.refraction, reducedMotion, highContrast) else 0f,
-              frostPx = frostDp * density,
             )
             if (!mapped) {
               matrix.setScale(scene.boundsInWindow.width / scene.image.width,
@@ -672,14 +675,23 @@ fun Modifier.liquidGlassPane(
         }
       }
     }
-    .then(if (LocalLensGlassEnabled.current && LocalPageBackdrop.current != null) {
+    // Player panes already render the sampled video through GLASS_OPTICS above.
+    // Applying the independent page blur/lens here would refract the same pane twice.
+    .then(if (backdrop == null && LocalLensGlassEnabled.current && LocalPageBackdrop.current != null) {
       val pageBackdrop = LocalPageBackdrop.current!!
       Modifier.drawBackdrop(
         backdrop = pageBackdrop,
         shape = { shape },
         effects = {
           // Kyant order is colour filter -> blur -> lens; this surface has no filter.
-          blur((2.5f * tuning.frost).coerceIn(0f, 8f))
+          val frostBlur = (2.5f * tuning.frost).coerceIn(0f, 8f)
+          blur(
+            if (materialRole == GlassSurfacePolicy.MaterialRole.Regular) {
+              maxOf(GlassSurfacePolicy.RegularMinimumFrostDp, frostBlur)
+            } else {
+              frostBlur
+            },
+          )
           val minCornerRadiusPx = cornerRadius.toPx().coerceAtMost(size.minDimension / 2f)
           lens(
             refractionHeight = LensGlassPolicy.refractionHeightPx(24.dp.toPx(), minCornerRadiusPx, tuning.lensDepth),
@@ -709,7 +721,6 @@ uniform float2 light;
 uniform float specular;
 uniform float fresnel;
 uniform float strength;
-uniform float frost;
 half4 sampleAt(float2 windowPosition) {
   float2 uv = clamp((windowPosition - sceneOrigin) / sceneSize, float2(0.0), float2(1.0));
   // Pixel centres and explicit bilinear filtering avoid a magnified nearest-neighbour grid.
@@ -732,11 +743,9 @@ half4 main(float2 p) {
   float directionalReflection = (facing * specular + fresnelTerm) * bevelBand;
   float2 bent = origin + p - normal * strength * bevelBand * bevelBand;
   bent += light * strength * 0.35 * directionalReflection;
-  float2 blurX = float2(frost, 0.0);
-  float2 blurY = float2(0.0, frost);
-  half4 color = sampleAt(bent) * 0.40;
-  color += (sampleAt(bent + blurX) + sampleAt(bent - blurX) +
-            sampleAt(bent + blurY) + sampleAt(bent - blurY)) * 0.15;
+  // The shared frame is already frosted before publication; a second multi-tap blur here
+  // multiplies pane cost without improving the material.
+  half4 color = sampleAt(bent);
   return half4(color.rgb + directionalReflection * 0.12, 1.0);
 }
 """

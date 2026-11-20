@@ -48,6 +48,33 @@ assert "MAX_PRESENTATION_BUFFERS = 3" in SINK, "async presentation must stay wit
 assert "presentationQueue.acquireForWriteWithSnapshot()" in draw_texture and "presentationQueue.publish(lease)" in draw_texture, (
     "producer output must enter the bounded latest-wins presentation mailbox"
 )
+assert "var hardwareBuffer: HardwareBuffer? = null" in SINK and "var nativeImageHandle = 0L" in SINK, (
+    "each leased Media3 presentation slot must own its optional shared Vulkan output image"
+)
+synthesis_queue = SINK.split("  private fun synthesizeAndQueue(", 1)[1].split(
+    "\n  private fun dispatchSynthesis(", 1
+)[0]
+assert synthesis_queue.index("presentationQueue.acquireForWriteWithSnapshot()") < synthesis_queue.index("dispatchSynthesis("), (
+    "Media3 must reserve the bounded output slot before Vulkan writes into its image"
+)
+assert "reservedLease = lease" in synthesis_queue and "directOutputTarget = sharedTarget" in synthesis_queue
+assert "dispatchSynthesis(a, b, pair, targetPtsUs, slot.nativeImageHandle)" in synthesis_queue, (
+    "shared output must dispatch directly into the leased slot image"
+)
+assert synthesis_queue.count("dispatchSynthesis(a, b, pair, targetPtsUs, outputImageHandle)") == 2, (
+    "shared-write failure and non-shared output must both dispatch through the scratch image"
+)
+assert "if (sharedTarget)" in synthesis_queue and "sharedTarget = false" in synthesis_queue
+assert "scratchFailure.addSuppressed(sharedFailure)" in synthesis_queue
+assert "copy_elided=true" in SINK and "path=staging_copy" in SINK, (
+    "Media3 must diagnose direct output and retain a safe staging-copy fallback"
+)
+assert "nativeDestroyImage(flowVulkanContext, slot.nativeImageHandle)" in SINK and "slot.hardwareBuffer?.let" in SINK, (
+    "presentation-slot Vulkan images and HardwareBuffers must be released with the sink"
+)
+assert "if (directOutputTarget)" in draw_texture and "textureId == slot.textureId" in draw_texture, (
+    "direct synthesis output must be the exact leased image later published to the presenter"
+)
 assert "eglSwapBuffers" not in draw_texture, "the producer GL handler must not block on the window swap"
 presentation_consumer = SINK.split("  private fun presentNextQueuedFrame()", 1)[1].split(
     "\n  private fun resumePresentationDrain()", 1
@@ -86,7 +113,7 @@ for marker in (
 assert "private val visibilityResolverEnabled: Boolean" in SINK
 assert "private val softBlendEnabled: Boolean" in SINK
 assert "visibility_resolver=$visibilityResolverEnabled soft_blend=$softBlendEnabled" in SINK
-assert re.search(r"visibilityResolverEnabled,\s*softBlendEnabled,\s*outputImageHandle", SINK)
+assert re.search(r"visibilityResolverEnabled,\s*softBlendEnabled,\s*outputTargetHandle", SINK)
 assert "visibilityResolverEnabled: Boolean" in NATIVE and "softBlendEnabled: Boolean" in NATIVE
 assert "jboolean visibilityResolverEnabled, jboolean softBlendEnabled" in JNI
 assert re.search(
@@ -102,6 +129,14 @@ mpv_synthesis_call = MPV_PATCH.split("mpvflow_gpu_synthesize_with_policy(", 1)[1
 assert mpv_synthesis_call.count("p->next_opts->mpvflow_soft_blend,") == 2, "MPV soft blend must explicitly enable both the source blend and conflict bias"
 assert "mpvflow_gpu_synthesize_with_visibility(" not in MPV_PATCH, "MPV must not bypass its opt-in conflict policy"
 assert "mpvflow_gpu_synthesize_with_policy(" in JNI, "Media3 must share the production Vulkan synthesis policy"
+assert "mpvflow_gpu_synthesize_with_policy_to_texture(" in JNI
+assert "outputStorageImageSupported" in JNI and "VK_IMAGE_USAGE_STORAGE_BIT" in JNI
+assert "!capturePaired && !captureActive" in JNI, "direct output must not bypass diagnostic capture ownership"
+assert 'directOutput ? "direct_storage_write" : "nearest_blit"' in JNI
+assert "PL_TEX_SAMPLE_NEAREST" in JNI, "fallback transfer must not soften equal-size synthesized output"
+assert "target_compatible ? output_target : pair->visibility_output" in GPU, (
+    "the optional visibility resolver should write directly to a compatible final output when available"
+)
 assert "return smoothstep(0.0,1.0,margin);" in GPU, "both engines must fade source/cycle boundary support instead of switching coordinate spaces abruptly"
 paired_helper = GPU.split("enum MPVFlowGPUResult mpvflow_gpu_capture_paired_sample(", 1)[1].split("\n}", 1)[0]
 assert "const bool blend_variants[MPVFLOW_CAPTURE_PAIRED_SAMPLES_PER_PAIR] = {\n        false, true," in paired_helper
@@ -260,7 +295,7 @@ assert "event=runtime_cadence" in MPV_PATCH and "empty_batch_redraws=%llu" in MP
 assert "source_frame.overlays = NULL" in MPV_PATCH and "source_frame.num_overlays = 0" in MPV_PATCH
 assert ".crop = image0->crop" not in MPV_PATCH, "pre-FRC synthesis copies already bake the input crop"
 assert "external fun nativeCreateContext" in NATIVE
-assert "external fun nativeGetRequiredHardwareBufferUsage" in NATIVE
+assert "external fun nativeGetRequiredHardwareBufferUsage(context: Long, output: Boolean, storage: Boolean)" in NATIVE
 assert "external fun nativeAnalyzePair" in NATIVE
 assert "external fun nativeGetVulkanTimingStats(context: Long): LongArray?" in NATIVE
 assert "mpvflow_gpu_get_timing_stats(context->flow, &stats)" in JNI
@@ -291,12 +326,17 @@ assert "NativeStatsDisplay.interpolationFps(" in stats_controls
 timing_snapshot = JNI.split("nativeGetVulkanTimingStats(", 1)[1].split("nativeDestroyContext(", 1)[0]
 assert "mpvflow_gpu_get_timing_stats" in timing_snapshot
 assert "pl_gpu_finish" not in timing_snapshot and "glFinish" not in timing_snapshot
-assert "nativeGetRequiredHardwareBufferUsage(flowVulkanContext, output = false)" in SINK
-assert "nativeGetRequiredHardwareBufferUsage(flowVulkanContext, output = true)" in SINK
+assert "nativeGetRequiredHardwareBufferUsage(flowVulkanContext, output = false, storage = true)" in SINK
+assert "nativeGetRequiredHardwareBufferUsage(flowVulkanContext, output = true, storage = true)" in SINK
+assert "flowVulkanContext, output = true, storage = false," in SINK
 assert "baseUsage or driverRequiredUsage" in SINK
+assert "baseUsage or fallbackRequiredUsage" in SINK
+assert "outputNonStorageRequiredHardwareBufferUsage" in SINK
 assert "vulkan_hardwarebuffer_input_usage_query_failed" in SINK
 assert "vulkan_hardwarebuffer_output_usage_query_failed" in SINK
-assert "queryAhbImageSupport(context, usage, nullptr, &requiredAhbUsage, role)" in JNI
+assert "queryAhbImageSupport(context, usage, nullptr, &requiredAhbUsage," in JNI
+assert 'outputRole && storage != JNI_TRUE ? "output_non_storage" : role' in JNI
+assert "output_non_storage" in JNI and "VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT" in JNI
 assert "stage=hardwarebuffer_usage_mismatch" in JNI
 assert "event=ahb_usage state=required" in JNI
 assert "media3FlowSink?.takeIf { it.isPreflightAvailable() }" in NATIVE_ENGINE

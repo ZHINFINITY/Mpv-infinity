@@ -98,13 +98,12 @@ internal class Media3FlowPresentationQueue(capacity: Int) {
   }
 
   /**
-   * Non-mutating producer admission: only a completely free slot may be used.
-   * READY is deliberately not reclaimable for early admission; the consumer owns
-   * presentation ordering and the producer must retain the complete pending frame.
+   * Admit production when a free slot exists or a pending READY frame can be replaced.
+   * PRESENTING slots remain immutable until the consumer-side GPU fence completes.
    */
   @Synchronized
   fun canAcceptProduction(): Boolean =
-    readySlots.isEmpty() && states.any { it == State.FREE }
+    states.any { it == State.FREE } || readySlots.isNotEmpty()
 
   @Synchronized
   fun hasReady(): Boolean = readySlots.isNotEmpty()

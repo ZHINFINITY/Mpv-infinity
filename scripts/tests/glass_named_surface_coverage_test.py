@@ -87,7 +87,6 @@ def main() -> None:
 
     # Inventory guard: every known InlineSearchBar caller remains reachable.
     callers = [
-        "ui/browser/catalog/StreamScreen.kt",
         "ui/editor/MpvHelpScreen.kt",
         "ui/preferences/SettingsSearchScreen.kt",
         "ui/preferences/CodecCapabilitiesScreen.kt",

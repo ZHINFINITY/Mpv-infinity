@@ -29,6 +29,7 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.updateTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
@@ -38,7 +39,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -152,6 +152,7 @@ import app.infinity.mpvz.ui.player.PlaybackEngineMode
 import app.infinity.mpvz.ui.player.AudiobookPlayback
 import app.infinity.mpvz.ui.player.Sheets
 import app.infinity.mpvz.ui.player.VideoOpenAnimationOverlay
+import app.infinity.mpvz.ui.components.horizontalScrollFadeEdges
 import app.infinity.mpvz.ui.player.buildControlsEnterH
 import app.infinity.mpvz.ui.player.buildControlsEnterV
 import app.infinity.mpvz.ui.player.buildControlsExitH
@@ -457,17 +458,25 @@ fun PlayerControls(
   val showChapterIndicators by playerPreferences.showChapterIndicators.collectAsState()
   val torrentState by viewModel.torrentState.collectAsState()
   val videoOpenAnimState by viewModel.videoOpenAnimationState.collectAsState()
+  val isWaitingForVideo = videoOpenAnimState.isWaitingForVideo
   val showLoadingCircle by playerPreferences.showLoadingCircle.collectAsState()
   val embeddedTranslatedSubtitle by viewModel.embeddedTranslatedSubtitle.collectAsState()
 
   val isTorrentConnecting = torrentState is TorrentStreamingState.Connecting
   val isTorrentStreaming = torrentState is TorrentStreamingState.Streaming
+  val activity = LocalActivity.current as? PlayerActivity
+  val streamPlaybackHidesQuality = activity?.isStreamTabPlayback == true
+  val nativeSnapshot by activity?.nativePlaybackSnapshot?.collectAsState()
+    ?: remember { mutableStateOf(NativePlaybackSnapshot()) }
+  val nativeEngineActive = activity?.isNativeEngineActive() == true
   val bufferingState =
     rememberBufferingState(
-      enabled = showLoadingCircle,
+      enabled = showLoadingCircle && !nativeEngineActive,
       // A torrent that has not produced a playable range yet never reaches mpv, so the engine's own
       // connecting phase has to drive the spinner directly.
-      forceVisible = isTorrentConnecting || playbackSessionState.phase == PlaybackPhase.LOADING,
+      forceVisible =
+        !nativeEngineActive &&
+          (isTorrentConnecting || playbackSessionState.phase == PlaybackPhase.LOADING),
     )
   val isMpvBuffering = bufferingState.isCacheStall
   val safeAreaWindow by playerPreferences.safeAreaWindow.collectAsState()
@@ -487,16 +496,18 @@ fun PlayerControls(
   var nativeSeekPreviewPosition by remember { mutableStateOf<Float?>(null) }
   val mpvSeeking by PlaybackSession.propBoolean["seeking"].collectAsState()
   val isPlayerSeeking = isSeeking || (mpvSeeking ?: false)
-  val activity = LocalActivity.current as? PlayerActivity
-  val streamPlaybackHidesQuality = activity?.isStreamTabPlayback == true
-  val nativeSnapshot by activity?.nativePlaybackSnapshot?.collectAsState()
-    ?: remember { mutableStateOf(NativePlaybackSnapshot()) }
-  val nativeEngineActive = activity?.isNativeEngineActive() == true
-  val isNativeBuffering = nativeEngineActive && nativeSnapshot.isBuffering
   val showBufferingIndicator =
-    (bufferingState.visible || isNativeBuffering) &&
-      (controlsShown || isNativeBuffering || playbackSessionState.phase == PlaybackPhase.LOADING) &&
-      !isPlayerSeeking
+    PlayerControlVisibilityPolicy.shouldShowBufferingIndicator(
+      nativeEngineActive = nativeEngineActive,
+      nativeReady = nativeSnapshot.isReady,
+      nativeBuffering = nativeSnapshot.isBuffering,
+      nativeEnded = nativeSnapshot.isEnded,
+      nativeFailed = nativeSnapshot.hasError,
+      mpvLoading = playbackSessionState.phase == PlaybackPhase.LOADING,
+      mpvBuffering = bufferingState.visible,
+      torrentConnecting = isTorrentConnecting,
+      isSeeking = isPlayerSeeking,
+    )
   var stableDemuxerCacheTime by remember { mutableFloatStateOf(0f) }
   val currentDemuxerCacheTime =
     demuxerCacheTime
@@ -732,6 +743,8 @@ fun PlayerControls(
   LaunchedEffect(
     controlsShown,
     paused,
+    showBufferingIndicator,
+    isWaitingForVideo,
     isSeeking,
     resetControlsTimestamp,
     areControlsLocked,
@@ -740,12 +753,15 @@ fun PlayerControls(
     isPlayerDrawerShown,
     showControlsDrawer,
   ) {
-    if (!isAudioOnly &&
-      controlsShown &&
-      paused == false &&
-      !isSeeking &&
-      !isUnlockSliderDragging &&
-      !(showControlsDrawer && isPlayerDrawerShown)
+    if (PlayerControlVisibilityPolicy.shouldAutoHideControls(
+        isAudioOnly = isAudioOnly,
+        controlsShown = controlsShown,
+        paused = paused,
+        bufferingOrWaiting = showBufferingIndicator || isWaitingForVideo,
+        isSeeking = isSeeking,
+        isUnlockSliderDragging = isUnlockSliderDragging,
+        drawerBlocksAutoHide = showControlsDrawer && isPlayerDrawerShown,
+      )
     ) {
       // Use 2 second delay when controls are locked, otherwise use user preference
       val delayTime = if (areControlsLocked) 2000L else playerTimeToDisappear.toLong()
@@ -1240,12 +1256,24 @@ fun PlayerControls(
             }
           }
 
-          val areButtonsVisible = controlsShown && !areControlsLocked && !areSlidersShown
+          val areButtonsVisible =
+            PlayerControlVisibilityPolicy.areButtonsVisible(
+              controlsShown = controlsShown,
+              controlsLocked = areControlsLocked,
+              slidersShown = areSlidersShown,
+            )
+          val seekBarControlsVisible = (controlsShown || (!isPortrait && seekBarShown)) && !areControlsLocked
+          val controlVisibilityTransition =
+            updateTransition(
+              targetState = areButtonsVisible to seekBarControlsVisible,
+              label = "player_controls_visibility",
+            )
           val leftCustomButtons = remember(customButtons) { customButtons.filter { it.isLeft } }
           val rightCustomButtons = remember(customButtons) { customButtons.filterNot { it.isLeft } }
           val showLandscapeLeftCustomButtons = areButtonsVisible && !isPortrait && leftCustomButtons.isNotEmpty()
           val showLandscapeRightCustomButtons = areButtonsVisible && !isPortrait && rightCustomButtons.isNotEmpty()
           val showPortraitCustomButtons = areButtonsVisible && isPortrait && customButtons.isNotEmpty()
+          val landscapeSideControlSplit = createGuidelineFromStart(0.5f)
           val portraitControlsAboveGroupTop =
             if (showPortraitCustomButtons) customButtonsPortraitRef.top else bottomRightControls.top
           val landscapeSideControlBandRefs =
@@ -1302,35 +1330,26 @@ fun PlayerControls(
             label = "skip_chip_bottom_offset",
           )
 
-          AnimatedVisibility(
-            visible = showLandscapeLeftCustomButtons,
+          controlVisibilityTransition.AnimatedVisibility(
+            visible = { visibility -> visibility.first && !isPortrait && leftCustomButtons.isNotEmpty() },
             enter = buildControlsEnterH(controlsAnimStyle, reduceMotion, enterMs) { -it },
             exit = buildControlsExitH(controlsAnimStyle, reduceMotion, exitMs) { -it },
             modifier =
               navigationStartPaddingModifier.constrainAs(customLeftButtonsRef) {
                 start.linkTo(parent.start, spacing.large)
-                if (playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar) {
-                  end.linkTo(playerPauseButton.start, spacing.small)
-                  horizontalBias = 0f
-                }
+                end.linkTo(playerPauseButton.start, spacing.small)
+                horizontalBias = 0f
+                width = Dimension.fillToConstraints
                 bottom.linkTo(bottomLeftControls.top, spacing.medium)
-                width =
-                  if (playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar) {
-                    Dimension.fillToConstraints
-                  } else {
-                    Dimension.preferredWrapContent
-                  }
                 height = Dimension.wrapContent
               },
           ) {
-            Row(
-              horizontalArrangement = Arrangement.spacedBy(12.dp),
-              verticalAlignment = Alignment.CenterVertically,
-              modifier =
-                Modifier
-                  .padding(vertical = customButtonsRowVerticalPadding)
-                  .fillMaxWidth()
-                  .horizontalScroll(rememberScrollState()),
+            PlayerControlScrollStrip(
+              modifier = Modifier.padding(vertical = customButtonsRowVerticalPadding),
+              scrollState = rememberScrollState(),
+              gap = 12.dp,
+              alignment = Alignment.Start,
+              showEdgeFades = true,
             ) {
               leftCustomButtons.forEach { button ->
                 key(button.id) {
@@ -1376,40 +1395,30 @@ fun PlayerControls(
             }
           }
 
-          AnimatedVisibility(
-            visible = showLandscapeRightCustomButtons,
+          controlVisibilityTransition.AnimatedVisibility(
+            visible = { visibility -> visibility.first && !isPortrait && rightCustomButtons.isNotEmpty() },
             enter = buildControlsEnterH(controlsAnimStyle, reduceMotion, enterMs) { it },
             exit = buildControlsExitH(controlsAnimStyle, reduceMotion, exitMs) { it },
             modifier =
               navigationEndPaddingModifier
                 .constrainAs(customRightButtonsRef) {
-                  if (playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar) {
-                    start.linkTo(playerPauseButton.end, spacing.small)
-                    end.linkTo(parent.end, spacing.large)
-                    horizontalBias = 1f
-                  } else {
-                    end.linkTo(parent.end, spacing.large)
-                  }
+                  start.linkTo(playerPauseButton.end, spacing.small)
+                  horizontalBias = 1f
+                  width = Dimension.fillToConstraints
+                  end.linkTo(parent.end, spacing.large)
                   bottom.linkTo(bottomRightControls.top, spacing.medium)
-                  width =
-                    if (playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar) {
-                      Dimension.fillToConstraints
-                    } else {
-                      Dimension.preferredWrapContent
-                    }
                   height = Dimension.wrapContent
                 }.onGloballyPositioned { coordinates ->
                   landscapeRightButtonsTopPx = coordinates.positionInParent().y.roundToInt()
                 },
           ) {
-            Row(
-              horizontalArrangement = Arrangement.spacedBy(12.dp),
-              verticalAlignment = Alignment.CenterVertically,
-              modifier =
-                Modifier
-                  .padding(vertical = customButtonsRowVerticalPadding)
-                  .fillMaxWidth()
-                  .horizontalScroll(rememberScrollState(), reverseScrolling = true),
+            PlayerControlScrollStrip(
+              modifier = Modifier.padding(vertical = customButtonsRowVerticalPadding),
+              scrollState = rememberScrollState(),
+              gap = 12.dp,
+              alignment = Alignment.End,
+              reverseScrolling = true,
+              showEdgeFades = true,
             ) {
               rightCustomButtons.forEach { button ->
                 key(button.id) {
@@ -1455,8 +1464,8 @@ fun PlayerControls(
             }
           }
 
-          AnimatedVisibility(
-            visible = showPortraitCustomButtons,
+          controlVisibilityTransition.AnimatedVisibility(
+            visible = { visibility -> visibility.first && isPortrait && customButtons.isNotEmpty() },
             enter = buildControlsEnterV(controlsAnimStyle, reduceMotion, enterMs) { it },
             exit = buildControlsExitV(controlsAnimStyle, reduceMotion, exitMs) { it },
             modifier =
@@ -1479,14 +1488,12 @@ fun PlayerControls(
                   portraitButtonsTopPx = coordinates.positionInParent().y.roundToInt()
                 },
           ) {
-            Row(
-              horizontalArrangement = Arrangement.spacedBy(12.dp),
-              verticalAlignment = Alignment.CenterVertically,
-              modifier =
-                Modifier
-                  .padding(vertical = customButtonsRowVerticalPadding)
-                  .fillMaxWidth()
-                  .horizontalScroll(rememberScrollState()),
+            PlayerControlScrollStrip(
+              modifier = Modifier.padding(vertical = customButtonsRowVerticalPadding),
+              scrollState = rememberScrollState(),
+              gap = 12.dp,
+              alignment = Alignment.CenterHorizontally,
+              showEdgeFades = true,
             ) {
               customButtons.forEach { button ->
                 key(button.id) {
@@ -1698,8 +1705,13 @@ fun PlayerControls(
             }
           }
 
-          AnimatedVisibility(
-            visible = controlsShown && !areControlsLocked && !areSlidersShown && !showBufferingIndicator,
+          controlVisibilityTransition.AnimatedVisibility(
+            visible = { visibility ->
+              PlayerControlVisibilityPolicy.shouldShowPlaybackControls(
+                controlsVisible = visibility.first,
+                bufferingIndicatorVisible = showBufferingIndicator,
+              )
+            },
             enter = buildControlsEnterV(controlsAnimStyle, reduceMotion, enterMs) { 0 },
             exit = buildControlsExitV(controlsAnimStyle, reduceMotion, exitMs) { 0 },
             modifier =
@@ -1709,6 +1721,13 @@ fun PlayerControls(
                 if (isPortrait && playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar) {
                   if (areButtonsVisible) {
                     bottom.linkTo(bottomRightControls.top, spacing.small)
+                  } else {
+                    top.linkTo(parent.top)
+                    bottom.linkTo(parent.bottom)
+                  }
+                } else if (isPortrait) {
+                  if (areButtonsVisible) {
+                    bottom.linkTo(portraitControlsAboveGroupTop, spacing.small)
                   } else {
                     top.linkTo(parent.top)
                     bottom.linkTo(parent.bottom)
@@ -1729,13 +1748,13 @@ fun PlayerControls(
 
             if (hasPlaylistControls) {
               androidx.compose.foundation.layout.Row(
-                horizontalArrangement = Arrangement.spacedBy(24.dp),
+                horizontalArrangement = Arrangement.spacedBy(PlayerControlsGeometry.PlaylistButtonGap),
                 verticalAlignment = Alignment.CenterVertically,
               ) {
                 Surface(
                   modifier =
                     Modifier
-                      .size(56.dp)
+                      .size(PlayerControlsGeometry.PlaylistSkipButtonSize)
                       .playerGlassPane(enabled = liquidGlassSurfaces, opacity = 0.88f, highlight = 0.18f, cornerRadius = 999.dp)
                       .clip(CircleShape)
                       .clickable(
@@ -1794,7 +1813,7 @@ fun PlayerControls(
                 Surface(
                   modifier =
                     Modifier
-                      .size(64.dp)
+                      .size(PlayerControlsGeometry.PlayPauseButtonSize)
                       .playerGlassPane(enabled = liquidGlassSurfaces, opacity = 0.88f, highlight = 0.20f, cornerRadius = 999.dp)
                       .clip(CircleShape)
                       .clickable(interaction, ripple(), onClick = {
@@ -1838,7 +1857,7 @@ fun PlayerControls(
                 Surface(
                   modifier =
                     Modifier
-                      .size(56.dp)
+                      .size(PlayerControlsGeometry.PlaylistSkipButtonSize)
                       .playerGlassPane(enabled = liquidGlassSurfaces, opacity = 0.88f, highlight = 0.18f, cornerRadius = 999.dp)
                       .clip(CircleShape)
                       .clickable(
@@ -1898,7 +1917,7 @@ fun PlayerControls(
               Surface(
                 modifier =
                   Modifier
-                    .size(64.dp)
+                    .size(PlayerControlsGeometry.PlayPauseButtonSize)
                     .playerGlassPane(enabled = liquidGlassSurfaces, opacity = 0.88f, highlight = 0.20f, cornerRadius = 999.dp)
                     .clip(CircleShape)
                     .clickable(interaction, ripple(), onClick = {
@@ -1941,8 +1960,8 @@ fun PlayerControls(
             }
           }
 
-          AnimatedVisibility(
-            visible = (controlsShown || (!isPortrait && seekBarShown)) && !areControlsLocked,
+          controlVisibilityTransition.AnimatedVisibility(
+            visible = { visibility -> visibility.second },
             enter = buildControlsEnterV(controlsAnimStyle, reduceMotion, enterMs) { it },
             exit = buildControlsExitV(controlsAnimStyle, reduceMotion, exitMs) { it },
             modifier =
@@ -2100,8 +2119,8 @@ fun PlayerControls(
             }
           }
 
-          AnimatedVisibility(
-            visible = controlsShown && !areControlsLocked,
+          controlVisibilityTransition.AnimatedVisibility(
+            visible = { visibility -> visibility.first },
             enter = buildControlsEnterH(controlsAnimStyle, reduceMotion, enterMs) { -it },
             exit = buildControlsExitH(controlsAnimStyle, reduceMotion, exitMs) { -it },
             modifier =
@@ -2165,8 +2184,8 @@ fun PlayerControls(
             }
           }
 
-          AnimatedVisibility(
-            visible = controlsShown && !areControlsLocked && !isPortrait,
+          controlVisibilityTransition.AnimatedVisibility(
+            visible = { visibility -> visibility.first && !isPortrait },
             enter = buildControlsEnterH(controlsAnimStyle, reduceMotion, enterMs) { it },
             exit = buildControlsExitH(controlsAnimStyle, reduceMotion, exitMs) { it },
             modifier =
@@ -2190,6 +2209,7 @@ fun PlayerControls(
                 ).constrainAs(topRightControls) {
                   top.linkTo(parent.top, spacing.small)
                   end.linkTo(parent.end, spacing.large)
+                  width = Dimension.preferredWrapContent
                 },
           ) {
             TopRightPlayerControlsLandscape(
@@ -2211,8 +2231,8 @@ fun PlayerControls(
             )
           }
 
-          AnimatedVisibility(
-            visible = controlsShown && !areControlsLocked && !areSlidersShown,
+          controlVisibilityTransition.AnimatedVisibility(
+            visible = { visibility -> visibility.first },
             enter = buildControlsEnterH(controlsAnimStyle, reduceMotion, enterMs) { it },
             exit = buildControlsExitH(controlsAnimStyle, reduceMotion, exitMs) { it },
             modifier =
@@ -2245,10 +2265,10 @@ fun PlayerControls(
                     width = Dimension.fillToConstraints
                   } else {
                     bottom.linkTo(seekbar.top, bottomControlsToSeekbarSpacing)
-                    start.linkTo(playerPauseButton.end, spacing.small)
+                    start.linkTo(landscapeSideControlSplit, spacing.small)
                     end.linkTo(parent.end, spacing.large)
                     horizontalBias = 1f
-                    width = Dimension.preferredWrapContent
+                    width = Dimension.fillToConstraints
                   }
                 }.onGloballyPositioned { coordinates ->
                   bottomRightControlsTopPx = coordinates.positionInParent().y.roundToInt()
@@ -2276,6 +2296,7 @@ fun PlayerControls(
             } else {
               BottomRightPlayerControlsLandscape(
                 buttons = bottomRightButtons,
+                scrollable = true,
                 showVideoQualitySelector = showVideoQualitySelector && !landscapeHasConfiguredQualityButton,
                 chapters = chapters,
                 currentChapter = currentChapter,
@@ -2295,8 +2316,8 @@ fun PlayerControls(
             }
           }
 
-          AnimatedVisibility(
-            visible = controlsShown && !areControlsLocked && !isPortrait && !areSlidersShown,
+          controlVisibilityTransition.AnimatedVisibility(
+            visible = { visibility -> visibility.first && !isPortrait },
             enter = buildControlsEnterH(controlsAnimStyle, reduceMotion, enterMs) { -it },
             exit = buildControlsExitH(controlsAnimStyle, reduceMotion, exitMs) { -it },
             modifier =
@@ -2321,13 +2342,14 @@ fun PlayerControls(
                   } else {
                     bottom.linkTo(seekbar.top, bottomControlsToSeekbarSpacing)
                     start.linkTo(parent.start, spacing.large)
+                    end.linkTo(landscapeSideControlSplit, spacing.small)
                     width = Dimension.fillToConstraints
-                    end.linkTo(bottomRightControls.start, spacing.small)
                   }
                 },
           ) {
             BottomLeftPlayerControlsLandscape(
               buttons = bottomLeftButtons,
+              scrollable = true,
               chapters = chapters,
               currentChapter = currentChapter,
               isSpeedNonOne = isSpeedNonOne,

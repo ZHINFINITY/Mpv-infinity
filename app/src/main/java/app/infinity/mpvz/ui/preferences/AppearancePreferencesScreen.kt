@@ -897,7 +897,6 @@ object AppearancePreferencesScreen : Screen {
               val showRecentsTab by preferences.showRecentsTab.collectAsState()
               val showPlaylistsTab by preferences.showPlaylistsTab.collectAsState()
               val showNetworkTab by preferences.showNetworkTab.collectAsState()
-              val showStreamsTab by preferences.showStreamsTab.collectAsState()
               val showJellyfinTab by preferences.showJellyfinTab.collectAsState()
               val showNavidromeTab by preferences.showNavidromeTab.collectAsState()
               val showAudiobooksTab by preferences.showAudiobooksTab.collectAsState()
@@ -970,21 +969,6 @@ object AppearancePreferencesScreen : Screen {
                 summary = {
                   Text(
                     text = stringResource(id = R.string.pref_nav_network_summary),
-                    color = MaterialTheme.colorScheme.outline,
-                  )
-                },
-              )
-
-              PreferenceDivider()
-
-              SwitchPreference(
-                modifier = Modifier.settingsSearchTarget(R.string.pref_nav_streams_title),
-                value = showStreamsTab,
-                onValueChange = preferences.showStreamsTab::set,
-                title = { Text(text = stringResource(id = R.string.pref_nav_streams_title)) },
-                summary = {
-                  Text(
-                    text = stringResource(id = R.string.pref_nav_streams_summary),
                     color = MaterialTheme.colorScheme.outline,
                   )
                 },

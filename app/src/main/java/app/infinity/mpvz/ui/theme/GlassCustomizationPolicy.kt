@@ -9,5 +9,10 @@ object GlassCustomizationPolicy {
   const val MaximumFrostPasses = 6
   fun strength(value: Float): Float = if (value.isFinite()) value.coerceIn(0f, MaximumStrength) else 1f
   fun motion(value: Float): Float = if (value.isFinite()) value.coerceIn(0f, 1f) else 1f
+  fun sampledFrostStrength(value: Float, regularPaneVisible: Boolean): Float {
+    val bounded = strength(value)
+    return if (regularPaneVisible) maxOf(bounded, GlassSurfacePolicy.RegularMinimumFrostStrength) else bounded
+  }
+
   fun frostPasses(value: Float): Int = (strength(value) * GlassFrostPolicy.Passes).roundToInt().coerceIn(0, MaximumFrostPasses)
 }

@@ -9,19 +9,18 @@ package app.infinity.mpvz.ui.player.controls
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -280,6 +279,7 @@ fun TopRightPlayerControlsLandscape(
 @Composable
 fun BottomRightPlayerControlsLandscape(
   buttons: List<PlayerButton>,
+  scrollable: Boolean,
   showVideoQualitySelector: Boolean,
   chapters: List<Segment>,
   currentChapter: Int?,
@@ -297,10 +297,10 @@ fun BottomRightPlayerControlsLandscape(
   activity: PlayerActivity,
 ) {
   PlayerButtonTheme(hideBackground) {
-    Row(
-      modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState(), reverseScrolling = true),
-      verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.extraSmall),
+    LandscapePlayerControlStrip(
+      scrollable = scrollable,
+      reverseScrolling = true,
+      alignment = Alignment.End,
     ) {
       buttons.forEach { button ->
         RenderPlayerButton(
@@ -338,6 +338,7 @@ fun BottomRightPlayerControlsLandscape(
 @Composable
 fun BottomLeftPlayerControlsLandscape(
   buttons: List<PlayerButton>,
+  scrollable: Boolean,
   chapters: List<Segment>,
   currentChapter: Int?,
   isSpeedNonOne: Boolean,
@@ -354,10 +355,10 @@ fun BottomLeftPlayerControlsLandscape(
   activity: PlayerActivity,
 ) {
   PlayerButtonTheme(hideBackground) {
-    Row(
-      modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-      verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.extraSmall),
+    LandscapePlayerControlStrip(
+      scrollable = scrollable,
+      reverseScrolling = false,
+      alignment = Alignment.Start,
     ) {
       buttons.forEach { button ->
         RenderPlayerButton(
@@ -381,5 +382,29 @@ fun BottomLeftPlayerControlsLandscape(
         )
       }
     }
+  }
+}
+
+@Composable
+private fun LandscapePlayerControlStrip(
+  scrollable: Boolean,
+  reverseScrolling: Boolean,
+  alignment: Alignment.Horizontal,
+  content: @Composable RowScope.() -> Unit,
+) {
+  if (scrollable) {
+    PlayerControlScrollStrip(
+      gap = MaterialTheme.spacing.extraSmall,
+      alignment = alignment,
+      reverseScrolling = reverseScrolling,
+      showEdgeFades = true,
+      content = content,
+    )
+  } else {
+    Row(
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.extraSmall, alignment),
+      content = content,
+    )
   }
 }

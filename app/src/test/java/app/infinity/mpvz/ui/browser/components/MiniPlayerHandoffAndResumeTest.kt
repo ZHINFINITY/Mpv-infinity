@@ -583,11 +583,11 @@ class DirectAudiobookRestorePathContractTest {
       .substringAfter("override fun onCreate(savedInstanceState: Bundle?)")
       .substringBefore("private fun shouldPreflightExternalM3u(")
     assertTrue(onCreate.contains("restoreAudioPlaybackSessionIfNeeded()"))
-    val continuePlayerInitialization = activity
-      .substringAfter("private fun continuePlayerInitialization()")
+    val playerCreationCompletion = activity
+      .substringAfter("private fun completePlayerCreation(initError: String?)")
       .substringBefore("\n  private ")
-    val restoreQueueCall = continuePlayerInitialization.indexOf("restoredAudioPlaybackSnapshot?.let(::restoreAudioPlaybackQueue)")
-    val firstMediaLoadAfterRestore = continuePlayerInitialization.indexOf("startMediaLoad(", restoreQueueCall)
+    val restoreQueueCall = playerCreationCompletion.indexOf("restoredAudioPlaybackSnapshot?.let(::restoreAudioPlaybackQueue)")
+    val firstMediaLoadAfterRestore = playerCreationCompletion.indexOf("startMediaLoad(", restoreQueueCall)
     assertTrue(restoreQueueCall >= 0 && firstMediaLoadAfterRestore > restoreQueueCall)
 
     val restoreSnapshot = activity.substringAfter("private fun restoreAudioPlaybackSessionIfNeeded()")
@@ -623,7 +623,7 @@ class DirectAudiobookRestorePathContractTest {
     assertTrue(sharedLoadTransform.contains("radioMimeType?.let { item.copy(mimeType = it) } ?: item"))
     assertFalse(sharedLoadTransform.contains("directAudiobook = null"))
     assertTrue(
-      Regex("""PlaybackSession\.load\(\s*item\s*=\s*playbackItem,""")
+      Regex("""PlaybackSession\.loadWithBoundedProviderResolution\(\s*item\s*=\s*playbackItem,""")
         .containsMatchIn(issuePlaybackLoad),
     )
 
@@ -1236,7 +1236,7 @@ class AudioPlaybackResumeStorePersistenceTest {
   }
 
   @Test
-  fun failedCloseSnapshotDoesNotClearThePlaybackQueue() {
+  fun failedCloseSnapshotStillClearsThePlaybackQueue() {
     var activeQueue = queue(listOf(item("retry-close")))
     var teardownCalled = false
 
@@ -1251,8 +1251,8 @@ class AudioPlaybackResumeStorePersistenceTest {
     }
 
     assertFalse(persisted)
-    assertFalse(teardownCalled)
-    assertEquals("retry-close", activeQueue.currentItem?.stableId)
+    assertTrue(teardownCalled)
+    assertNull(activeQueue.currentItem)
   }
 
   @Test

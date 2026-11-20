@@ -14,6 +14,32 @@ data class MiniPlayerGestureState(
 
 enum class MiniPlayerSettle { Full, Mini }
 
+/** Pure close-gesture rules shared by the browser mini-player and in-app music sheet. */
+object MiniPlayerDismissGesturePolicy {
+  fun shouldDismissHorizontally(
+    distancePx: Float,
+    velocityPxPerSecond: Float,
+    distanceThresholdPx: Float,
+    velocityThresholdPxPerSecond: Float,
+  ): Boolean =
+    distancePx.isFinite() && velocityPxPerSecond.isFinite() &&
+      distanceThresholdPx.isFinite() && distanceThresholdPx > 0f &&
+      velocityThresholdPxPerSecond.isFinite() && velocityThresholdPxPerSecond > 0f &&
+      (kotlin.math.abs(distancePx) >= distanceThresholdPx ||
+        kotlin.math.abs(velocityPxPerSecond) >= velocityThresholdPxPerSecond)
+
+  fun shouldDismissDownward(
+    distancePx: Float,
+    velocityPxPerSecond: Float,
+    distanceThresholdPx: Float,
+    velocityThresholdPxPerSecond: Float,
+  ): Boolean =
+    distancePx.isFinite() && velocityPxPerSecond.isFinite() &&
+      distanceThresholdPx.isFinite() && distanceThresholdPx > 0f &&
+      velocityThresholdPxPerSecond.isFinite() && velocityThresholdPxPerSecond > 0f &&
+      (distancePx >= distanceThresholdPx || velocityPxPerSecond >= velocityThresholdPxPerSecond)
+}
+
 data class MiniPlayerTarget(
   val left: Float, val top: Float, val width: Float, val height: Float,
   val viewportWidth: Float,

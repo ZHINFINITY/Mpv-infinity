@@ -19,7 +19,6 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
@@ -112,7 +111,6 @@ import app.infinity.mpvz.presentation.Screen
 import app.infinity.mpvz.ui.browser.folderlist.FolderListScreen
 import app.infinity.mpvz.ui.browser.music.MusicLibraryContent
 import app.infinity.mpvz.ui.browser.networkstreaming.NetworkStreamingScreen
-import app.infinity.mpvz.ui.browser.catalog.StreamScreen
 import app.infinity.mpvz.ui.browser.playlist.PlaylistScreen
 import app.infinity.mpvz.ui.browser.recentlyplayed.RecentlyPlayedScreen
 import app.infinity.mpvz.ui.icons.Icon
@@ -120,7 +118,6 @@ import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.theme.AppMotion
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import org.koin.compose.koinInject
@@ -133,7 +130,6 @@ object MainScreen : Screen {
     RECENTS,
     PLAYLISTS,
     NETWORK,
-    STREAMS,
     JELLYFIN,
     NAVIDROME,
     AUDIOBOOKS,
@@ -187,7 +183,6 @@ object MainScreen : Screen {
     val showRecentsTab by appearancePreferences.showRecentsTab.collectAsState()
     val showPlaylistsTab by appearancePreferences.showPlaylistsTab.collectAsState()
     val showNetworkTab by appearancePreferences.showNetworkTab.collectAsState()
-    val showStreamsTab by appearancePreferences.showStreamsTab.collectAsState()
     val showJellyfinTab by appearancePreferences.showJellyfinTab.collectAsState()
     val showNavidromeTab by appearancePreferences.showNavidromeTab.collectAsState()
     val showAudiobooksTab by appearancePreferences.showAudiobooksTab.collectAsState()
@@ -204,7 +199,6 @@ object MainScreen : Screen {
         showRecentsTab,
         showPlaylistsTab,
         showNetworkTab,
-        showStreamsTab,
         showJellyfinTab,
         showNavidromeTab,
         showAudiobooksTab,
@@ -215,7 +209,6 @@ object MainScreen : Screen {
           if (showRecentsTab) add(MainTab.RECENTS)
           if (showPlaylistsTab) add(MainTab.PLAYLISTS)
           if (showNetworkTab) add(MainTab.NETWORK)
-          if (showStreamsTab) add(MainTab.STREAMS)
           if (showJellyfinTab) add(MainTab.JELLYFIN)
           if (showNavidromeTab) add(MainTab.NAVIDROME)
           if (showAudiobooksTab) add(MainTab.AUDIOBOOKS)
@@ -328,59 +321,10 @@ object MainScreen : Screen {
     }
 
     val configuration = androidx.compose.ui.platform.LocalConfiguration.current
-    val screenWidth = configuration.screenWidthDp.dp
 
     val isPortrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
     val isTablet = configuration.smallestScreenWidthDp >= 600
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-
-    val selectedTabTitleLength =
-      when (selectedTab) {
-        MainTab.HOME -> 36.dp
-        MainTab.MUSIC -> 36.dp
-        MainTab.RECENTS -> 48.dp
-        MainTab.PLAYLISTS -> 52.dp
-        MainTab.NETWORK -> 50.dp
-        MainTab.STREAMS -> 54.dp
-        MainTab.JELLYFIN -> 44.dp
-        MainTab.NAVIDROME -> 56.dp
-        MainTab.AUDIOBOOKS -> 68.dp
-      }
-
-    val unselectedCount = (visibleTabs.size - 1).coerceAtLeast(0)
-    val targetNavBarWidth =
-      if (visibleTabs.isEmpty()) 0.dp
-      else (22.dp + 6.dp + selectedTabTitleLength + 28.dp) +
-        (42.dp * unselectedCount) +
-        (4.dp * unselectedCount) +
-        12.dp
-
-    val navBarWidth by animateDpAsState(
-      targetValue = targetNavBarWidth,
-      animationSpec =
-        spring(
-          dampingRatio = Spring.DampingRatioNoBouncy,
-          stiffness = Spring.StiffnessMedium,
-        ),
-      label = "nav_bar_width",
-    )
-
-    val targetOffsetFraction =
-      when {
-        isDualPaneFolderSelected && selectedTab == MainTab.HOME -> 0.2f
-        isMiniPlayerVisible && (isLandscape || isTablet) -> 0f
-        else -> 0.5f
-      }
-
-    val animatedOffsetFraction by animateFloatAsState(
-      targetValue = targetOffsetFraction,
-      animationSpec =
-        spring(
-          dampingRatio = Spring.DampingRatioNoBouncy,
-          stiffness = Spring.StiffnessMedium,
-        ),
-      label = "nav_bar_position",
-    )
 
     // On portrait phones the edge-to-edge mini player sits above the pill nav bar,
     // so screens/FABs must clear it.
@@ -459,7 +403,6 @@ object MainScreen : Screen {
                 MainTab.RECENTS -> RecentlyPlayedScreen.Content()
                 MainTab.PLAYLISTS -> PlaylistScreen.Content()
                 MainTab.NETWORK -> NetworkStreamingScreen.Content()
-                MainTab.STREAMS -> StreamScreen.Content()
                 MainTab.JELLYFIN -> app.infinity.mpvz.ui.browser.jellyfin.JellyfinContent(viewModel = jellyfinViewModel)
                 MainTab.NAVIDROME -> app.infinity.mpvz.ui.browser.navidrome.NavidromeContent(viewModel = navidromeViewModel)
                 MainTab.AUDIOBOOKS -> app.infinity.mpvz.ui.browser.audiobooks.AudiobookLibraryScreen.Content()
@@ -618,7 +561,6 @@ private fun ExpressivePillNavigationBar(
       MainScreen.MainTab.RECENTS -> 104.dp
       MainScreen.MainTab.PLAYLISTS -> 108.dp
       MainScreen.MainTab.NETWORK -> 106.dp
-      MainScreen.MainTab.STREAMS -> 112.dp
       MainScreen.MainTab.JELLYFIN -> 120.dp
       MainScreen.MainTab.NAVIDROME -> 108.dp
       MainScreen.MainTab.AUDIOBOOKS -> 144.dp
@@ -631,9 +573,6 @@ private fun ExpressivePillNavigationBar(
   // While the pill is dragged the hovered tab opens like it does during a pager swipe, so its
   // label has room. The gesture itself maps the finger against centres frozen at drag start.
   var dragPosition by remember { mutableStateOf<Float?>(null) }
-  var retainedFinalDragPosition by remember { mutableStateOf<Float?>(null) }
-  var retainedFinalDragTarget by remember { mutableStateOf<Int?>(null) }
-  var lensSyncedToRelease by remember { mutableStateOf(false) }
   val glassMotion = app.infinity.mpvz.ui.theme.LocalGlassCustomization.current.motion
   val motionAllowed = liquidGlassSurfaces && rememberBrowserGlassMotionAllowed()
   val fingerDragging = pagerState?.interactionSource?.collectIsDraggedAsState()?.value == true
@@ -642,9 +581,7 @@ private fun ExpressivePillNavigationBar(
   // A single finite spring owns the visual lens. Pager drags follow the finger without lag;
   // programmatic tab changes keep a separate spring trajectory instead of snapping each frame.
   val lensPosition = remember { Animatable(position) }
-  val synchronizedRelease = retainedFinalDragTarget != null && lensSyncedToRelease
-  val releaseVisualPosition = if (synchronizedRelease) lensPosition.value else retainedFinalDragPosition
-  val layoutPosition = dragPosition ?: releaseVisualPosition ?: position
+  val layoutPosition = dragPosition ?: position
   val tabWidths = remember(layoutPosition, visibleTabs) {
     visibleTabs.mapIndexed { index, tab ->
       val fraction = (1f - kotlin.math.abs(layoutPosition - index)).coerceIn(0f, 1f)
@@ -660,54 +597,19 @@ private fun ExpressivePillNavigationBar(
     }
   }
 
-  LaunchedEffect(targetIndex, fingerDragging, if (fingerDragging) position else 0f, motionAllowed, glassMotion, retainedFinalDragTarget) {
+  LaunchedEffect(targetIndex, fingerDragging, if (fingerDragging) position else 0f, motionAllowed, glassMotion) {
     when {
-      retainedFinalDragTarget != null -> Unit
       !motionAllowed -> lensPosition.snapTo(targetIndex)
       fingerDragging -> lensPosition.snapTo(position)
       else -> lensPosition.animateTo(targetIndex, spring(stiffness = 440f, dampingRatio = 1f - 0.26f * glassMotion))
-    }
-  }
-  LaunchedEffect(retainedFinalDragTarget, retainedFinalDragPosition, pagerState, motionAllowed, glassMotion, visibleTabs.size) {
-    val target = retainedFinalDragTarget ?: return@LaunchedEffect
-    val finalPosition = retainedFinalDragPosition ?: return@LaunchedEffect
-    val targetPosition = target.toFloat().coerceIn(0f, (visibleTabs.size - 1).coerceAtLeast(0).toFloat())
-    lensSyncedToRelease = false
-    lensPosition.snapTo(finalPosition)
-    lensSyncedToRelease = true
-    if (!motionAllowed) {
-      lensPosition.snapTo(targetPosition)
-    } else {
-      lensPosition.animateTo(targetPosition, spring(stiffness = 440f, dampingRatio = 1f - 0.26f * glassMotion))
-    }
-    val pager = pagerState
-    if (pager != null) {
-      snapshotFlow {
-        pager.settledPage == target &&
-          kotlin.math.abs(pager.currentPageOffsetFraction) < 0.001f &&
-          !pager.isScrollInProgress &&
-          !lensPosition.isRunning &&
-          kotlin.math.abs(lensPosition.value - targetPosition) < 0.001f
-      }.first { it }
-    }
-    retainedFinalDragPosition = null
-    retainedFinalDragTarget = null
-    lensSyncedToRelease = false
-  }
-  LaunchedEffect(fingerDragging) {
-    if (fingerDragging) {
-      retainedFinalDragPosition = null
-      retainedFinalDragTarget = null
-      lensSyncedToRelease = false
     }
   }
   var hoveredTab by remember { mutableIntStateOf(targetIndex.toInt().coerceIn(0, lastIndex)) }
   LaunchedEffect(targetIndex, lastIndex) {
     hoveredTab = targetIndex.toInt().coerceIn(0, lastIndex)
   }
-  val visualPosition = (
-    dragPosition ?: releaseVisualPosition ?: if (!motionAllowed || fingerDragging) position else lensPosition.value
-  ).coerceIn(0f, lastIndex.toFloat())
+  val visualPosition = (dragPosition ?: if (!motionAllowed || fingerDragging) position else lensPosition.value)
+    .coerceIn(0f, lastIndex.toFloat())
   val visualFloor = visualPosition.toInt().coerceIn(0, lastIndex)
   val visualCeil = (visualFloor + 1).coerceAtMost(lastIndex)
   val visualFraction = (visualPosition - visualFloor).coerceIn(0f, 1f)
@@ -735,27 +637,12 @@ private fun ExpressivePillNavigationBar(
     isRtl = isRtl,
     tabCenters = { latestTabCenters },
     scrollState = pillScroll,
-    onDragPosition = {
-      if (it != null) {
-        retainedFinalDragPosition = null
-        retainedFinalDragTarget = null
-        lensSyncedToRelease = false
-      }
-      dragPosition = it
-    },
+    onDragPosition = { dragPosition = it },
     onHoverChanged = { index ->
       if (index != hoveredTab && dragPosition != null) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
       hoveredTab = index
     },
-    onRelease = { target, releasePosition ->
-      latestVisibleTabs.getOrNull(target)?.let { tab ->
-        val finalPosition = releasePosition.coerceIn(0f, lastIndex.toFloat())
-        lensSyncedToRelease = false
-        retainedFinalDragPosition = finalPosition
-        retainedFinalDragTarget = target
-        latestOnTabSelected(tab)
-      }
-    },
+    onRelease = { target, _ -> latestVisibleTabs.getOrNull(target)?.let(latestOnTabSelected) },
   )
   val lensGeometry = with(density) {
     if (motionAllowed) NavigationGlassMotionPolicy.dragGeometry(
@@ -800,7 +687,7 @@ private fun ExpressivePillNavigationBar(
         verticalAlignment = Alignment.CenterVertically,
       ) {
         visibleTabs.forEachIndexed { index, tab ->
-          val tabFraction = if (dragPosition != null || retainedFinalDragTarget != null) {
+          val tabFraction = if (dragPosition != null) {
             (1f - kotlin.math.abs(visualPosition - index)).coerceIn(0f, 1f)
           } else {
             (1f - kotlin.math.abs(position - index)).coerceIn(0f, 1f)
@@ -822,14 +709,12 @@ private fun ExpressivePillNavigationBar(
                 .clip(CircleShape)
                 .semantics {
                   role = Role.Tab
-                  selected = if (dragPosition != null || retainedFinalDragPosition != null) hoveredTab == index else index == targetIndex.toInt()
+                  selected = if (dragPosition != null) hoveredTab == index else index == targetIndex.toInt()
                 }
                 .clickable(
                   interactionSource = remember { MutableInteractionSource() },
                   indication = androidx.compose.material3.ripple(bounded = true),
                 ) {
-                  retainedFinalDragPosition = null
-                  retainedFinalDragTarget = null
                   haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                   onTabSelected(tab)
                 },
@@ -876,13 +761,6 @@ private fun ExpressivePillNavigationBar(
                     tint = contentColor,
                     modifier = Modifier.size(22.dp),
                   )
-                MainScreen.MainTab.STREAMS ->
-                  Icon(
-                    Icons.RoundedFilled.Movie,
-                    contentDescription = stringResource(R.string.ui_streams),
-                    tint = contentColor,
-                    modifier = Modifier.size(22.dp),
-                  )
                 MainScreen.MainTab.JELLYFIN ->
                   androidx.compose.material3.Icon(
                     painter = painterResource(R.drawable.ic_jellyfin),
@@ -916,7 +794,6 @@ private fun ExpressivePillNavigationBar(
                       MainScreen.MainTab.RECENTS -> stringResource(R.string.ui_recents)
                       MainScreen.MainTab.PLAYLISTS -> stringResource(R.string.ui_playlists)
                       MainScreen.MainTab.NETWORK -> stringResource(R.string.ui_network)
-                      MainScreen.MainTab.STREAMS -> stringResource(R.string.ui_streams)
                       MainScreen.MainTab.JELLYFIN -> stringResource(R.string.ui_jellyfin)
                       MainScreen.MainTab.NAVIDROME -> stringResource(R.string.pref_navidrome_title)
                       MainScreen.MainTab.AUDIOBOOKS -> stringResource(R.string.audiobooks_title)

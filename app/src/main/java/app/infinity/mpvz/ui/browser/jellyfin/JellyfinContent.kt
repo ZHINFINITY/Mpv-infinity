@@ -619,6 +619,7 @@ fun JellyfinContent(
                               JellyfinLibraryCard(
                                 item = library,
                                 server = server,
+                                count = uiState.libraryCounts[library.id],
                                 onClick = { viewModel.navigateToItem(library) },
                               )
                             }
@@ -796,24 +797,31 @@ fun JellyfinContent(
                 val isListMode = layoutMode == MediaLayoutMode.LIST || allEpisodes
 
               if (items.isEmpty() && !uiState.isLoading) {
-                Column(
-                  modifier = Modifier.padding(24.dp),
-                  horizontalAlignment = Alignment.CenterHorizontally,
-                  verticalArrangement = Arrangement.Center,
-                ) {
-                  Icon(
-                    imageVector = Icons.RoundedFilled.Movie,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                    modifier = Modifier.size(48.dp),
+                if (uiState.failedPageStartIndex != null && uiState.error != null) {
+                  ErrorView(
+                    message = uiState.error.orEmpty(),
+                    onRetry = { viewModel.retryFailedPage() },
                   )
-                  Spacer(modifier = Modifier.height(12.dp))
-                  Text(
-                    text = if (uiState.searchQuery.isNotBlank()) "No results found for \"${uiState.searchQuery}\"" else "No media found in this folder",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
-                  )
+                } else {
+                  Column(
+                    modifier = Modifier.padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                  ) {
+                    Icon(
+                      imageVector = Icons.RoundedFilled.Movie,
+                      contentDescription = null,
+                      tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                      modifier = Modifier.size(48.dp),
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                      text = if (uiState.searchQuery.isNotBlank()) "No results found for \"${uiState.searchQuery}\"" else "No media found in this folder",
+                      style = MaterialTheme.typography.bodyLarge,
+                      color = MaterialTheme.colorScheme.onSurfaceVariant,
+                      textAlign = TextAlign.Center,
+                    )
+                  }
                 }
               } else if (isListMode) {
                 val listState = libraryListState
@@ -824,15 +832,15 @@ fun JellyfinContent(
                 )
 
                 val shouldLoadMore =
-                  remember {
+                  remember(listState, items.size) {
                     derivedStateOf {
                       val lastVisibleIndex = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
                       items.isNotEmpty() && lastVisibleIndex >= items.size - 5
                     }
                   }
 
-                LaunchedEffect(shouldLoadMore.value) {
-                  if (shouldLoadMore.value && uiState.hasMore && !uiState.isLoading && !uiState.isLoadingMore) {
+                LaunchedEffect(shouldLoadMore.value, uiState.hasMore, uiState.isLoading, uiState.isLoadingMore, items.size) {
+                  if (shouldLoadMore.value && uiState.hasMore && uiState.error == null && !uiState.isLoading && !uiState.isLoadingMore) {
                     viewModel.loadMoreItems()
                   }
                 }
@@ -889,6 +897,14 @@ fun JellyfinContent(
                         }
                       }
                     }
+                    if (uiState.failedPageStartIndex != null && uiState.error != null) {
+                      item {
+                        ErrorView(
+                          message = uiState.error.orEmpty(),
+                          onRetry = { viewModel.retryFailedPage() },
+                        )
+                      }
+                    }
                     if (uiState.isLoadingMore) {
                       item {
                         Box(
@@ -927,15 +943,15 @@ fun JellyfinContent(
                 )
 
                 val shouldLoadMore =
-                  remember {
+                  remember(gridState, items.size) {
                     derivedStateOf {
                       val lastVisibleIndex = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
                       items.isNotEmpty() && lastVisibleIndex >= items.size - 8
                     }
                   }
 
-                LaunchedEffect(shouldLoadMore.value) {
-                  if (shouldLoadMore.value && uiState.hasMore && !uiState.isLoading && !uiState.isLoadingMore) {
+                LaunchedEffect(shouldLoadMore.value, uiState.hasMore, uiState.isLoading, uiState.isLoadingMore, items.size) {
+                  if (shouldLoadMore.value && uiState.hasMore && uiState.error == null && !uiState.isLoading && !uiState.isLoadingMore) {
                     viewModel.loadMoreItems()
                   }
                 }
@@ -972,6 +988,14 @@ fun JellyfinContent(
                       }
                     }
 
+                    if (uiState.failedPageStartIndex != null && uiState.error != null) {
+                      item(span = { GridItemSpan(maxLineSpan) }) {
+                        ErrorView(
+                          message = uiState.error.orEmpty(),
+                          onRetry = { viewModel.retryFailedPage() },
+                        )
+                      }
+                    }
                     if (uiState.isLoadingMore) {
                       item(span = { GridItemSpan(maxLineSpan) }) {
                         Box(

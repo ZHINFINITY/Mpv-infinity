@@ -106,6 +106,7 @@ struct FlowContext {
     uint64_t cpuSyncWaitMaxNs = 0;
     uint32_t syncOperationsSinceSummary = 0;
     bool syncFdInteropReady = false;
+    bool outputStorageImageSupported = false;
     std::string captureSessionId;
     bool captureFailureLogged = false;
 };
@@ -130,6 +131,8 @@ enum FlowDiagnosticBit : uint64_t {
     DIAG_SYNC_CAPABILITY = 1ull << 16,
     DIAG_SYNC_FAILURE = 1ull << 17,
     DIAG_SYNC_BACKPRESSURE = 1ull << 18,
+    DIAG_OUTPUT_STORAGE_READY = 1ull << 19,
+    DIAG_OUTPUT_STORAGE_FALLBACK = 1ull << 20,
 };
 
 enum EglDiagnosticBit : uint32_t {
@@ -683,12 +686,15 @@ void destroyImage(FlowContext *context, SharedImage *image) {
 
 bool queryAhbImageSupport(FlowContext *context, VkImageUsageFlags usage,
                           const AHardwareBuffer_Desc *bufferDesc,
-                          uint64_t *requiredAhbUsage, const char *imageRole) {
+                          uint64_t *requiredAhbUsage, const char *imageRole,
+                          bool reportFailure = true) {
     const uint32_t width = bufferDesc ? bufferDesc->width : 0;
     const uint32_t height = bufferDesc ? bufferDesc->height : 0;
     const uint32_t format = bufferDesc ? bufferDesc->format : 0;
     const uint64_t bufferUsage = bufferDesc ? bufferDesc->usage : 0;
     const char *role = imageRole ? imageRole : "unknown";
+#define AHB_PROBE_LOG(...) \
+    do { if (reportFailure) logFlowOnce(__VA_ARGS__); } while (0)
     VkAndroidHardwareBufferUsageANDROID ahbUsage{};
     ahbUsage.sType = VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_USAGE_ANDROID;
     VkExternalImageFormatProperties externalProperties{};
@@ -711,7 +717,7 @@ bool queryAhbImageSupport(FlowContext *context, VkImageUsageFlags usage,
     imageInfo.flags = 0;
 
     if (!context || !context->vulkan || !context->vulkan->get_proc_addr) {
-        logFlowOnce(context, DIAG_AHB_PROBE_FAILURE, ANDROID_LOG_ERROR,
+        AHB_PROBE_LOG(context, DIAG_AHB_PROBE_FAILURE, ANDROID_LOG_ERROR,
                     "MPVFLOW_DIAGNOSTIC component=native-media3 event=ahb_probe state=failed "
                     "stage=vulkan_get_proc_addr image_role=%s width=%u height=%u format=%u "
                     "buffer_usage=0x%llx requested_vk_usage=0x%x",
@@ -730,7 +736,7 @@ bool queryAhbImageSupport(FlowContext *context, VkImageUsageFlags usage,
                     context->vulkan->instance, "vkGetPhysicalDeviceImageFormatProperties2KHR"));
     }
     if (!getImageFormatProperties2) {
-        logFlowOnce(context, DIAG_AHB_PROBE_FAILURE, ANDROID_LOG_ERROR,
+        AHB_PROBE_LOG(context, DIAG_AHB_PROBE_FAILURE, ANDROID_LOG_ERROR,
                     "MPVFLOW_DIAGNOSTIC component=native-media3 event=ahb_probe state=failed "
                     "stage=vkGetPhysicalDeviceImageFormatProperties2_proc image_role=%s "
                     "width=%u height=%u format=%u buffer_usage=0x%llx requested_vk_usage=0x%x",
@@ -741,7 +747,7 @@ bool queryAhbImageSupport(FlowContext *context, VkImageUsageFlags usage,
     const VkResult result = getImageFormatProperties2(
         context->vulkan->phys_device, &imageInfo, &imageProperties);
     if (result != VK_SUCCESS) {
-        logFlowOnce(context, DIAG_AHB_PROBE_FAILURE, ANDROID_LOG_ERROR,
+        AHB_PROBE_LOG(context, DIAG_AHB_PROBE_FAILURE, ANDROID_LOG_ERROR,
                     "MPVFLOW_DIAGNOSTIC component=native-media3 event=ahb_probe state=failed "
                     "stage=vkGetPhysicalDeviceImageFormatProperties2 image_role=%s vk_result=%d "
                     "width=%u height=%u format=%u buffer_usage=0x%llx requested_vk_usage=0x%x",
@@ -753,7 +759,7 @@ bool queryAhbImageSupport(FlowContext *context, VkImageUsageFlags usage,
     if (!(memory.externalMemoryFeatures & VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT) ||
         !(memory.compatibleHandleTypes &
           VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID)) {
-        logFlowOnce(context, DIAG_AHB_PROBE_FAILURE, ANDROID_LOG_ERROR,
+        AHB_PROBE_LOG(context, DIAG_AHB_PROBE_FAILURE, ANDROID_LOG_ERROR,
                     "MPVFLOW_DIAGNOSTIC component=native-media3 event=ahb_probe state=failed "
                     "stage=external_memory_not_importable image_role=%s external_features=0x%x "
                     "compatible_handles=0x%x width=%u height=%u format=%u requested_vk_usage=0x%x",
@@ -765,7 +771,7 @@ bool queryAhbImageSupport(FlowContext *context, VkImageUsageFlags usage,
     const uint64_t gpuUsageFlags = AHARDWAREBUFFER_USAGE_GPU_SAMPLED_IMAGE |
                                    AHARDWAREBUFFER_USAGE_GPU_FRAMEBUFFER;
     if (!(ahbUsage.androidHardwareBufferUsage & gpuUsageFlags)) {
-        logFlowOnce(context, DIAG_AHB_PROBE_FAILURE, ANDROID_LOG_ERROR,
+        AHB_PROBE_LOG(context, DIAG_AHB_PROBE_FAILURE, ANDROID_LOG_ERROR,
                     "MPVFLOW_DIAGNOSTIC component=native-media3 event=ahb_probe state=failed "
                     "stage=required_usage_missing_gpu_flag image_role=%s required_ahb_usage=0x%llx "
                     "external_features=0x%x compatible_handles=0x%x",
@@ -783,7 +789,7 @@ bool queryAhbImageSupport(FlowContext *context, VkImageUsageFlags usage,
         (bufferDesc->usage & ahbUsage.androidHardwareBufferUsage) ==
         ahbUsage.androidHardwareBufferUsage;
     if (!usageSupported)
-        logFlowOnce(context, DIAG_AHB_PROBE_FAILURE, ANDROID_LOG_ERROR,
+        AHB_PROBE_LOG(context, DIAG_AHB_PROBE_FAILURE, ANDROID_LOG_ERROR,
                     "MPVFLOW_DIAGNOSTIC component=native-media3 event=ahb_probe state=failed "
                     "stage=hardwarebuffer_usage_mismatch image_role=%s buffer_usage=0x%llx "
                     "required_ahb_usage=0x%llx external_features=0x%x compatible_handles=0x%x",
@@ -792,10 +798,12 @@ bool queryAhbImageSupport(FlowContext *context, VkImageUsageFlags usage,
                     static_cast<unsigned long long>(ahbUsage.androidHardwareBufferUsage),
                     memory.externalMemoryFeatures, memory.compatibleHandleTypes);
     return usageSupported;
+#undef AHB_PROBE_LOG
 }
 
-SharedImage *createSharedImage(FlowContext *context, JNIEnv *env, jobject javaBuffer,
-                               int width, int height, bool output) {
+SharedImage *createSharedImageAttempt(FlowContext *context, JNIEnv *env, jobject javaBuffer,
+                                      int width, int height, bool output,
+                                      bool forceTransferOnly) {
     const uint64_t importFailureBit = output ? DIAG_OUTPUT_IMPORT_FAILURE : DIAG_INPUT_IMPORT_FAILURE;
     const uint64_t importReadyBit = output ? DIAG_OUTPUT_IMPORT_READY : DIAG_INPUT_IMPORT_READY;
     const char *role = output ? "output" : "input";
@@ -833,16 +841,36 @@ SharedImage *createSharedImage(FlowContext *context, JNIEnv *env, jobject javaBu
         return nullptr;
     }
 
-    const VkImageUsageFlags usage = output
+    const VkImageUsageFlags baseUsage = output
         ? (VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT)
         : VK_IMAGE_USAGE_SAMPLED_BIT;
-    if (!queryAhbImageSupport(context, usage, &bufferDesc, nullptr, role)) {
+    VkImageUsageFlags usage = baseUsage;
+    bool storageOutput = false;
+    if (output && !forceTransferOnly && context->outputStorageImageSupported) {
+        const VkImageUsageFlags storageUsage = baseUsage | VK_IMAGE_USAGE_STORAGE_BIT;
+        storageOutput = queryAhbImageSupport(
+            context, storageUsage, &bufferDesc, nullptr,
+            "output_storage_probe", false);
+        if (storageOutput) {
+            usage = storageUsage;
+            logFlowOnce(context, DIAG_OUTPUT_STORAGE_READY, ANDROID_LOG_INFO,
+                        "MPVFLOW_DIAGNOSTIC component=native-media3 event=output_storage state=available "
+                        "image_role=output width=%d height=%d requested_vk_usage=0x%x",
+                        width, height, usage);
+        } else {
+            logFlowOnce(context, DIAG_OUTPUT_STORAGE_FALLBACK, ANDROID_LOG_INFO,
+                        "MPVFLOW_DIAGNOSTIC component=native-media3 event=output_storage state=fallback "
+                        "reason=hardwarebuffer_storage_usage_unavailable path=transfer_destination");
+        }
+    }
+    if (!storageOutput &&
+        !queryAhbImageSupport(context, baseUsage, &bufferDesc, nullptr, role)) {
         logFlowOnce(context, importFailureBit, ANDROID_LOG_ERROR,
                     "MPVFLOW_DIAGNOSTIC component=native-media3 event=ahb_import state=failed "
                     "stage=external_image_format_support image_role=%s width=%d height=%d "
                     "buffer_format=%u buffer_usage=0x%llx requested_vk_usage=0x%x",
                     role, width, height, bufferDesc.format,
-                    static_cast<unsigned long long>(bufferDesc.usage), usage);
+                    static_cast<unsigned long long>(bufferDesc.usage), baseUsage);
         AHardwareBuffer_release(buffer);
         return nullptr;
     }
@@ -870,6 +898,20 @@ SharedImage *createSharedImage(FlowContext *context, JNIEnv *env, jobject javaBu
     imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     VkResult result = vkCreateImage(context->vulkan->device, &imageInfo, nullptr, &shared->image);
+    if (result != VK_SUCCESS && storageOutput) {
+        logFlowOnce(context, DIAG_OUTPUT_STORAGE_FALLBACK, ANDROID_LOG_WARN,
+                    "MPVFLOW_DIAGNOSTIC component=native-media3 event=output_storage state=fallback "
+                    "stage=vkCreateImage vk_result=%d path=transfer_destination", result);
+        usage = baseUsage;
+        imageInfo.usage = usage;
+        storageOutput = false;
+        shared->image = VK_NULL_HANDLE;
+        if (!queryAhbImageSupport(context, usage, &bufferDesc, nullptr, role)) {
+            destroyImage(context, shared);
+            return nullptr;
+        }
+        result = vkCreateImage(context->vulkan->device, &imageInfo, nullptr, &shared->image);
+    }
     if (result != VK_SUCCESS) {
         logFlowOnce(context, importFailureBit, ANDROID_LOG_ERROR,
                     "MPVFLOW_DIAGNOSTIC component=native-media3 event=ahb_import state=failed "
@@ -1011,6 +1053,19 @@ SharedImage *createSharedImage(FlowContext *context, JNIEnv *env, jobject javaBu
     return shared;
 }
 
+
+// A storage-capable image may fail after vkCreateImage (import, bind, or
+// libplacebo wrapping). Every failed attempt is fully destroyed before retry.
+SharedImage *createSharedImage(FlowContext *context, JNIEnv *env, jobject javaBuffer,
+                               int width, int height, bool output) {
+    SharedImage *image = createSharedImageAttempt(
+        context, env, javaBuffer, width, height, output, false);
+    if (image || !output) return image;
+    logFlowOnce(context, DIAG_OUTPUT_STORAGE_FALLBACK, ANDROID_LOG_WARN,
+                "MPVFLOW_DIAGNOSTIC component=native-media3 event=output_storage state=fallback "
+                "stage=post_create_import path=transfer_destination");
+    return createSharedImageAttempt(context, env, javaBuffer, width, height, output, true);
+}
 } // namespace
 
 extern "C" JNIEXPORT jlong JNICALL
@@ -1288,18 +1343,30 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeGetComputeApiName(
 
 extern "C" JNIEXPORT jlong JNICALL
 Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeGetRequiredHardwareBufferUsage(
-    JNIEnv *, jobject, jlong contextHandle, jboolean output) {
+    JNIEnv *, jobject, jlong contextHandle, jboolean output, jboolean storage) {
     auto *context = reinterpret_cast<FlowContext *>(contextHandle);
     if (!context)
         return 0;
     std::lock_guard<std::mutex> guard(context->mutex);
     const bool outputRole = output == JNI_TRUE;
-    const VkImageUsageFlags usage = outputRole
+    VkImageUsageFlags usage = outputRole
         ? (VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT)
         : VK_IMAGE_USAGE_SAMPLED_BIT;
     uint64_t requiredAhbUsage = 0;
     const char *role = outputRole ? "output" : "input";
-    if (!queryAhbImageSupport(context, usage, nullptr, &requiredAhbUsage, role))
+    bool storageOutput = false;
+    if (outputRole && storage == JNI_TRUE) {
+        const VkImageUsageFlags storageUsage = usage | VK_IMAGE_USAGE_STORAGE_BIT;
+        storageOutput = queryAhbImageSupport(
+            context, storageUsage, nullptr, &requiredAhbUsage,
+            "output_storage_probe", false);
+        context->outputStorageImageSupported = storageOutput;
+        if (storageOutput)
+            usage = storageUsage;
+    }
+    if (!storageOutput &&
+        !queryAhbImageSupport(context, usage, nullptr, &requiredAhbUsage,
+                              outputRole && storage != JNI_TRUE ? "output_non_storage" : role))
         return 0;
     logFlow(ANDROID_LOG_INFO,
             "MPVFLOW_DIAGNOSTIC component=native-media3 event=ahb_usage state=required "
@@ -1626,8 +1693,14 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeSynthesize(
     }
     pl_tex synthesized = nullptr;
     MPVFlowGPUResult result;
-    if (mpvflow_gpu_capture_is_paired(context->flow)) {
-        result = mpvflow_gpu_capture_paired_sample(
+    const bool capturePaired = mpvflow_gpu_capture_is_paired(context->flow);
+    const bool captureActive = mpvflow_gpu_capture_active(context->flow);
+    const bool directOutputEligible =
+        !capturePaired && !captureActive && output->texture->params.storable &&
+        mpvflow_gpu_get_compute_api(context->flow) == MPVFLOW_GPU_COMPUTE_VULKAN;
+    bool directOutput = false;
+    if (capturePaired) {
+      result = mpvflow_gpu_capture_paired_sample(
             context->flow, pair, source0->texture, source1->texture, timestep,
             static_cast<double>(sourcePts0Us) / 1000000.0,
             static_cast<double>(sourcePts1Us) / 1000000.0,
@@ -1637,12 +1710,26 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeSynthesize(
             softBlendEnabled == JNI_TRUE, softBlendEnabled == JNI_TRUE,
             &synthesized);
     } else {
-        result = mpvflow_gpu_synthesize_with_policy(
-            context->flow, pair, source0->texture, source1->texture, timestep,
-            visibilityResolverEnabled == JNI_TRUE, softBlendEnabled == JNI_TRUE,
-            softBlendEnabled == JNI_TRUE, &synthesized);
-        if (result == MPVFLOW_GPU_OK && synthesized &&
-            mpvflow_gpu_capture_active(context->flow)) {
+        if (directOutputEligible) {
+            result = mpvflow_gpu_synthesize_with_policy_to_texture(
+                context->flow, pair, source0->texture, source1->texture, timestep,
+                visibilityResolverEnabled == JNI_TRUE, softBlendEnabled == JNI_TRUE,
+                softBlendEnabled == JNI_TRUE, output->texture, &synthesized);
+            directOutput = result == MPVFLOW_GPU_OK && synthesized == output->texture;
+            if (result == MPVFLOW_GPU_UNSUPPORTED_FORMAT) {
+                synthesized = nullptr;
+                result = mpvflow_gpu_synthesize_with_policy(
+                    context->flow, pair, source0->texture, source1->texture, timestep,
+                    visibilityResolverEnabled == JNI_TRUE, softBlendEnabled == JNI_TRUE,
+                    softBlendEnabled == JNI_TRUE, &synthesized);
+            }
+        } else {
+            result = mpvflow_gpu_synthesize_with_policy(
+                context->flow, pair, source0->texture, source1->texture, timestep,
+                visibilityResolverEnabled == JNI_TRUE, softBlendEnabled == JNI_TRUE,
+                softBlendEnabled == JNI_TRUE, &synthesized);
+        }
+        if (result == MPVFLOW_GPU_OK && synthesized && captureActive) {
             const MPVFlowGPUResult captureResult = mpvflow_gpu_capture_sample(
                 context->flow, pair, source0->texture, source1->texture, synthesized,
                 timestep, static_cast<double>(sourcePts0Us) / 1000000.0,
@@ -1668,11 +1755,14 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeSynthesize(
                     result, synthesized != nullptr, timestep, output->width, output->height);
         return JNI_FALSE;
     }
-    struct pl_tex_blit_params blitParams{};
-    blitParams.src = synthesized;
-    blitParams.dst = output->texture;
-    blitParams.sample_mode = PL_TEX_SAMPLE_LINEAR;
-    pl_tex_blit(context->vulkan->gpu, &blitParams);
+    if (!directOutput) {
+        struct pl_tex_blit_params blitParams{};
+        blitParams.src = synthesized;
+        blitParams.dst = output->texture;
+        // Equal-size copies need no reconstruction filter; nearest avoids softening.
+        blitParams.sample_mode = PL_TEX_SAMPLE_NEAREST;
+        pl_tex_blit(context->vulkan->gpu, &blitParams);
+    }
     if (!holdImageForExternal(context, output)) {
         logFlowOnce(context, DIAG_SYNTH_FAILURE, ANDROID_LOG_ERROR,
                     "MPVFLOW_DIAGNOSTIC component=native-media3 event=synthesize state=failed "
@@ -1682,10 +1772,11 @@ Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeSynthesize(
     }
     logFlowOnce(context, DIAG_SYNTH_READY, ANDROID_LOG_INFO,
                 "MPVFLOW_DIAGNOSTIC component=native-media3 event=synthesize state=returned_to_display "
-                "renderer_api=vulkan flow_compute_api=%s timestep=%.9g output=%dx%d sample_mode=linear "
+                "renderer_api=vulkan flow_compute_api=%s timestep=%.9g output=%dx%d output_path=%s "
                 "command_completion=%s cpu_readback=no",
                 mpvflow_gpu_get_compute_api_name(context->flow),
                 timestep, output->width, output->height,
+                directOutput ? "direct_storage_write" : "nearest_blit",
                 output->lastHoldUsedSyncFd ? "sync_fd_handoff" : "pl_gpu_finish_fallback");
     return JNI_TRUE;
 }

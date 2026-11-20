@@ -14,6 +14,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.Dp
@@ -72,3 +73,21 @@ fun GlassControlSurface(
   backdrop: (@Composable () -> Unit)? = null,
   content: @Composable () -> Unit,
 ) = GlassSurface(modifier, enabled, opacity, highlight, cornerRadius, border, backdrop, content)
+
+/**
+ * A low-cost tinted inset for content already inside a sampled glass sheet. It preserves local
+ * separation and text contrast without scheduling another scene sample or lens shader pass.
+ */
+@Composable
+fun Modifier.glassInsetSurface(
+  enabled: Boolean,
+  shape: Shape,
+  fillAlpha: Float = 0.32f,
+  borderAlpha: Float = 0.22f,
+): Modifier {
+  if (!enabled) return this
+  val scheme = MaterialTheme.colorScheme
+  return clip(shape)
+    .background(scheme.surfaceContainerHigh.copy(alpha = fillAlpha.coerceIn(0f, 1f)), shape)
+    .border(1.dp, scheme.outlineVariant.copy(alpha = borderAlpha.coerceIn(0f, 1f)), shape)
+}

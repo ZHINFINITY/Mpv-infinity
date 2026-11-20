@@ -85,7 +85,9 @@ def main() -> None:
         run(4, False, "layered fast foreground over shifted background", mode="layered")
         for block in (4, 8):
             run(block, True, f"block-{block} centered parent-field sentinel")
-        guard = "if(centerCost==0) return 0.0;"
+        # The current paired-axis refinement returns a vector and must keep exact
+        # zero-SAD matches fixed before either the 1D fallback or coupled fit.
+        guard = "if(centerCost==0)return vec2(0.0);"
         if text.count(guard) != 1:
             raise SystemExit("Exact-match refinement guard missing or duplicated")
         compile_variant(text.replace("int radius=pc.cfg.z;", "int radius=1;", 1), "layered radius negative control")

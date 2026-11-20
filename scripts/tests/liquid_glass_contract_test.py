@@ -54,8 +54,10 @@ class LiquidGlassContracts(unittest.TestCase):
         self.assertIn("float2 normal", source)
         self.assertIn("directionalReflection", source)
         self.assertIn("pow(clamp(grazing", source)
-        # Five samples are used; the sixth occurrence is the helper declaration.
-        self.assertEqual(6, source.count("sampleAt("))
+        # The shared PixelCopy frame is already frosted; each pane takes one bent scene sample.
+        self.assertEqual(2, source.count("sampleAt("))
+        self.assertIn("half4 color = sampleAt(bent)", source)
+        self.assertNotIn("blurX", source)
         self.assertIn("fun edgeNormal", policy)
         self.assertIn("fun params", policy)
 

@@ -117,6 +117,37 @@ private data class FlowFrameRateSurfacePolicy(
   val strategyLabel: String,
 )
 
+internal class Media3FlowSharedWriteFailurePolicy(private val failureLimit: Int = 3) {
+  private var context = Long.MIN_VALUE
+  private var width = 0
+  private var height = 0
+  private var attempts = 0
+
+  private fun selectKey(context: Long, width: Int, height: Int) {
+    if (this.context != context || this.width != width || this.height != height) {
+      this.context = context
+      this.width = width
+      this.height = height
+      attempts = 0
+    }
+  }
+
+  fun shouldUseStaging(context: Long, width: Int, height: Int): Boolean {
+    selectKey(context, width, height)
+    return attempts >= failureLimit
+  }
+
+  fun recordFailure(context: Long, width: Int, height: Int) {
+    selectKey(context, width, height)
+    attempts++
+  }
+
+  fun recordSuccess(context: Long, width: Int, height: Int) {
+    selectKey(context, width, height)
+    attempts = 0
+  }
+}
+
 /**
  * A GPU-backed Media3 sink. Decoder frames arrive on a private SurfaceTexture; source images,
  * motion fields, and interpolated output remain GPU-resident. The bounded queue and cadence guard
@@ -369,6 +400,7 @@ class Media3FlowVideoSink(
   @Volatile private var flowVulkanContext = 0L
   private var inputRequiredHardwareBufferUsage = 0L
   private var outputRequiredHardwareBufferUsage = 0L
+  private var outputNonStorageRequiredHardwareBufferUsage = 0L
   private var outputHardwareBuffer: HardwareBuffer? = null
   private var outputImageHandle = 0L
   private var flowAvailable = false
@@ -412,9 +444,13 @@ class Media3FlowVideoSink(
               "vulkan_context_or_compute_setup_failed"
             } else {
               inputRequiredHardwareBufferUsage =
-                Media3FlowVulkanNative.nativeGetRequiredHardwareBufferUsage(flowVulkanContext, output = false)
+                Media3FlowVulkanNative.nativeGetRequiredHardwareBufferUsage(flowVulkanContext, output = false, storage = true)
               outputRequiredHardwareBufferUsage =
-                Media3FlowVulkanNative.nativeGetRequiredHardwareBufferUsage(flowVulkanContext, output = true)
+                Media3FlowVulkanNative.nativeGetRequiredHardwareBufferUsage(flowVulkanContext, output = true, storage = true)
+              outputNonStorageRequiredHardwareBufferUsage =
+                Media3FlowVulkanNative.nativeGetRequiredHardwareBufferUsage(
+                  flowVulkanContext, output = true, storage = false,
+                )
               when {
                 inputRequiredHardwareBufferUsage == 0L -> "vulkan_hardwarebuffer_input_usage_query_failed"
                 outputRequiredHardwareBufferUsage == 0L -> "vulkan_hardwarebuffer_output_usage_query_failed"
@@ -570,14 +606,38 @@ class Media3FlowVideoSink(
     return try {
       HardwareBuffer.create(width, height, HardwareBuffer.RGBA_8888, 1, usage)
     } catch (error: RuntimeException) {
+      if (!role.startsWith("output") || driverRequiredUsage == 0L) {
+        logFlowRecordOnce(
+          "ahb-allocation-$role",
+          Log.ERROR,
+          "event=ahb_import state=failed stage=AHardwareBuffer.create image_role=$role " +
+            "width=$width height=$height format=rgba8 usage=0x${usage.toString(16)}",
+          error,
+        )
+        throw error
+      }
+      val fallbackRequiredUsage = outputNonStorageRequiredHardwareBufferUsage
+      check(fallbackRequiredUsage != 0L) { "Vulkan did not provide non-storage output usage for $role" }
       logFlowRecordOnce(
-        "ahb-allocation-$role",
-        Log.ERROR,
-        "event=ahb_import state=failed stage=AHardwareBuffer.create image_role=$role " +
-          "width=$width height=$height format=rgba8 usage=0x${usage.toString(16)}",
+        "ahb-allocation-output-storage-fallback",
+        Log.WARN,
+        "event=ahb_import state=fallback stage=AHardwareBuffer.create image_role=$role " +
+          "width=$width height=$height storage_usage=0x${driverRequiredUsage.toString(16)} " +
+          "fallback_usage=0x${(baseUsage or fallbackRequiredUsage).toString(16)}",
         error,
       )
-      throw error
+      try {
+        HardwareBuffer.create(width, height, HardwareBuffer.RGBA_8888, 1, baseUsage or fallbackRequiredUsage)
+      } catch (fallbackError: RuntimeException) {
+        logFlowRecordOnce(
+          "ahb-allocation-$role",
+          Log.ERROR,
+          "event=ahb_import state=failed stage=AHardwareBuffer.create image_role=$role " +
+            "width=$width height=$height format=rgba8 fallback_usage=0x${(baseUsage or fallbackRequiredUsage).toString(16)}",
+          fallbackError,
+        )
+        throw fallbackError
+      }
     }
   }
 
@@ -703,6 +763,8 @@ class Media3FlowVideoSink(
   }
 
   private class PresentationSlot {
+    var hardwareBuffer: HardwareBuffer? = null
+    var nativeImageHandle = 0L
     var textureId = 0
     var width = 0
     var height = 0
@@ -712,6 +774,9 @@ class Media3FlowVideoSink(
     var consumerFencePollScheduled = false
     var frame: PresentationFrame? = null
     var completionReported = false
+    var sharedImportFailureContext = 0L
+    var sharedImportFailureAttempts = 0
+    val sharedWriteFailurePolicy = Media3FlowSharedWriteFailurePolicy()
   }
 
   private data class PresentationFrame(
@@ -2023,9 +2088,14 @@ class Media3FlowVideoSink(
     var synthesized = false
     val submitted = if (synthesize && bracket != null && pair != null) {
       val synthesisResult = runCatching {
-        dispatchSynthesis(bracket.first, bracket.second, pair, targetPtsUs)
-        checkGlError("frame synthesis")
-        drawTexture(outputTexture, renderTimeNs, targetPtsUs, presentationFrame(true, "motion_pair_ready"))
+        synthesizeAndQueue(
+          bracket.first,
+          bracket.second,
+          pair,
+          targetPtsUs,
+          renderTimeNs,
+          presentationFrame(true, "motion_pair_ready"),
+        )
       }
       synthesized = synthesisResult.getOrDefault(false)
       if (synthesized) {
@@ -2095,9 +2165,186 @@ class Media3FlowVideoSink(
     return null
   }
 
-  private fun dispatchSynthesis(a: FrameSlot, b: FrameSlot, pair: MotionPairSlot, targetPtsUs: Long) {
-    val alpha = Media3FlowCadence.interpolationAlpha(a.ptsUs, b.ptsUs, targetPtsUs) ?: return
-    check(flowVulkanContext != 0L && pair.nativePairHandle != 0L && outputImageHandle != 0L) {
+  private fun destroyPresentationSlotTarget(slot: PresentationSlot) {
+    deleteTexture(slot.textureId)
+    slot.textureId = 0
+    if (slot.nativeImageHandle != 0L && flowVulkanContext != 0L) {
+      runCatching { Media3FlowVulkanNative.nativeDestroyImage(flowVulkanContext, slot.nativeImageHandle) }
+        .onFailure { Log.w(logTag, "Unable to destroy a presentation-slot Vulkan output", it) }
+    }
+    slot.nativeImageHandle = 0L
+    slot.hardwareBuffer?.let { buffer -> runCatching { buffer.close() } }
+    slot.hardwareBuffer = null
+    slot.width = 0
+    slot.height = 0
+  }
+
+  /**
+   * A presentation lease is the exclusive lifetime token for its output image. The native
+   * synthesis path writes into that shared image where possible; devices without a compatible
+   * slot image keep using the existing shared scratch image and GLES staging blit.
+   */
+  private fun ensurePresentationSlotTarget(
+    slot: PresentationSlot,
+    width: Int,
+    height: Int,
+    preferSharedOutput: Boolean,
+  ): Boolean {
+    if (width <= 0 || height <= 0) return false
+    val dimensionsMatch = slot.width == width && slot.height == height && slot.textureId != 0
+    if (preferSharedOutput && slot.sharedWriteFailurePolicy.shouldUseStaging(flowVulkanContext, width, height)) {
+      if (slot.nativeImageHandle != 0L) destroyPresentationSlotTarget(slot)
+      if (slot.textureId == 0 || slot.width != width || slot.height != height) {
+        destroyPresentationSlotTarget(slot)
+        slot.textureId = createTexture(GLES20.GL_TEXTURE_2D, width, height, GLES30.GL_RGBA8)
+        slot.width = width
+        slot.height = height
+      }
+      return false
+    }
+    if (dimensionsMatch && (!preferSharedOutput || slot.nativeImageHandle != 0L)) {
+      return slot.nativeImageHandle != 0L
+    }
+    // Preserve same-size GLES staging after a shared import failure. Retry is
+    // bounded for this Vulkan context and naturally resets on resize/context loss.
+    if (dimensionsMatch && preferSharedOutput && slot.nativeImageHandle == 0L &&
+      slot.sharedImportFailureContext == flowVulkanContext && slot.sharedImportFailureAttempts >= 3) return false
+    if (dimensionsMatch && preferSharedOutput && slot.nativeImageHandle == 0L) {
+      slot.sharedImportFailureAttempts++
+    } else {
+      slot.sharedImportFailureContext = 0L
+      slot.sharedImportFailureAttempts = 0
+      destroyPresentationSlotTarget(slot)
+    }
+    if (preferSharedOutput && flowVulkanContext != 0L) {
+      var buffer: HardwareBuffer? = null
+      var imageHandle = 0L
+      var texture = 0
+      try {
+        check(ensureEgl() && makePbufferCurrent()) { "Media3 Flow producer EGL context is unavailable" }
+        val sharedBuffer = createSharedHardwareBuffer(width, height, "output-presentation")
+        buffer = sharedBuffer
+        imageHandle = Media3FlowVulkanNative.nativeCreateFrameImage(
+          flowVulkanContext, sharedBuffer, width, height, true,
+        )
+        check(imageHandle != 0L) { "Vulkan rejected a presentation-slot output image" }
+        texture = Media3FlowVulkanNative.nativeCreateEglTexture(sharedBuffer)
+        check(texture != 0 && GLES20.glGetError() == GLES20.GL_NO_ERROR) {
+          "EGL rejected a presentation-slot output image"
+        }
+        if (slot.textureId != 0 && slot.textureId != texture) deleteTexture(slot.textureId)
+        slot.hardwareBuffer = buffer
+        slot.nativeImageHandle = imageHandle
+        slot.textureId = texture
+        slot.width = width
+        slot.sharedImportFailureContext = 0L
+        slot.sharedImportFailureAttempts = 0
+        slot.height = height
+        logFlowRecordOnce(
+          "presentation-slot-output-ready-$width-$height",
+          Log.INFO,
+          "event=presentation_handoff state=ready path=slot_owned_shared_vulkan_output " +
+            "copy_elided=true width=$width height=$height",
+        )
+        return true
+      } catch (error: RuntimeException) {
+        if (texture != 0) deleteTexture(texture)
+        if (imageHandle != 0L && flowVulkanContext != 0L) {
+          runCatching { Media3FlowVulkanNative.nativeDestroyImage(flowVulkanContext, imageHandle) }
+        }
+        buffer?.let { runCatching { it.close() } }
+        slot.sharedImportFailureContext = flowVulkanContext
+        slot.sharedImportFailureAttempts = maxOf(slot.sharedImportFailureAttempts, 1)
+        logFlowRecordOnce(
+          "presentation-slot-output-fallback-$width-$height",
+          Log.WARN,
+          "event=presentation_handoff state=fallback path=staging_copy " +
+            "reason=shared_slot_output_unavailable width=$width height=$height",
+          error,
+        )
+      }
+    }
+    if (slot.textureId == 0) {
+      slot.textureId = createTexture(GLES20.GL_TEXTURE_2D, width, height, GLES30.GL_RGBA8)
+    }
+    slot.width = width
+    slot.height = height
+    return false
+  }
+
+  private fun synthesizeAndQueue(
+    a: FrameSlot,
+    b: FrameSlot,
+    pair: MotionPairSlot,
+    targetPtsUs: Long,
+    presentationTimeNs: Long,
+    frame: PresentationFrame,
+  ): Boolean {
+    val attempt = presentationQueue.acquireForWriteWithSnapshot()
+    val lease = attempt.lease
+    if (lease == null) {
+      lastPresentationStageFailureReason = "producer_no_writable_presentation_slot"
+      lastPresentationStageSlotStates = attempt.slotStates.entries.associate { (state, count) ->
+        state.name.lowercase() to count
+      }
+      return false
+    }
+    val slot = presentationSlots[lease.slot]
+    var sharedTarget = false
+    try {
+      check(ensureEgl() && makePbufferCurrent()) { "Media3 Flow producer EGL context is unavailable" }
+      sharedTarget = ensurePresentationSlotTarget(slot, frameWidth, frameHeight, preferSharedOutput = true)
+      if (sharedTarget) {
+        try {
+          dispatchSynthesis(a, b, pair, targetPtsUs, slot.nativeImageHandle)
+          checkGlError("frame synthesis")
+          slot.sharedWriteFailurePolicy.recordSuccess(flowVulkanContext, frameWidth, frameHeight)
+        } catch (sharedFailure: Exception) {
+          slot.sharedWriteFailurePolicy.recordFailure(flowVulkanContext, frameWidth, frameHeight)
+          // A slot-specific Vulkan/GLES interop failure must not disable a motion pair
+          // that can still synthesize into the producer's scratch output image.
+          destroyPresentationSlotTarget(slot)
+          sharedTarget = false
+          try {
+            dispatchSynthesis(a, b, pair, targetPtsUs, outputImageHandle)
+            checkGlError("scratch frame synthesis")
+          } catch (scratchFailure: Exception) {
+            scratchFailure.addSuppressed(sharedFailure)
+            throw scratchFailure
+          }
+        }
+      } else {
+        dispatchSynthesis(a, b, pair, targetPtsUs, outputImageHandle)
+        checkGlError("frame synthesis")
+      }
+      return drawTexture(
+        if (sharedTarget) slot.textureId else outputTexture,
+        presentationTimeNs,
+        targetPtsUs,
+        frame,
+        reservedLease = lease,
+        directOutputTarget = sharedTarget,
+      )
+    } finally {
+      if (presentationQueue.state(lease.slot) == Media3FlowPresentationQueue.State.WRITING) {
+        // A failed external handoff may leave the Vulkan image owned by Vulkan;
+        // never return that slot to GLES. Retire its shared target first.
+        if (sharedTarget && slot.nativeImageHandle != 0L) destroyPresentationSlotTarget(slot)
+        presentationQueue.abortWrite(lease)
+      }
+    }
+  }
+
+  private fun dispatchSynthesis(
+    a: FrameSlot,
+    b: FrameSlot,
+    pair: MotionPairSlot,
+    targetPtsUs: Long,
+    outputTargetHandle: Long,
+  ) {
+    val alpha = Media3FlowCadence.interpolationAlpha(a.ptsUs, b.ptsUs, targetPtsUs)
+      ?: error("Media3 Flow synthesis target is outside its source pair")
+    check(flowVulkanContext != 0L && pair.nativePairHandle != 0L && outputTargetHandle != 0L) {
       "Media3 Flow Vulkan synthesis resources are unavailable"
     }
     val submitStartNs = System.nanoTime()
@@ -2114,7 +2361,7 @@ class Media3FlowVideoSink(
           alpha,
           visibilityResolverEnabled,
           softBlendEnabled,
-          outputImageHandle,
+          outputTargetHandle,
         ),
       ) {
         "Shared Vulkan frame synthesis failed"
@@ -2142,6 +2389,8 @@ class Media3FlowVideoSink(
     presentationTimeNs: Long,
     ptsUs: Long,
     frame: PresentationFrame? = null,
+    reservedLease: Media3FlowPresentationQueue.WriteLease? = null,
+    directOutputTarget: Boolean = false,
   ): Boolean {
     when {
       presentationFailed -> {
@@ -2169,11 +2418,11 @@ class Media3FlowVideoSink(
       lastPresentationStageFailureReason = "producer_egl_pbuffer_current_failed"
       return false
     }
-    val acquisition = presentationQueue.acquireForWriteWithSnapshot()
-    val lease = acquisition.lease
+    val acquisition = if (reservedLease == null) presentationQueue.acquireForWriteWithSnapshot() else null
+    val lease = reservedLease ?: acquisition?.lease
     if (lease == null) {
       lastPresentationStageFailureReason = "producer_no_writable_presentation_slot"
-      lastPresentationStageSlotStates = acquisition.slotStates.entries.associate { (state, count) ->
+      lastPresentationStageSlotStates = acquisition?.slotStates.orEmpty().entries.associate { (state, count) ->
         state.name.lowercase() to count
       }
       return false
@@ -2181,47 +2430,53 @@ class Media3FlowVideoSink(
     val slot = presentationSlots[lease.slot]
     clearProducerFence(slot)
     var producerFence = 0L
-    var failureStage = "staging_texture_allocation"
+    var failureStage = "presentation_slot_target_setup"
     try {
-      if (slot.textureId == 0 || slot.width != frameWidth || slot.height != frameHeight) {
-        deleteTexture(slot.textureId)
-        slot.textureId = createTexture(GLES20.GL_TEXTURE_2D, frameWidth, frameHeight, GLES30.GL_RGBA8)
-        slot.width = frameWidth
-        slot.height = frameHeight
-      }
-      val glesQuery = beginGlesTimerQuery()
-      try {
-        failureStage = "staging_framebuffer_setup"
-        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, framebuffer)
-        GLES20.glFramebufferTexture2D(
-          GLES20.GL_FRAMEBUFFER,
-          GLES20.GL_COLOR_ATTACHMENT0,
-          GLES20.GL_TEXTURE_2D,
-          slot.textureId,
-          0,
-        )
-        failureStage = "staging_framebuffer_validation"
-        check(GLES20.glCheckFramebufferStatus(GLES20.GL_FRAMEBUFFER) == GLES20.GL_FRAMEBUFFER_COMPLETE) {
-          "Media3 Flow presentation-staging framebuffer is incomplete"
+      val preferSharedOutput = directOutputTarget || slot.nativeImageHandle != 0L ||
+        (reservedLease == null && flowAvailable && interpolationEnabled)
+      val sharedOutputTarget = ensurePresentationSlotTarget(
+        slot, frameWidth, frameHeight, preferSharedOutput,
+      )
+      if (directOutputTarget) {
+        failureStage = "direct_output_target_validation"
+        check(sharedOutputTarget && slot.nativeImageHandle != 0L && textureId == slot.textureId) {
+          "Media3 Flow direct output does not match its leased presentation slot"
         }
-        GLES20.glViewport(0, 0, frameWidth, frameHeight)
-        GLES20.glUseProgram(blitProgram)
-        bindTextureUnit(0, textureId)
-        GLES20.glUniform1i(blitImageLocation, 0)
-        GLES20.glUniform2f(blitTextureScaleLocation, 1f, 1f)
-        GLES20.glUniform2f(blitTextureOffsetLocation, 0f, 0f)
-        GLES20.glUniform1i(blitRotationLocation, 0)
-        failureStage = "staging_blit_draw"
-        drawFullscreenTriangle()
-        failureStage = "staging_gl_error_check"
-        checkGlError("presentation staging copy")
-      } finally {
-        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0)
-        endGlesTimerQuery(glesQuery)
+      } else {
+        val glesQuery = beginGlesTimerQuery()
+        try {
+          failureStage = "staging_framebuffer_setup"
+          GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, framebuffer)
+          GLES20.glFramebufferTexture2D(
+            GLES20.GL_FRAMEBUFFER,
+            GLES20.GL_COLOR_ATTACHMENT0,
+            GLES20.GL_TEXTURE_2D,
+            slot.textureId,
+            0,
+          )
+          failureStage = "staging_framebuffer_validation"
+          check(GLES20.glCheckFramebufferStatus(GLES20.GL_FRAMEBUFFER) == GLES20.GL_FRAMEBUFFER_COMPLETE) {
+            "Media3 Flow presentation-staging framebuffer is incomplete"
+          }
+          GLES20.glViewport(0, 0, frameWidth, frameHeight)
+          GLES20.glUseProgram(blitProgram)
+          bindTextureUnit(0, textureId)
+          GLES20.glUniform1i(blitImageLocation, 0)
+          GLES20.glUniform2f(blitTextureScaleLocation, 1f, 1f)
+          GLES20.glUniform2f(blitTextureOffsetLocation, 0f, 0f)
+          GLES20.glUniform1i(blitRotationLocation, 0)
+          failureStage = "staging_blit_draw"
+          drawFullscreenTriangle()
+          failureStage = "staging_gl_error_check"
+          checkGlError("presentation staging copy")
+        } finally {
+          GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0)
+          endGlesTimerQuery(glesQuery)
+        }
       }
       failureStage = "producer_fence_creation"
       producerFence = GLES30.glFenceSync(GLES30.GL_SYNC_GPU_COMMANDS_COMPLETE, 0)
-      check(producerFence != 0L) { "Unable to fence the staged Media3 Flow frame" }
+      check(producerFence != 0L) { "Unable to fence the Media3 Flow presentation frame" }
       failureStage = "producer_command_flush"
       GLES20.glFlush()
       slot.producerFence = producerFence
@@ -3605,10 +3860,7 @@ class Media3FlowVideoSink(
       slot.consumerFence = 0L
       slot.consumerFenceStartedAtNs = 0L
       slot.consumerFencePollScheduled = false
-      deleteTexture(slot.textureId)
-      slot.textureId = 0
-      slot.width = 0
-      slot.height = 0
+      destroyPresentationSlotTarget(slot)
       slot.frame = null
       slot.completionReported = false
     }

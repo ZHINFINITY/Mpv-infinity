@@ -27,7 +27,9 @@ class ReferenceUiRollbackContractTest {
   @Test fun preservedPlayerSourcesKeepPinnedFingerprints() {
     val expected = mapOf(
       // Build 1910 smoothness: chapter index via derivedStateOf so position ticks do not recompose the whole overlay.
-      "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "1b567bbe7fb20e0556df016d94057420151eb66810497a38effb25538989dab1" /* Owner-requested group placement and bounded Below landscape row viewports keep overflow horizontally scrollable */,
+      // Auto-hide follow-up: loading does not pin controls; seekbar and button rows share one visibility transition.
+      // Center transport hides during buffering, matching v2.2.2 and MPV-RX without hiding other control groups.
+      "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "b9046a21ef1a527c1cf566fcb3a337f8a74ce5f7e195cf9e6ce22c9cc8e3bf8c" /* Bounded landscape lanes scroll in both seekbar positions */,
       // Owner follow-up: music uses its legacy visual rail while video retains the global-glass path.
       "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/Seekbar.kt" to "5e3cbc03be3aa7b35f464e0ee313615192d8d1cdcfbc7e8a819b7a6c2331843c",
       // Build 1910: shared rimLight/thick-surface routing is intentionally owned by this stream.
@@ -52,6 +54,10 @@ class ReferenceUiRollbackContractTest {
     assertTrue(current.contains("val snapshot = immutableGlassSnapshot(bitmap)"))
     assertTrue(current.contains("bitmap.copy(Bitmap.Config.ARGB_8888, false)"))
     assertTrue(current.contains("pendingRetirements > MaxRetiredBitmapCount"))
+    assertTrue(current.contains("GlassCustomizationPolicy.sampledFrostStrength(tuning.frost, largeSurfaceVisible)"))
+    assertTrue(current.contains("val currentFrost by rememberUpdatedState(sampledFrost)"))
+    assertTrue(current.contains("val frostStrength = currentFrost"))
+    assertTrue(current.contains("frostGlassFrame(\n                  copiedBitmap,\n                  frostStrength,"))
     val guarded = """        // When video sampling is temporarily unavailable, the ambient video
         // presentation remains underneath this Compose layer. Do not cover it
         // with the theme's dark surface tint (which reads as a black control
@@ -199,15 +205,17 @@ private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float): Bitmap? = 
         """runCatching { RuntimeShader(GLASS_OPTICS) }.getOrNull()""",
     )
     var film = current
-    // Capture reuses mutable scratch buffers and publishes immutable snapshots. Normalize only
-    // the sample callsite so older film/cadence contracts remain focused on their own changes.
+    // Capture reuses mutable scratch buffers and now runs on a worker dispatcher. Normalize the
+    // sample callsite so older film/cadence contracts remain focused on their own changes.
     val smoothness = listOf(
-      """  val frostPasses = GlassCustomizationPolicy.frostPasses(tuning.frost)
+      """  val sampledFrost = GlassCustomizationPolicy.sampledFrostStrength(tuning.frost, largeSurfaceVisible)
+  val frostPasses = GlassCustomizationPolicy.frostPasses(sampledFrost)
   val frame = remember { mutableStateOf<LiquidGlassFrame?>(null) }
   val captureBuffers = remember { GlassCaptureBuffers() }
   DisposableEffect(Unit) { onDispose { captureBuffers.recycle() } }
   val ready by rememberUpdatedState(isReady)
   val playing by rememberUpdatedState(isPlaying)
+  val currentFrost by rememberUpdatedState(sampledFrost)
 """ to
         """  val frostPasses = GlassCustomizationPolicy.frostPasses(tuning.frost)
   val frame = remember { mutableStateOf<LiquidGlassFrame?>(null) }
@@ -216,24 +224,27 @@ private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float): Bitmap? = 
 """,
       """        }
         // Only the tiny UI copy is cropped/frosted. The actual video surface remains untouched.
-        val sampled = captureBuffers.sampleMutex.withLock {
-          val target = captureBuffers.acquire(dimensions.first, dimensions.second)
-          if (target == null) null
-          else try {
-            val copied = copyGlassFrame(source, crop, target, captureBuffers)
-            val frosted = copied?.let { copiedBitmap ->
-              frostGlassFrame(
-                copiedBitmap,
-                tuning.frost,
-                captureBuffers.pixels,
-                captureBuffers.frostOutput,
-                captureBuffers.frostScratch,
-                captureBuffers.lumaBins,
-              )
+        val frostStrength = currentFrost
+        val sampled = withContext(Dispatchers.Default) {
+          captureBuffers.sampleMutex.withLock {
+            val target = captureBuffers.acquire(dimensions.first, dimensions.second)
+            if (target == null) null
+            else try {
+              val copied = copyGlassFrame(source, crop, target, captureBuffers)
+              val frosted = copied?.let { copiedBitmap ->
+                frostGlassFrame(
+                  copiedBitmap,
+                  frostStrength,
+                  captureBuffers.pixels,
+                  captureBuffers.frostOutput,
+                  captureBuffers.frostScratch,
+                  captureBuffers.lumaBins,
+                )
+              }
+              if (frosted != null && captureBuffers.markPublished(target)) frosted else null
+            } finally {
+              captureBuffers.release(target)
             }
-            if (frosted != null && captureBuffers.markPublished(target)) frosted else null
-          } finally {
-            captureBuffers.release(target)
           }
         }
         val bitmap = sampled?.first
@@ -332,9 +343,6 @@ import android.graphics.Shader
             val lensAllowed = scene.refractionEnabled &&
               if (materialRole == GlassSurfacePolicy.MaterialRole.Regular) size.maxDimension <= 1024.dp.toPx()
               else size.minDimension <= 128.dp.toPx() && size.maxDimension <= 512.dp.toPx()
-            val frostDp = if (materialRole == GlassSurfacePolicy.MaterialRole.Regular)
-              maxOf(GlassSurfacePolicy.RegularMinimumFrostDp, 10f * tuning.frost * material.frostMultiplier)
-            else 10f * tuning.frost * material.frostMultiplier
             val mapped = RuntimeShaderSupport.bindGlassOpticsOrNull(
               shader = shader,
               sourceShader = sourceShader,
@@ -357,7 +365,6 @@ import android.graphics.Shader
               fresnel = bevel.fresnel,
               strength = if (lensAllowed) 4.dp.toPx() * material.refractionMultiplier *
                 GlassSurfacePolicy.refractionStrength(tuning.refraction, reducedMotion, highContrast) else 0f,
-              frostPx = frostDp * density,
             )
 """ to
         """            val mapped = shader != null && Build.VERSION.SDK_INT >= 33 && runCatching {
@@ -391,6 +398,67 @@ import android.graphics.Shader
             }.isSuccess
 """,
       "internal const val GLASS_OPTICS" to "private const val GLASS_OPTICS",
+      """uniform float strength;
+half4 sampleAt(float2 windowPosition) {
+  float2 uv = clamp((windowPosition - sceneOrigin) / sceneSize, float2(0.0), float2(1.0));
+  // Pixel centres and explicit bilinear filtering avoid a magnified nearest-neighbour grid.
+  return scene.eval(clamp(uv * imageSize, float2(0.5), imageSize - float2(0.5)));
+}
+half4 main(float2 p) {
+  float2 center = pane * 0.5;
+  float2 delta = p - center;
+  float2 core = max(center - radius, float2(0.0));
+  float2 nearest = clamp(delta, -core, core);
+  float2 radial = delta - nearest;
+  float radialLength = length(radial);
+  // Rounded-rectangle SDF supplies one coherent body normal at corners and straight edges.
+  float2 normal = radial / max(radialLength, 0.001);
+  float edgeDistance = radius - radialLength;
+  float bevelBand = 1.0 - smoothstep(0.0, max(bevel, 0.001), max(edgeDistance, 0.0));
+  float grazing = 1.0 - abs(dot(normal, light));
+  float facing = max(dot(normal, light), 0.0);
+  float fresnelTerm = pow(clamp(grazing, 0.0, 1.0), 3.0) * fresnel;
+  float directionalReflection = (facing * specular + fresnelTerm) * bevelBand;
+  float2 bent = origin + p - normal * strength * bevelBand * bevelBand;
+  bent += light * strength * 0.35 * directionalReflection;
+  // The shared frame is already frosted before publication; a second multi-tap blur here
+  // multiplies pane cost without improving the material.
+  half4 color = sampleAt(bent);
+  return half4(color.rgb + directionalReflection * 0.12, 1.0);
+}
+""" to
+        """uniform float strength;
+uniform float frost;
+half4 sampleAt(float2 windowPosition) {
+  float2 uv = clamp((windowPosition - sceneOrigin) / sceneSize, float2(0.0), float2(1.0));
+  // Pixel centres and explicit bilinear filtering avoid a magnified nearest-neighbour grid.
+  return scene.eval(clamp(uv * imageSize, float2(0.5), imageSize - float2(0.5)));
+}
+half4 main(float2 p) {
+  float2 center = pane * 0.5;
+  float2 delta = p - center;
+  float2 core = max(center - radius, float2(0.0));
+  float2 nearest = clamp(delta, -core, core);
+  float2 radial = delta - nearest;
+  float radialLength = length(radial);
+  // Rounded-rectangle SDF supplies one coherent body normal at corners and straight edges.
+  float2 normal = radial / max(radialLength, 0.001);
+  float edgeDistance = radius - radialLength;
+  float bevelBand = 1.0 - smoothstep(0.0, max(bevel, 0.001), max(edgeDistance, 0.0));
+  float grazing = 1.0 - abs(dot(normal, light));
+  float facing = max(dot(normal, light), 0.0);
+  float fresnelTerm = pow(clamp(grazing, 0.0, 1.0), 3.0) * fresnel;
+  float directionalReflection = (facing * specular + fresnelTerm) * bevelBand;
+  float2 bent = origin + p - normal * strength * bevelBand * bevelBand;
+  bent += light * strength * 0.35 * directionalReflection;
+  float2 blurX = float2(frost, 0.0);
+  float2 blurY = float2(0.0, frost);
+  half4 color = sampleAt(bent) * 0.40;
+  color += (sampleAt(bent + blurX) + sampleAt(bent - blurX) +
+            sampleAt(bent + blurY) + sampleAt(bent - blurY)) * 0.15;
+  return half4(color.rgb + directionalReflection * 0.12, 1.0);
+}
+""",
       // After latency reverse, the isolated remember site still lacks origin/main's SDK 33 guard.
       """  val shader = remember {
     runCatching { RuntimeShader(GLASS_OPTICS) }.getOrNull()
@@ -449,7 +517,14 @@ import android.graphics.Shader
         "refractionAmount = LensGlassPolicy.refractionAmountPx(size.minDimension, size.minDimension, tuning.lensRefraction),"
     assertEquals(1, restored.split(fixedRefraction.first).size - 1)
     restored = restored.replace(fixedRefraction.first, fixedRefraction.second)
-    assertEquals("8b670d82dfd57e3520e179baa1efafc6b4adb3d13d30195f6903e63b863d362b", sha(restored))
+    val noDoublePlayerLens = """    // Player panes already render the sampled video through GLASS_OPTICS above.
+    // Applying the independent page blur/lens here would refract the same pane twice.
+    .then(if (backdrop == null && LocalLensGlassEnabled.current && LocalPageBackdrop.current != null) {"""
+    val baselinePlayerLens = """    .then(if (LocalLensGlassEnabled.current && LocalPageBackdrop.current != null) {"""
+    assertEquals(noDoublePlayerLens, 1, restored.split(noDoublePlayerLens).size - 1)
+    restored = restored.replace(noDoublePlayerLens, baselinePlayerLens)
+    // Regular fallback surfaces retain their 12dp frost floor; Clear controls remain adjustable.
+    assertEquals("6fcfd8c05b8a7477edf6d8ec931bc2f160a26f06053dea7f3f1139bdbac59b2d", sha(restored))
   }
   @Test fun glassChipAndPlayerControlsRespectAccessibilityMotion() {
     val chip = read("app/src/main/java/app/infinity/mpvz/ui/components/GlassChip.kt")
@@ -583,20 +658,14 @@ import android.graphics.Shader
     // slop detector never started on the phone).
     // Owner follow-up: retain the normal 44dp selected outline/placement; the glass refraction
     // follows finger-driven drag motion without an elevated pop or altered tab hit targets.
-    // Integration follow-up: hold the final drag position until the pager and lens finish settling.
-    // New drags clear retained release state and its lens-sync marker; keep the rest fingerprinted.
+    // Owner follow-up: programmatic pager selection is authoritative after a drag releases.
     val navBody = navigation.substring(start, end)
-    val pagerDragCleanup = """
-      LaunchedEffect(fingerDragging) {
-        if (fingerDragging) {
-          retainedFinalDragPosition = null
-          retainedFinalDragTarget = null
-          lensSyncedToRelease = false
-        }
-      }
-    """.trimIndent().prependIndent("  ") + "\n"
-    assertEquals(1, navBody.split(pagerDragCleanup).size - 1)
-    assertEquals("c566a7d4050b6c7d8a92d7d3ee8b80aba81acf50676456df1e1f40aa9ff43efd", sha(navBody.replace(pagerDragCleanup, "")))
+    assertTrue(navBody.contains("LaunchedEffect(targetIndex, lastIndex)"))
+    assertTrue(navBody.contains("hoveredTab = targetIndex.toInt().coerceIn(0, lastIndex)"))
+    assertTrue(navBody.contains("onRelease = { target, _ -> latestVisibleTabs.getOrNull(target)?.let(latestOnTabSelected) }"))
+    assertTrue(!navBody.contains("retainedFinalDrag"))
+    // Owner-requested removal of the Stream tab changes this navigation-only fingerprint.
+    assertEquals("b162c4662e64627ba2f4a7323c4fd614b1ee62a85316d93a47cf09118b37255b", sha(navBody))
     val scene = read("app/src/main/java/app/infinity/mpvz/ui/theme/BrowserGlassScene.kt")
     val lensStart = scene.indexOf("internal const val BROWSER_LENS")
     val q = scene.indexOf("\"\"\"", lensStart)

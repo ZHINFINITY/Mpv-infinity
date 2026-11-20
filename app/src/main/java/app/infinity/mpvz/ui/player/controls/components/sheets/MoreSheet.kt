@@ -11,7 +11,6 @@ import app.infinity.mpvz.presentation.components.playerGlassOverlay
 import app.infinity.mpvz.ui.components.GlassChip
 
 import app.infinity.mpvz.ui.player.StatsLuaOverlay
-import app.infinity.mpvz.ui.player.controls.components.playerGlassPane
 import app.infinity.mpvz.ui.player.NativePlaybackSnapshot
 import app.infinity.mpvz.ui.player.PlaybackEngineMode
 import app.infinity.mpvz.ui.player.PlaybackSession
@@ -60,12 +59,14 @@ import androidx.compose.ui.window.DialogProperties
 import app.infinity.mpvz.R
 import app.infinity.mpvz.domain.anime4k.Anime4KManager
 import app.infinity.mpvz.preferences.AdvancedPreferences
+import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.presentation.components.PlayerSheet
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.anime4k.Anime4KUiState
 import app.infinity.mpvz.ui.theme.AppShapeScale
+import app.infinity.mpvz.ui.theme.glassInsetSurface
 import app.infinity.mpvz.ui.theme.spacing
 import org.koin.compose.koinInject
 
@@ -104,6 +105,8 @@ fun MoreSheet(
   nativeSnapshot: NativePlaybackSnapshot = NativePlaybackSnapshot(),
   modifier: Modifier = Modifier,
 ) {
+  val appearancePreferences = koinInject<AppearancePreferences>()
+  val liquidGlassSurfaces by appearancePreferences.liquidGlassSurfaces.collectAsState()
   val advancedPreferences = koinInject<AdvancedPreferences>()
   val statisticsPage by advancedPreferences.enabledStatisticsPage.collectAsState()
   val enableLuaScripts by advancedPreferences.enableLuaScripts.collectAsState()
@@ -236,7 +239,12 @@ fun MoreSheet(
         }
       }
       Surface(
-        modifier = Modifier.fillMaxWidth().playerGlassPane(enabled = true, cornerRadius = 16.dp),
+        modifier = Modifier.fillMaxWidth().glassInsetSurface(
+          enabled = liquidGlassSurfaces,
+          shape = MaterialTheme.shapes.medium,
+          fillAlpha = 0.30f,
+          borderAlpha = 0.18f,
+        ),
         color = androidx.compose.ui.graphics.Color.Transparent,
         tonalElevation = 0.dp,
         shape = MaterialTheme.shapes.medium,

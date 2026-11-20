@@ -14,7 +14,11 @@ import app.infinity.mpvz.ui.player.StatsLuaOverlay
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.boundsInWindow
 import app.infinity.mpvz.ui.player.PlaybackSession
+import app.infinity.mpvz.ui.player.EmbeddedMotionArtwork
+import app.infinity.mpvz.ui.player.MotionArtworkImage
+import app.infinity.mpvz.ui.player.rememberMotionArtworkDrawable
 import app.infinity.mpvz.ui.player.AudioPlayerSheetState
+import app.infinity.mpvz.ui.player.MediaPlaybackService
 import app.infinity.mpvz.ui.player.BrowserMusicSheetState
 import app.infinity.mpvz.ui.player.InAppMusicSheetState
 import app.infinity.mpvz.ui.player.browserMusicSheetDrag
@@ -177,6 +181,7 @@ import kotlin.math.roundToInt
 import app.infinity.mpvz.R
 import app.infinity.mpvz.domain.thumbnail.EmbeddedArtworkResolver
 import app.infinity.mpvz.presentation.components.RemoteImage
+import app.infinity.mpvz.presentation.components.RemoteImageLoader
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.AudioPreferences
 import app.infinity.mpvz.preferences.AudioVisualizerStyle
@@ -215,6 +220,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
 import org.koin.compose.koinInject
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
@@ -222,6 +228,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 private data class AudioPresentationMetadata(
   val artwork: Bitmap?,
   val artist: String?,
+  val motionArtwork: ByteArray? = null,
 )
 
 /**
@@ -230,8 +237,8 @@ private data class AudioPresentationMetadata(
  * Previously each consumer created its own MediaMetadataRetriever (and the current track created a
  * second retriever just for artist fallback), so entering Now Playing could parse the same file
  * several times and hold several native retrievers concurrently. The cache is byte-sized by
- * artwork memory, metadata-only/missing-art entries still consume a small fixed weight, and the
- * mutex intentionally serializes cache misses to cap native decoder/retriever pressure.
+ * decoded bitmap and compressed motion-art bytes; metadata-only/missing-art entries still consume
+ * a small fixed weight, and the mutex intentionally serializes misses to cap decoder pressure.
  */
 private object AudioPresentationMetadataCache {
   private const val MAX_CACHE_KB = 16 * 1024
@@ -242,11 +249,14 @@ private object AudioPresentationMetadataCache {
       override fun sizeOf(
         key: String,
         value: AudioPresentationMetadata,
-      ): Int =
-        maxOf(
-          METADATA_ONLY_WEIGHT_KB,
-          (value.artwork?.byteCount ?: 0) / 1024,
-        )
+      ): Int {
+        val encodedAndDecodedBytes =
+          (value.artwork?.byteCount ?: 0).toLong() + (value.motionArtwork?.size ?: 0).toLong()
+        val kilobytes = (encodedAndDecodedBytes + 1023L) / 1024L
+        return maxOf(METADATA_ONLY_WEIGHT_KB.toLong(), kilobytes)
+          .coerceAtMost(Int.MAX_VALUE.toLong())
+          .toInt()
+      }
     }
 
   private fun cacheKey(
@@ -264,6 +274,7 @@ private object AudioPresentationMetadataCache {
 
   suspend fun resolve(
     context: android.content.Context,
+    httpClient: OkHttpClient,
     pathOrUri: String,
     artworkUri: String?,
   ): AudioPresentationMetadata =
@@ -283,7 +294,12 @@ private object AudioPresentationMetadataCache {
             }
             else -> pathOrUri
           }
-        val explicitArtwork = EmbeddedArtworkResolver.decodeArtworkUri(context, artworkUri)
+        val explicitArtworkBytes = artworkUri?.let {
+          RemoteImageLoader.loadEncodedBytes(context, httpClient, it, EmbeddedMotionArtwork.MaxEncodedBytes)
+        }
+        val explicitArtwork = explicitArtworkBytes?.let(EmbeddedArtworkResolver::decodeArtworkBytes)
+          ?: EmbeddedArtworkResolver.decodeArtworkUri(context, artworkUri)
+        val explicitArtworkSelected = explicitArtwork != null || EmbeddedMotionArtwork.animatedBytes(explicitArtworkBytes) != null
         val isNetworkStream = pathOrUri.startsWith("http://", ignoreCase = true) || pathOrUri.startsWith("https://", ignoreCase = true)
         val retriever = if (!isNetworkStream) MediaMetadataRetriever() else null
         val loaded =
@@ -305,20 +321,39 @@ private object AudioPresentationMetadataCache {
               }
             }
 
+            val pictureBytes = retriever?.embeddedPicture
+            val embeddedArtwork = retriever?.let {
+              EmbeddedArtworkResolver.resolveEmbeddedArtwork(cleanPath ?: pathOrUri, it, pictureBytes)
+            }
             AudioPresentationMetadata(
-              artwork = explicitArtwork ?: retriever?.let { EmbeddedArtworkResolver.decodeEmbeddedArtwork(cleanPath ?: pathOrUri, it) },
+              artwork = explicitArtwork ?: embeddedArtwork?.bitmap,
               artist = retriever?.let {
                 it.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
                   ?: it.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUMARTIST)
                   ?: it.extractMetadata(MediaMetadataRetriever.METADATA_KEY_AUTHOR)
                   ?: it.extractMetadata(MediaMetadataRetriever.METADATA_KEY_COMPOSER)
               },
+              motionArtwork = EmbeddedMotionArtwork.selectedAnimatedBytes(
+                explicitArtworkSelected = explicitArtworkSelected,
+                explicitArtworkBytes = explicitArtworkBytes,
+                embeddedPictureBytes = embeddedArtwork?.embeddedPictureBytes,
+                sidecarPath = embeddedArtwork?.sidecarPath,
+              ),
             )
           } catch (_: Exception) {
             val fallbackArtwork = explicitArtwork ?: if (cleanPath != null && !isNetworkStream) {
               EmbeddedArtworkResolver.decodeSidecar(cleanPath)
             } else null
-            AudioPresentationMetadata(artwork = fallbackArtwork, artist = null)
+            AudioPresentationMetadata(
+              artwork = fallbackArtwork,
+              artist = null,
+              motionArtwork = EmbeddedMotionArtwork.selectedAnimatedBytes(
+                explicitArtworkSelected = explicitArtworkSelected,
+                explicitArtworkBytes = explicitArtworkBytes,
+                embeddedPictureBytes = null,
+                sidecarPath = null,
+              ),
+            )
           } finally {
             runCatching { retriever?.release() }
           }
@@ -335,6 +370,7 @@ private fun rememberAudioPresentationMetadata(
   artworkUri: String? = null,
 ): AudioPresentationMetadata? {
   val context = LocalContext.current
+  val httpClient = koinInject<OkHttpClient>()
   var metadata by remember(pathOrUri, artworkUri) {
     mutableStateOf(AudioPresentationMetadataCache.peek(pathOrUri, artworkUri))
   }
@@ -343,7 +379,7 @@ private fun rememberAudioPresentationMetadata(
       if (pathOrUri.isNullOrBlank()) {
         null
       } else {
-        AudioPresentationMetadataCache.resolve(context, pathOrUri, artworkUri)
+        AudioPresentationMetadataCache.resolve(context, httpClient, pathOrUri, artworkUri)
       }
   }
   return metadata
@@ -577,9 +613,14 @@ private fun CanvasSpectrumCaptureEffect(
 private fun CoverArtCardImage(
   bitmap: Bitmap?,
   artworkUrl: String? = null,
+  motionArtwork: ByteArray? = null,
+  isPlaying: Boolean = false,
 ) {
+  val animatedDrawable = rememberMotionArtworkDrawable(motionArtwork)
   val imageBitmap = remember(bitmap) { bitmap?.asImageBitmap() }
-  if (imageBitmap != null) {
+  if (animatedDrawable != null) {
+    MotionArtworkImage(animatedDrawable, isPlaying, modifier = Modifier.fillMaxSize())
+  } else if (imageBitmap != null) {
     Image(
       bitmap = imageBitmap,
       contentDescription = null,
@@ -938,6 +979,17 @@ fun AudioPlayerControls(
   val audioPaletteBackground by audioPreferences.audioPaletteBackground.collectAsState()
   val audioStandbyMode by audioPreferences.audioStandbyMode.collectAsState()
   val backgroundPlaybackEnabled by audioPreferences.audioBackgroundPlayback.collectAsState()
+  fun toggleAudioBackgroundPlayback() {
+    val activity = context as? PlayerActivity
+    if (activity != null) {
+      activity.toggleAudioBackgroundPlayback()
+    } else {
+      val enabled = !backgroundPlaybackEnabled
+      if (!MediaPlaybackService.setAudioBackgroundPlaybackPreference(enabled)) {
+        audioPreferences.audioBackgroundPlayback.set(enabled)
+      }
+    }
+  }
   val playerControlsTheme by appearancePreferences.playerControlsTheme.collectAsState()
   val liquidGlassSurfaces by appearancePreferences.liquidGlassSurfaces.collectAsState()
   val glassSurfaceOpacity by appearancePreferences.glassSurfaceOpacity.collectAsState()
@@ -1917,7 +1969,12 @@ fun AudioPlayerControls(
                 shape = coverShape,
                 color = Color.Transparent,
               ) {
-                CoverArtCardImage(bitmap = activeCoverOverride ?: albumArtBitmap, artworkUrl = currentArtworkUri)
+                CoverArtCardImage(
+                  bitmap = activeCoverOverride ?: albumArtBitmap,
+                  artworkUrl = currentArtworkUri,
+                  motionArtwork = currentAudioPresentation?.motionArtwork?.takeIf { activeCoverOverride == null && !(isRadio && streamCover != null) },
+                  isPlaying = paused != true && !coverShown,
+                )
               }
             }
           }
@@ -2493,12 +2550,7 @@ fun AudioPlayerControls(
               }
               ReactiveIconButton(
                 onClick = {
-                  val act = context as? PlayerActivity
-                  if (act != null) {
-                    act.toggleAudioBackgroundPlayback()
-                  } else {
-                    audioPreferences.audioBackgroundPlayback.set(!backgroundPlaybackEnabled)
-                  }
+                  toggleAudioBackgroundPlayback()
                 },
                 modifier = Modifier.size(48.dp),
               ) {
@@ -2574,12 +2626,7 @@ fun AudioPlayerControls(
               }
               ReactiveIconButton(
                 onClick = {
-                  val act = context as? PlayerActivity
-                  if (act != null) {
-                    act.toggleAudioBackgroundPlayback()
-                  } else {
-                    audioPreferences.audioBackgroundPlayback.set(!backgroundPlaybackEnabled)
-                  }
+                  toggleAudioBackgroundPlayback()
                 },
                 modifier = Modifier.size(48.dp),
               ) {

@@ -48,6 +48,44 @@ class PlaybackModelsTest {
   }
 
   @Test
+  fun trustedNetworkSourceAllowsExtensionlessVideoButNotAudio() {
+    val networkVideo =
+      PlaybackItem(
+        stableId = "network-video",
+        originalUri = "https://media.example/live?id=opaque",
+        title = "Live stream",
+        networkSource = NetworkPlaybackSource(connectionId = 7L, relativePath = "/Live/opaque"),
+      )
+    val networkAudio =
+      PlaybackItem(
+        stableId = "network-audio",
+        originalUri = "https://media.example/audio?id=opaque",
+        title = "Track",
+        mimeType = "audio/mpeg",
+        networkSource = NetworkPlaybackSource(connectionId = 7L, relativePath = "/Music/track.mp3"),
+      )
+
+    assertTrue(networkVideo.isTrustedNetworkVideoSource())
+    assertEquals(
+      PlaybackEngineMode.NATIVE,
+      resolvePlaybackEngineMode(
+        PlaybackEngineMode.NATIVE,
+        networkVideo,
+        videoHint = networkVideo.isTrustedNetworkVideoSource(),
+      ),
+    )
+    assertFalse(networkAudio.isTrustedNetworkVideoSource())
+    assertEquals(
+      PlaybackEngineMode.MPV,
+      resolvePlaybackEngineMode(
+        PlaybackEngineMode.NATIVE,
+        networkAudio,
+        videoHint = networkAudio.isTrustedNetworkVideoSource(),
+      ),
+    )
+  }
+
+  @Test
   fun autoStillUsesMpvForSdrAndNativeForHdr() {
     val sdrItem =
       PlaybackItem(
@@ -111,6 +149,35 @@ class PlaybackModelsTest {
   }
 
   @Test
+  fun trustedStreamVideoHintAllowsExtensionlessDirectHttpsUrlOnNative() {
+    val item =
+      PlaybackItem(
+        stableId = "trusted-stream",
+        originalUri = "https://cdn.example/live?id=opaque",
+        title = "Episode 1",
+      )
+
+    assertTrue(item.requiresWebPageResolutionBeforeNative())
+    assertFalse(item.requiresWebPageResolutionBeforeNative(videoHint = true))
+    assertEquals(PlaybackEngineMode.MPV, resolvePlaybackEngineMode(PlaybackEngineMode.NATIVE, item))
+    assertEquals(PlaybackEngineMode.NATIVE, resolvePlaybackEngineMode(PlaybackEngineMode.NATIVE, item, videoHint = true))
+  }
+
+  @Test
+  fun resolvedExtensionlessVideoCanUseNativeButUnresolvedWebPageCannot() {
+    val page =
+      PlaybackItem(
+        stableId = "external-page",
+        originalUri = "https://video.example/watch?id=opaque",
+        title = "Episode 1",
+      )
+    val resolved = page.copy(playableUri = "https://cdn.example/media?signature=opaque")
+
+    assertEquals(PlaybackEngineMode.MPV, resolvePlaybackEngineMode(PlaybackEngineMode.NATIVE, page))
+    assertEquals(PlaybackEngineMode.NATIVE, resolvePlaybackEngineMode(PlaybackEngineMode.NATIVE, resolved, videoHint = true))
+  }
+
+  @Test
   fun intentMimeTypeRemainsAuthoritativeWhenPresent() {
     assertEquals("video/webm", resolvePlaybackMimeType("video/webm", "video/mp4"))
   }
@@ -119,6 +186,66 @@ class PlaybackModelsTest {
   fun blankMimeTypesAreIgnored() {
     assertEquals("video/mp4", resolvePlaybackMimeType("  ", "video/mp4"))
     assertNull(resolvePlaybackMimeType(null, " "))
+  }
+
+  @Test
+  fun optionalMkvTailProbeIsSkippedOnlyForRemoteHttpSources() {
+    assertTrue(shouldSkipRemoteMkvDurationProbe("https://cdn.example/video.mkv"))
+    assertTrue(shouldSkipRemoteMkvDurationProbe("http://media.example/video.mkv"))
+    assertFalse(shouldSkipRemoteMkvDurationProbe("file:///storage/Movies/video.mkv"))
+    assertFalse(shouldSkipRemoteMkvDurationProbe("content://media/external/video/1"))
+  }
+
+  @Test
+  fun staleLoadCannotReplaceNewerQueueItemWithSameStableId() {
+    val original = PlaybackItem(stableId = "shared", originalUri = "https://media.example/item", title = "Original")
+    val snapshot = PlaybackQueueState(items = listOf(original), currentIndex = 0)
+    val newerItem = original.copy(title = "Newer metadata")
+    val current = snapshot.copy(items = listOf(newerItem))
+
+    val updated =
+      PlaybackQueueReducer.replaceCurrentItemIfUnchanged(
+        previous = current,
+        expectedItem = snapshot.currentItem,
+        replacement = original.copy(playableUri = "https://media.example/resolved"),
+      )
+
+    assertEquals(current, updated)
+  }
+
+  @Test
+  fun loadCanUpdateCurrentQueueItemWhenItsStartingSnapshotIsUnchanged() {
+    val original = PlaybackItem(stableId = "shared", originalUri = "https://media.example/item")
+    val snapshot = PlaybackQueueState(items = listOf(original), currentIndex = 0)
+    val resolved = original.copy(playableUri = "https://media.example/resolved")
+
+    val updated =
+      PlaybackQueueReducer.replaceCurrentItemIfUnchanged(
+        previous = snapshot,
+        expectedItem = snapshot.currentItem,
+        replacement = resolved,
+      )
+
+    assertEquals(resolved, updated.currentItem)
+  }
+
+  @Test
+  fun queueMoveDoesNotPreventUpdatingTheSameCurrentItem() {
+    val original = PlaybackItem(stableId = "shared", originalUri = "https://media.example/item")
+    val other = PlaybackItem(stableId = "other", originalUri = "https://media.example/other")
+    val snapshot = PlaybackQueueState(items = listOf(original, other), currentIndex = 0)
+    val moved = PlaybackQueueReducer.move(snapshot, from = 1, to = 0)!!
+    val resolved = original.copy(playableUri = "https://media.example/resolved")
+
+    val updated =
+      PlaybackQueueReducer.replaceCurrentItemIfUnchanged(
+        previous = moved,
+        expectedItem = snapshot.currentItem,
+        replacement = resolved,
+      )
+
+    assertEquals(1, updated.currentIndex)
+    assertEquals(resolved, updated.currentItem)
   }
 
   @Test

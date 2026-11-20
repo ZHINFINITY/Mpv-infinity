@@ -29,7 +29,12 @@ class MpvRestartThreadingContractTest {
     val restart = activity.substringAfter("private fun requestMpvInterpolationRestart()").substringBefore("\n  private ")
     assertTrue(activity.contains("mpvInterpolationNativeWork = MpvNativeWork()"))
     assertTrue(restart.contains("val init = mpvInterpolationNativeWork.execute"))
-    assertTrue(restart.contains("val generation = mpvInterpolationNativeWork.execute"))
+    val boundedLoad = restart.indexOf("val generation = PlaybackSession.loadWithBoundedProviderResolution(")
+    val commitStart = restart.indexOf("commit = { nativeLoad ->", boundedLoad)
+    val commitEnd = restart.indexOf("\n                  },", commitStart)
+    assertTrue(boundedLoad >= 0)
+    assertTrue(commitStart > boundedLoad && commitEnd > commitStart)
+    assertTrue(restart.substring(commitStart, commitEnd).contains("mpvInterpolationNativeWork.execute {"))
     assertTrue(restart.contains("withContext(Dispatchers.Main.immediate)"))
     assertTrue(restart.contains("player.snapshotDisplayRefreshRateOnMain()"))
     assertTrue(restart.contains("bindMpvSessionCallbacksOnMain()"))
@@ -68,6 +73,24 @@ class MpvRestartThreadingContractTest {
     assertTrue("drain callbacks before admitting the replacement owner", retired >= 0 && closed > retired && admitted > closed)
     assertTrue("replacement must receive renderer/hwdec/Flow options", admitted < create && create < configure && configure < initialized)
     assertTrue("post-init options need access before callbacks reopen", initialized < post && post < open)
+  }
+
+  @Test fun committedLoadUsesBehaviorTestedOwnershipAndQueueFences() {
+    val session = source("PlaybackSession")
+    val transaction = session.substringAfter("private fun prepareResolvedLoadTransaction(")
+      .substringBefore("\n  private fun load(")
+    assertTrue(transaction.contains("ResolvedLoadResourceOwner("))
+    assertTrue(transaction.contains("resourceOwner.markNativeCommitInvoked()"))
+    assertTrue(transaction.contains("resourceOwner.recordSuccessfulCommit(generation, previous, previousAuxiliary)"))
+    assertTrue(transaction.contains("PlaybackQueueReducer.replaceCurrentItemIfUnchanged"))
+    assertTrue(transaction.contains("resourceOwner::finish, resourceOwner::cleanupOnFailure"))
+
+    val boundedLoad = session.substringAfter("suspend fun loadWithBoundedProviderResolution(")
+      .substringBefore("private fun loadResolved(")
+    assertTrue(
+      boundedLoad.indexOf("val queueSnapshot = _queue.value") <
+        boundedLoad.indexOf("resolvePlayableUriBounded(item)"),
+    )
   }
 
   @Test fun generationIsPublishedBeforeNativeLoadCanEmitCallbacks() {

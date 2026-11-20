@@ -34,12 +34,15 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.koin.compose.koinInject
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
+import java.io.InputStream
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 
@@ -169,6 +172,67 @@ internal object RemoteImageLoader {
         owned.start()
       }
     return operation.await()
+  }
+
+  /** Read bounded original image bytes from the same URI/cache used for static artwork. */
+  suspend fun loadEncodedBytes(
+    context: Context,
+    client: OkHttpClient,
+    url: String,
+    maxBytes: Int,
+  ): ByteArray? = withContext(Dispatchers.IO) {
+    if (url.isBlank() || maxBytes <= 0) return@withContext null
+    val parsedUri = runCatching { Uri.parse(url) }.getOrNull() ?: return@withContext null
+    when (parsedUri.scheme?.lowercase()) {
+      "content", "android.resource" ->
+        runCatching { context.contentResolver.openInputStream(parsedUri)?.use { it.readBounded(maxBytes) } }.getOrNull()
+      "file" -> parsedUri.path?.let { path -> readFileBounded(File(path), maxBytes) }
+      null, "" -> readFileBounded(File(url), maxBytes)
+      "http", "https" -> {
+        val httpUrl = url.toHttpUrlOrNull() ?: return@withContext null
+        val cacheFile = File(File(context.cacheDir, CACHE_DIRECTORY).apply { mkdirs() }, hash(url))
+        if (cacheFile.exists()) return@withContext readFileBounded(cacheFile, maxBytes)
+
+        val host = httpUrl.host
+        val request = runCatching {
+          Request.Builder()
+            .url(httpUrl)
+            .header("User-Agent", "Mozilla/5.0 (Android) MpvInfinity")
+            .apply { if (host.isNotBlank()) header("Referer", "https://$host") }
+            .build()
+        }.getOrNull() ?: return@withContext null
+
+        runCatching {
+          client.newCall(request).awaitResponse().use { response ->
+            if (!response.isSuccessful) return@use null
+            val bytes = response.body.byteStream().use { it.readBounded(maxBytes) } ?: return@use null
+            FileOutputStream(cacheFile).use { it.write(bytes) }
+            bytes
+          }
+        }.getOrNull()
+      }
+      else -> null
+    }
+  }
+
+  private fun readFileBounded(file: File, maxBytes: Int): ByteArray? {
+    if (!file.isFile || file.length() !in 1..maxBytes.toLong()) return null
+    return runCatching { file.inputStream().use { it.readBounded(maxBytes) } }.getOrNull()
+  }
+
+  private fun InputStream.readBounded(maxBytes: Int): ByteArray? {
+    val output = ByteArrayOutputStream(minOf(maxBytes, 8 * 1024))
+    val buffer = ByteArray(8 * 1024)
+    var total = 0
+    while (true) {
+      val count = read(buffer)
+      if (count < 0) break
+      if (count == 0) continue
+      total += count
+      if (total > maxBytes) return null
+      output.write(buffer, 0, count)
+    }
+    return output.toByteArray().takeIf { it.isNotEmpty() }
   }
 
   private suspend fun loadUncoalesced(

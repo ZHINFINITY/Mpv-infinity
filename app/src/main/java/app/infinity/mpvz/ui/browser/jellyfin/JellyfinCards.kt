@@ -1287,6 +1287,7 @@ fun JellyfinLibraryCard(
   item: JellyfinItem,
   server: JellyfinServer,
   onClick: () -> Unit,
+  count: Int? = null,
   modifier: Modifier = Modifier,
   cardWidth: androidx.compose.ui.unit.Dp = 220.dp,
 ) {
@@ -1364,6 +1365,21 @@ fun JellyfinLibraryCard(
               contentDescription = null,
               tint = MaterialTheme.colorScheme.onSurfaceVariant,
               modifier = Modifier.size(40.dp),
+            )
+          }
+        }
+
+        count?.let { itemCount ->
+          Surface(
+            shape = RoundedCornerShape(6.dp),
+            color = Color.Black.copy(alpha = 0.72f),
+            modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
+          ) {
+            Text(
+              text = itemCount.toString(),
+              color = Color.White,
+              style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+              modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
             )
           }
         }

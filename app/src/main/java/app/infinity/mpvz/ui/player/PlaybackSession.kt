@@ -18,9 +18,11 @@ import app.infinity.mpvz.data.network.proxy.HlsStreamingProxy
 import app.infinity.mpvz.data.network.proxy.NetworkStreamingProxy
 import app.infinity.mpvz.domain.network.NetworkPlaybackUri
 import app.infinity.mpvz.preferences.MpvConfigOverridePolicy
+import app.infinity.mpvz.utils.media.BoundedProviderIo
 import app.infinity.mpvz.utils.media.RadioStreamProbe
 import `is`.xyz.mpv.MPVLib
 import `is`.xyz.mpv.MPVNode
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -35,9 +37,15 @@ import kotlinx.coroutines.withTimeoutOrNull
 import java.util.ArrayDeque
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArraySet
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 
 data class PlaybackSessionState(
   val phase: PlaybackPhase = PlaybackPhase.UNINITIALIZED,
@@ -181,6 +189,12 @@ object PlaybackSession : MPVLib.EventObserver {
       ownedFd?.let { fd -> runCatching { android.os.ParcelFileDescriptor.adoptFd(fd).close() } }
     }
   }
+
+  private data class ResolvedLoadTransaction(
+    val performCommit: () -> Long,
+    val finish: (Long) -> Long,
+    val cleanupOnFailure: () -> Unit,
+  )
 
   /**
    * Video decoding is intentionally disabled while Android has no render surface. Keep the track
@@ -329,6 +343,57 @@ object PlaybackSession : MPVLib.EventObserver {
   val propString = PlaybackProperty(MPVLib.MpvFormat.MPV_FORMAT_STRING, ::getPropertyString)
   val propNode = PlaybackProperty(MPVLib.MpvFormat.MPV_FORMAT_NODE, ::getPropertyNode)
 
+  data class DurationSample(
+    val generation: Long,
+    val stableId: String,
+    val originalUri: String,
+    val durationSeconds: Double?,
+  )
+
+  private val mutableDurationSamples =
+    MutableSharedFlow<DurationSample>(replay = 1, extraBufferCapacity = 4, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+  val durationSamples: SharedFlow<DurationSample> = mutableDurationSamples.asSharedFlow()
+
+  private fun publishDurationSample(durationSeconds: Double?) = nativeLock.withLock {
+    publishDurationSampleLocked(durationSeconds)
+  }
+
+  private fun publishDurationSampleLocked(durationSeconds: Double?) {
+    val state = _state.value
+    val loaded = loadedPlaybackItem ?: return
+    val selected = _queue.value.currentItem
+    if (!PlaybackDurationPolicy.isCurrentLoadedItem(
+        loadedGeneration = loadedGeneration,
+        loadedStableId = loaded.stableId,
+        loadedOriginalUri = loaded.originalUri,
+        stateGeneration = state.generation,
+        stateStableId = state.currentItem?.stableId,
+        stateOriginalUri = state.currentItem?.originalUri,
+        selectedStableId = selected?.stableId,
+        selectedOriginalUri = selected?.originalUri,
+      )
+    ) return
+    mutableDurationSamples.tryEmit(DurationSample(loadedGeneration, loaded.stableId, loaded.originalUri, durationSeconds))
+  }
+
+  data class BackgroundVideoTrackSelection(val mediaId: String, val trackId: Int)
+
+  /** Capture a track only when MPV's loaded path still belongs to the selected queue item. */
+  fun captureBackgroundVideoTrackSelection(): BackgroundVideoTrackSelection? =
+    nativeLock.withLock {
+      if (!initialized || retiringCore) return null
+      val item = queue.value.currentItem ?: return null
+      val loadedPath = runCatching { MPVLib.getPropertyString("path") }.getOrNull()?.takeIf { it.isNotBlank() }
+        ?: return null
+      fun normalized(source: String) = source.trim().removePrefix("file://").removePrefix("file:").trimEnd('/')
+      val matchesLoadedItem =
+        listOfNotNull(item.originalUri, item.playableUri)
+          .any { source -> source == loadedPath || normalized(source) == normalized(loadedPath) }
+      if (!matchesLoadedItem) return null
+      val trackId = runCatching { MPVLib.getPropertyInt("vid") }.getOrNull()?.takeIf { it > 0 } ?: return null
+      BackgroundVideoTrackSelection(item.stableId, trackId)
+    }
+
   /** Returns true when this call created the core, false when it was already alive. */
   /** Native lifecycle entry point. Callers must dispatch this function off Main. */
   fun initialize(
@@ -339,13 +404,24 @@ object PlaybackSession : MPVLib.EventObserver {
     initOptions: () -> Unit,
     postInitOptions: () -> Unit,
     observeProperties: () -> Unit,
+    ownerIsActive: () -> Boolean = { true },
   ): Result<Boolean> = runCatching {
+    fun ensureOwnerActive() {
+      if (!ownerIsActive()) throw CancellationException("Playback owner changed during MPV initialization")
+    }
+
+    ensureOwnerActive()
     nativeLifecycleLock.lock()
     try {
+      ensureOwnerActive()
       val reuse = nativeLock.withLock {
         initialized && activeCoreConfigurationKey == coreConfigurationKey && !retiringCore
       }
-      if (reuse) return@runCatching false
+      if (reuse) {
+        ensureOwnerActive()
+        return@runCatching false
+      }
+      ensureOwnerActive()
       retireCoreForLifecycleChange()
       nativeCallbackGate.closeAndDrain()
       nativeLock.withLock {
@@ -373,31 +449,43 @@ object PlaybackSession : MPVLib.EventObserver {
         updateState { it.copy(phase = PlaybackPhase.INITIALIZING, error = null) }
       }
       try {
+        ensureOwnerActive()
         MPVLib.create(context.applicationContext)
+        ensureOwnerActive()
         MPVLib.setOptionString("config", "yes")
         MPVLib.setOptionString("config-dir", configDir)
         MPVLib.setOptionString("gpu-shader-cache-dir", cacheDir)
         MPVLib.setOptionString("icc-cache-dir", cacheDir)
         initOptions()
+        ensureOwnerActive()
         MPVLib.init()
+        ensureOwnerActive()
         nativeLock.withLock { nativeCoreReady = true }
         val userAgent = MPVLib.getPropertyString("user-agent")
         postInitOptions()
+        ensureOwnerActive()
         MPVLib.setOptionString("force-window", "no")
         MPVLib.setOptionString("idle", "yes")
+        ensureOwnerActive()
+        nativeCallbackGate.open()
+        ensureOwnerActive()
+        MPVLib.addObserver(this)
+        // These calls issue JNI property observations and can synchronously produce callbacks;
+        // never execute them while nativeLock is held.
+        reobserveTrackedProperties()
+        ensureOwnerActive()
+        observeProperties()
+        ensureOwnerActive()
         nativeLock.withLock {
+          // Publish only after the owner has completed observer setup; after this point,
+          // cancellation must not roll back a core already visible to playback callers.
+          ensureOwnerActive()
           defaultUserAgent = userAgent
           initialized = true
           retiringCore = false
           activeCoreConfigurationKey = coreConfigurationKey
           updateState { it.copy(phase = PlaybackPhase.IDLE, paused = true, error = null) }
         }
-        nativeCallbackGate.open()
-        MPVLib.addObserver(this)
-        // These calls issue JNI property observations and can synchronously produce callbacks;
-        // never execute them while nativeLock is held.
-        reobserveTrackedProperties()
-        observeProperties()
         true
       } catch (error: Throwable) {
         nativeLock.withLock {
@@ -803,61 +891,171 @@ object PlaybackSession : MPVLib.EventObserver {
     verifyNativePathAfterRestart: Boolean = false,
     onGenerationReserved: ((Long) -> Unit)? = null,
   ): Long {
+    val queueSnapshot = _queue.value
     val resolved = resolvePlayableUri(item)
-    var nativeCommitInvoked = false
+    return loadResolved(
+      item,
+      resolved,
+      restoreSavedPosition,
+      positionRestoreOverride,
+      initialPositionSeconds,
+      flattenEditions,
+      disableWebExtraction,
+      commit,
+      verifyNativePathAfterRestart,
+      onGenerationReserved,
+      queueSnapshot,
+    )
+  }
+
+  suspend fun loadWithBoundedProviderResolution(
+    item: PlaybackItem,
+    restoreSavedPosition: Boolean = false,
+    positionRestoreOverride: PlaybackPositionRestoreOverride? = null,
+    initialPositionSeconds: Double? = null,
+    flattenEditions: Boolean = false,
+    disableWebExtraction: Boolean = app.infinity.mpvz.utils.media.RadioStreamProbe.cachedAudioMimeType(item.playableUri, item.headers) != null,
+    commit: (suspend ((() -> Long) -> Long))? = null,
+    verifyNativePathAfterRestart: Boolean = false,
+    onGenerationReserved: ((Long) -> Unit)? = null,
+  ): Long {
+    val queueSnapshot = _queue.value
+    val resolved = resolvePlayableUriBounded(item)
+    return loadResolvedWithSuspendingCommit(
+      item,
+      resolved,
+      restoreSavedPosition,
+      positionRestoreOverride,
+      initialPositionSeconds,
+      flattenEditions,
+      disableWebExtraction,
+      commit,
+      verifyNativePathAfterRestart,
+      onGenerationReserved,
+      queueSnapshot,
+    )
+  }
+
+  private fun loadResolved(
+    item: PlaybackItem,
+    resolved: ResolvedPlayable,
+    restoreSavedPosition: Boolean,
+    positionRestoreOverride: PlaybackPositionRestoreOverride?,
+    initialPositionSeconds: Double?,
+    flattenEditions: Boolean,
+    disableWebExtraction: Boolean,
+    commit: ((() -> Long) -> Long)?,
+    verifyNativePathAfterRestart: Boolean,
+    onGenerationReserved: ((Long) -> Unit)?,
+    queueSnapshot: PlaybackQueueState,
+  ): Long {
+    val transaction = prepareResolvedLoadTransaction(
+      item,
+      resolved,
+      restoreSavedPosition,
+      positionRestoreOverride,
+      initialPositionSeconds,
+      flattenEditions,
+      disableWebExtraction,
+      verifyNativePathAfterRestart,
+      onGenerationReserved,
+      queueSnapshot,
+    )
     return try {
-      var previous: NetworkStreamRegistration? = null
-      var previousAuxiliary = emptyList<NetworkStreamRegistration>()
-      val performCommit = {
-        val commitNative = {
-          nativeCommitInvoked = true
-          val generation =
-            load(
-              playableUri = resolved.uri,
-              item = item,
-              restoreSavedPosition = restoreSavedPosition,
-              positionRestoreOverride = positionRestoreOverride,
-              initialPositionSeconds = initialPositionSeconds,
-              flattenEditions = flattenEditions,
-              disableWebExtraction = disableWebExtraction,
-              verifyNativePathAfterRestart = verifyNativePathAfterRestart,
-              onGenerationReserved = onGenerationReserved,
-            )
-          if (generation >= 0L) {
-            previous = activeNetworkStream
-            activeNetworkStream = resolved.registration
-            previousAuxiliary = auxiliaryNetworkStreams.values.toList()
-            auxiliaryNetworkStreams.clear()
-          }
-          generation
-        }
-        nativeLock.withLock { commitNative() }
-      }
-      val generation = commit?.invoke(performCommit) ?: performCommit()
-      if (generation < 0L) {
-        resolved.closeUnconsumedFd()
-        resolved.registration?.let(::releaseNetworkStream)
-        generation
-      } else {
-        _queue.update { queue ->
-          if (queue.currentItem?.stableId != item.stableId) queue else {
-            queue.copy(items = queue.items.toMutableList().apply { set(queue.currentIndex, item) })
-          }
-        }
-        val previousRegistration = previous
-        if (previousRegistration != null && previousRegistration != resolved.registration) {
-          releaseNetworkStream(previousRegistration)
-        }
-        previousAuxiliary.forEach(::releaseNetworkStream)
-        generation
-      }
+      val generation = commit?.invoke(transaction.performCommit) ?: transaction.performCommit()
+      transaction.finish(generation)
     } catch (error: Throwable) {
-      // Once native load was invoked, fd ownership is ambiguous; never close a
-      // potentially consumed/reused fd. Fenced pre-commit aborts are unambiguous.
-      if (!nativeCommitInvoked) resolved.closeUnconsumedFd()
-      resolved.registration?.let(::releaseNetworkStream)
+      transaction.cleanupOnFailure()
       throw error
     }
+  }
+
+  private suspend fun loadResolvedWithSuspendingCommit(
+    item: PlaybackItem,
+    resolved: ResolvedPlayable,
+    restoreSavedPosition: Boolean,
+    positionRestoreOverride: PlaybackPositionRestoreOverride?,
+    initialPositionSeconds: Double?,
+    flattenEditions: Boolean,
+    disableWebExtraction: Boolean,
+    commit: (suspend ((() -> Long) -> Long))?,
+    verifyNativePathAfterRestart: Boolean,
+    onGenerationReserved: ((Long) -> Unit)?,
+    queueSnapshot: PlaybackQueueState,
+  ): Long {
+    val transaction = prepareResolvedLoadTransaction(
+      item,
+      resolved,
+      restoreSavedPosition,
+      positionRestoreOverride,
+      initialPositionSeconds,
+      flattenEditions,
+      disableWebExtraction,
+      verifyNativePathAfterRestart,
+      onGenerationReserved,
+      queueSnapshot,
+    )
+    return try {
+      val generation = commit?.invoke(transaction.performCommit) ?: transaction.performCommit()
+      transaction.finish(generation)
+    } catch (error: Throwable) {
+      transaction.cleanupOnFailure()
+      throw error
+    }
+  }
+
+  private fun prepareResolvedLoadTransaction(
+    item: PlaybackItem,
+    resolved: ResolvedPlayable,
+    restoreSavedPosition: Boolean,
+    positionRestoreOverride: PlaybackPositionRestoreOverride?,
+    initialPositionSeconds: Double?,
+    flattenEditions: Boolean,
+    disableWebExtraction: Boolean,
+    verifyNativePathAfterRestart: Boolean,
+    onGenerationReserved: ((Long) -> Unit)?,
+    queueSnapshot: PlaybackQueueState,
+  ): ResolvedLoadTransaction {
+    val resourceOwner =
+      ResolvedLoadResourceOwner(
+        preparedRegistration = resolved.registration,
+        closeUnconsumedFd = resolved::closeUnconsumedFd,
+        releaseRegistration = ::releaseNetworkStream,
+      )
+    val performCommit = {
+      val commitNative = {
+        resourceOwner.markNativeCommitInvoked()
+        val generation =
+          load(
+            playableUri = if (resolved.ownedFd != null) resolved.uri.replaceFirst("fd://", "fdclose://") else resolved.uri,
+            item = item,
+            restoreSavedPosition = restoreSavedPosition,
+            positionRestoreOverride = positionRestoreOverride,
+            initialPositionSeconds = initialPositionSeconds,
+            flattenEditions = flattenEditions,
+            disableWebExtraction = disableWebExtraction,
+            verifyNativePathAfterRestart = verifyNativePathAfterRestart,
+            onGenerationReserved = onGenerationReserved,
+          )
+        if (generation >= 0L) {
+          val previous = activeNetworkStream
+          val previousAuxiliary = auxiliaryNetworkStreams.values.toList()
+          resourceOwner.recordSuccessfulCommit(generation, previous, previousAuxiliary)
+          activeNetworkStream = resolved.registration
+          auxiliaryNetworkStreams.clear()
+          _queue.update { queue ->
+            PlaybackQueueReducer.replaceCurrentItemIfUnchanged(
+              previous = queue,
+              expectedItem = queueSnapshot.currentItem,
+              replacement = item,
+            )
+          }
+        }
+        generation
+      }
+      nativeLock.withLock { commitNative() }
+    }
+    return ResolvedLoadTransaction(performCommit, resourceOwner::finish, resourceOwner::cleanupOnFailure)
   }
 
   private fun load(
@@ -994,6 +1192,10 @@ object PlaybackSession : MPVLib.EventObserver {
           add("pause=yes")
           add(if (selectVideoForNewFile) "vid=auto" else "vid=no")
           if (resolvedItem.isDefinitelyAudioOnly()) add("aid=auto")
+          if (shouldSkipRemoteMkvDurationProbe(playableUri)) {
+            // Avoid MPV's optional end-of-file duration compatibility scan on HTTP sources.
+            add("demuxer-mkv-probe-video-duration=no")
+          }
           // Confirmed radio mounts are already media; spawning the ytdl hook here can
           // fail on Android fdsan and is both unnecessary and slower than direct demuxing.
           if (disableWebExtraction) add("ytdl=no")
@@ -1432,7 +1634,7 @@ object PlaybackSession : MPVLib.EventObserver {
   private inline fun deliverNativeCallback(block: () -> Unit) {
     if (!nativeCallbackGate.tryEnter()) return
     try {
-      if (retiringCore || !initialized) return
+      if (retiringCore || !nativeCoreReady) return
       block()
     } finally {
       nativeCallbackGate.leave()
@@ -1441,6 +1643,7 @@ object PlaybackSession : MPVLib.EventObserver {
 
   override fun eventProperty(property: String) {
     deliverNativeCallback {
+      if (property == "duration") publishDurationSample(null)
       propBoolean.emit(property, null)
       propString.emit(property, null)
       propDouble.emit(property, null)
@@ -1458,10 +1661,12 @@ object PlaybackSession : MPVLib.EventObserver {
   ) {
     deliverNativeCallback {
       if (shouldSuppressTimelineUpdate(property)) {
+        if (property == "duration") publishDurationSample(null)
         propLong.emit(property, null)
         propInt.emit(property, null)
         return
       }
+      if (property == "duration") publishDurationSample(value.toDouble())
       propLong.emit(property, value)
       propInt.emit(property, value.toInt())
       observerSnapshot().forEach { observer -> runCatching { observer.eventProperty(property, value) } }
@@ -1497,10 +1702,12 @@ object PlaybackSession : MPVLib.EventObserver {
   ) {
     deliverNativeCallback {
       if (shouldSuppressTimelineUpdate(property)) {
+        if (property == "duration") publishDurationSample(null)
         propDouble.emit(property, null)
         propFloat.emit(property, null)
         return
       }
+      if (property == "duration") publishDurationSample(value)
       propDouble.emit(property, value)
       propFloat.emit(property, value.toFloat())
       observerSnapshot().forEach { observer -> runCatching { observer.eventProperty(property, value) } }
@@ -1589,6 +1796,7 @@ object PlaybackSession : MPVLib.EventObserver {
                   error = null,
                 )
               }
+              if (!restoringPosition) publishTimelinePropertiesLocked()
               propBoolean.emit("pause", appliedPaused)
               restoreSuspendedVideoTrackLocked()
               // Some audio-only demuxers do not emit PLAYBACK_RESTART reliably. Keep the normal
@@ -1703,6 +1911,7 @@ object PlaybackSession : MPVLib.EventObserver {
   private fun publishTimelinePropertiesLocked() {
     TIMELINE_PROPERTIES.forEach { property ->
       val value = MPVLib.getPropertyDouble(property)
+      if (property == "duration") publishDurationSampleLocked(value)
       propInt.emit(property, value?.toInt())
       propLong.emit(property, value?.toLong())
       propDouble.emit(property, value)
@@ -2031,7 +2240,7 @@ object PlaybackSession : MPVLib.EventObserver {
       return ResolvedPlayable(uri, NetworkStreamRegistration(hlsProxy = hlsProxy, streamId = streamId))
     }
 
-    // fd:// descriptors are single-use: mpv consumes and closes them on their first load. Replays
+    // fdclose:// descriptors are single-use: mpv closes them after their first load. Replays
     // of queue items or persisted sessions must re-open a fresh descriptor from the content URI.
     if (item.playableUri.startsWith("fd://") && item.originalUri.startsWith("content://")) {
       val context = applicationContext ?: error("Application context is unavailable for content URI playback")
@@ -2042,24 +2251,122 @@ object PlaybackSession : MPVLib.EventObserver {
         ownedFd = refreshedUri.takeIf { it.startsWith("fd://") }?.removePrefix("fd://")?.toIntOrNull())
     }
 
-    // Resolve a local path for native integrations that cannot consume content:// directly.
-    // Native Media3 uses resolvePlayableUriForNative above and deliberately retains content://.
+    // Resolve provider URIs off the Activity thread. A provider may expose a descriptor without a
+    // directly readable filesystem path; openContentFd returns a fresh fd:// in that case. The
+    // load path converts owned descriptors to fdclose:// while the queue retains its durable URI.
     val context = applicationContext
     if (context != null) {
-      val localPath = sequenceOf(item.playableUri, item.originalUri)
-        .mapNotNull { candidate ->
-          if (!candidate.startsWith("content://")) return@mapNotNull null
-          Uri.parse(candidate).resolveLocalPath(context)
+      val resolvedContentUri = sequenceOf(item.playableUri, item.originalUri)
+        .filter { candidate -> candidate.startsWith("content://") }
+        .firstNotNullOfOrNull { candidate ->
+          Uri.parse(NetworkPlaybackUri.normalize(candidate)).openContentFd(context)
         }
-        .firstOrNull()
-      if (localPath != null) {
-        Log.d(TAG, "Using direct local path for Native Media3: $localPath")
-        return ResolvedPlayable(localPath)
+      if (resolvedContentUri != null) {
+        val ownedFd = resolvedContentUri.takeIf { it.startsWith("fd://") }
+          ?.removePrefix("fd://")?.toIntOrNull()
+        return ResolvedPlayable(resolvedContentUri, ownedFd = ownedFd)
       }
     }
     if (item.playableUri.startsWith("content://")) return ResolvedPlayable(item.playableUri)
     if (item.originalUri.startsWith("content://")) return ResolvedPlayable(item.originalUri)
     return ResolvedPlayable(item.playableUri)
+  }
+
+  private suspend fun resolvePlayableUriBounded(item: PlaybackItem): ResolvedPlayable {
+    val reference =
+      NetworkPlaybackUri.parse(item.playableUri)
+        ?: item.networkSource?.let { source ->
+          NetworkPlaybackUri.parse(NetworkPlaybackUri.create(source.connectionId, source.relativePath))
+        }
+    if (reference != null) {
+      val proxy = NetworkStreamingProxy.getInstance()
+      val streamId = "playback-${streamSequence.incrementAndGet()}"
+      val uri =
+        proxy.registerStream(
+          streamId = streamId,
+          connectionId = reference.connectionId,
+          filePath = reference.path.value,
+          mimeType = item.mimeType ?: "application/octet-stream",
+        )
+      return ResolvedPlayable(uri, NetworkStreamRegistration(proxy = proxy, streamId = streamId))
+    }
+
+    if (M3uPlaybackPolicy.shouldProxyHls(item.playableUri, item.mimeType)) {
+      val hlsProxy = HlsStreamingProxy.getInstance()
+      val streamId = "hls-${streamSequence.incrementAndGet()}"
+      val userAgent = PlaybackHttpHeaders.userAgent(item.headers)
+      val uri =
+        hlsProxy.registerStream(
+          streamId = streamId,
+          sourceUrl = item.playableUri,
+          headers = item.headers,
+          userAgent = userAgent,
+        )
+      return ResolvedPlayable(uri, NetworkStreamRegistration(hlsProxy = hlsProxy, streamId = streamId))
+    }
+
+    val context = applicationContext
+    if (item.playableUri.startsWith("fd://") && item.originalUri.startsWith("content://")) {
+      val resolved = context?.let { openContentUriBounded(item.originalUri, it) }
+        ?: error("Unable to reopen content URI for playback")
+      return ResolvedPlayable(resolved, ownedFd = resolved.fdNumberOrNull())
+    }
+
+    if (context != null) {
+      val candidates = sequenceOf(item.playableUri, item.originalUri)
+        .filter { it.startsWith("content://") }
+        .distinct()
+      for (candidate in candidates) {
+        val resolved = openContentUriBounded(candidate, context) ?: continue
+        return ResolvedPlayable(resolved, ownedFd = resolved.fdNumberOrNull())
+      }
+    }
+    if (item.playableUri.startsWith("content://")) return ResolvedPlayable(item.playableUri)
+    if (item.originalUri.startsWith("content://")) return ResolvedPlayable(item.originalUri)
+    return ResolvedPlayable(item.playableUri)
+  }
+
+  private suspend fun openContentUriBounded(uri: String, context: Context): String? {
+    val opened = AtomicReference<String?>(null)
+    val cancelled = AtomicBoolean(false)
+    val outcome =
+      BoundedProviderIo.readWithStatus(
+        timeoutMs = 4_000L,
+        fallback = null,
+        onCancellation = {
+          cancelled.set(true)
+          opened.getAndSet(null)?.closeOwnedFdUri()
+        },
+      ) {
+        val resolved =
+          Uri.parse(NetworkPlaybackUri.normalize(uri)).normalizeScheme().openContentFd(
+            context,
+            shouldAbort = { cancelled.get() || Thread.currentThread().isInterrupted },
+          )
+        opened.set(resolved)
+        if (cancelled.get() || Thread.currentThread().isInterrupted) {
+          opened.getAndSet(null)?.closeOwnedFdUri()
+          null
+        } else {
+          resolved
+        }
+      }
+    return when (outcome.status) {
+      BoundedProviderIo.ReadStatus.COMPLETED -> {
+        opened.compareAndSet(outcome.value, null)
+        outcome.value
+      }
+      BoundedProviderIo.ReadStatus.TIMED_OUT -> error("Timed out opening content URI for playback")
+      BoundedProviderIo.ReadStatus.SATURATED -> error("Content provider I/O is saturated; retry playback")
+      BoundedProviderIo.ReadStatus.FAILED -> throw outcome.error ?: IllegalStateException("Content URI open failed")
+    }
+  }
+
+  private fun String.fdNumberOrNull(): Int? =
+    takeIf { it.startsWith("fd://") }?.removePrefix("fd://")?.toIntOrNull()
+
+  private fun String.closeOwnedFdUri() {
+    fdNumberOrNull()?.let { fd -> runCatching { android.os.ParcelFileDescriptor.adoptFd(fd).close() } }
   }
 
   private fun releaseActiveNetworkStream() {

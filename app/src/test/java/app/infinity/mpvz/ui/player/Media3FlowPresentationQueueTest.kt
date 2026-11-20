@@ -142,13 +142,39 @@ class Media3FlowPresentationQueueTest {
     assertEquals(Media3FlowPresentationQueue.State.WRITING, queue.state(third!!.slot))
   }
   @Test
-  fun readyBlocksAdmissionEvenWhenAnotherSlotIsFree() {
+  fun readyFrameDoesNotBlockAdmissionWhenAnotherSlotIsFree() {
     val queue = Media3FlowPresentationQueue(capacity = 3)
     val lease = queue.acquireForWrite() ?: error("write lease unavailable")
     queue.publish(lease)
 
-    assertFalse(queue.canAcceptProduction())
+    assertTrue(queue.canAcceptProduction())
     assertEquals(Media3FlowPresentationQueue.State.READY, queue.state(lease.slot))
+    val replacement = queue.acquireForWrite() ?: error("free staging slot should be available")
+    assertTrue(replacement.slot != lease.slot)
+    queue.publish(replacement)
+    assertEquals(1L, queue.coalescedCount())
+    assertEquals(Media3FlowPresentationQueue.State.FREE, queue.state(lease.slot))
+    assertEquals(1, queue.readyCount())
+  }
+
+  @Test
+  fun readyFrameCanBeReclaimedWhenEveryOtherSlotIsPresenting() {
+    val queue = Media3FlowPresentationQueue(capacity = 3)
+    repeat(2) {
+      val lease = queue.acquireForWrite() ?: error("write lease unavailable")
+      queue.publish(lease)
+      queue.takeNext()
+    }
+    val pending = queue.acquireForWrite() ?: error("pending slot unavailable")
+    queue.publish(pending)
+
+    assertTrue(queue.canAcceptProduction())
+    val replacement = queue.acquireForWrite() ?: error("pending frame should be replaceable")
+    assertEquals(pending.slot, replacement.slot)
+    assertTrue(replacement.replacedPending)
+    queue.publish(replacement)
+    assertEquals(1, queue.readyCount())
+    assertEquals(1L, queue.coalescedCount())
   }
 
   @Test
@@ -175,7 +201,7 @@ class Media3FlowPresentationQueueTest {
     val queue = Media3FlowPresentationQueue(capacity = 2)
     val lease = queue.acquireForWrite() ?: error("write lease unavailable")
     queue.publish(lease)
-    assertFalse(queue.canAcceptProduction())
+    assertTrue(queue.canAcceptProduction())
 
     assertEquals(lease.slot, queue.takeNext())
     assertTrue(queue.canAcceptProduction())

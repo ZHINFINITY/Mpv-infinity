@@ -597,7 +597,8 @@ class JellyfinClient(
             }
           app.infinity.mpvz.domain.jellyfin.JellyfinQueryResult(
             items = sortedItems,
-            totalRecordCount = if (totalRecordCount > 0) totalRecordCount else items.size,
+            // Leave an omitted total unknown; the UI continues until an empty or duplicate-only page.
+            totalRecordCount = totalRecordCount,
             startIndex = startIndex,
           )
         }
