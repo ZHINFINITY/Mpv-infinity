@@ -12,7 +12,7 @@ patch_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 expected_sha256() {
   case "$1" in
     libbluray-1.4.1-still-eof.patch)    printf '%s\n' 'cc0a15ee88b1ead665dadbc3ac363c2686e5184fc1e04a76713665cad57c0fc7' ;;
-    libbluray-1.4.1-checked-seek.patch) printf '%s\n' '0124542e530f03d41f5770386f00836523333c635fe5216c5f0729181550219d' ;;
+    libbluray-1.4.1-checked-seek.patch) printf '%s\n' '58ef2e5649b2bd592352ac5823c226b534de43dcadbf346f4d472bb3aa16926b' ;;
     libbluray-1.4.1-menu-info.patch)    printf '%s\n' '17a1b88c72c3b467ba6ac8d9419f003c93f694733b9214deee13bad5ebfedb5c' ;;
     libbluray-1.4.1-bdj-pointer.patch)  printf '%s\n' '232ce1e634335af5d69a705745a57ea5cd5da8d7160b9441b5ba154e7b3dec85' ;;
     *) return 1 ;;
