@@ -17,8 +17,6 @@ class PlayerFollowupUiContractTest {
     generateSequence(File(System.getProperty("user.dir"))) { it.parentFile }
       .first { File(it, "app/src/main/java/app/infinity/mpvz").isDirectory }
 
-  private fun read(path: String) = File(root, path).readText()
-
   @Test
   fun timeNetworkPillStartsCompactAndPersistsUntilTheNextTap() {
     val preferences = read("app/src/main/java/app/infinity/mpvz/preferences/AppearancePreferences.kt")
@@ -799,7 +797,10 @@ class PlayerFollowupUiContractTest {
     assertTrue(videoList.contains("isOldAndUnplayed = shouldShowNewBadge(isWatched, isWithinNewLabelWindow)"))
     assertTrue(activity.contains("PlaybackStateEvents.notifyChanged(snapshot.mediaIdentifier)"))
 
-fun reviewedAsyncPlaybackPathsKeepTheirIdentityAndReadinessGuards() {
+  }
+
+  @Test
+  fun reviewedAsyncPlaybackPathsKeepTheirIdentityAndReadinessGuards() {
     val activity = read("app/src/main/java/app/infinity/mpvz/ui/player/PlayerActivity.kt")
     val fileNameResolver = activity.substringAfter("private suspend fun resolveExternalM3uFileName")
       .substringBefore("private suspend fun shouldExpandExternalM3u")
