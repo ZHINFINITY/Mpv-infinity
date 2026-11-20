@@ -280,6 +280,7 @@ object MpvConfigControlledFeatures {
       "interpolation",
       "video-sync",
       "display-fps-override",
+      "motion-interpolation",
       "mpvflow",
       "mpvflow-soft-blend",
       "mpvflow-max-dimension",

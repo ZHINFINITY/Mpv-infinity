@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify the experimental pair policy is actually packaged for MPV and Media3."""
+"""Verify the experimental pair policy is packaged in the Media3 Flow library."""
 from __future__ import annotations
 import argparse
 import hashlib
@@ -14,7 +14,7 @@ MARKERS = (
     b"bool pairGhost=(pc.cfg.x&0x40000000)==0",
     b"pair_ghost_scene_merge",
 )
-LIBS = ("lib/arm64-v8a/libmpv.so", "lib/arm64-v8a/libmedia3flow_vulkan.so")
+LIBS = ("lib/arm64-v8a/libmedia3flow_vulkan.so",)
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("apk", type=Path)
@@ -36,7 +36,7 @@ def main() -> None:
               "limits": "Packaging proof only; not Poco performance or visual proof."}
     dest = args.apk.parent / "pair-ghost-verification.json"
     dest.write_text(json.dumps(report, indent=2) + "\n")
-    print("Pair-wide ghost policy verified in MPV and Media3 arm64 native libraries")
+    print("Pair-wide ghost policy verified in the Media3 Flow arm64 native library")
     print(dest)
 if __name__ == "__main__":
     main()

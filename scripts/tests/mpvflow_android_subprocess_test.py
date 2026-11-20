@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Guard Android MPVFlow's yt-dlp subprocess fallback and interpolation path."""
+"""Guard Android MPV subprocess fallback and FongMi MEMC runtime wiring."""
 from __future__ import annotations
 
 import importlib.util
@@ -43,16 +43,15 @@ class AndroidSubprocessFallbackTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             prepare.prefer_fork_for_android_mpv_subprocesses(CLONE_LINE + "\n" + CLONE_LINE)
 
-    def test_flow_interpolation_code_and_target_fps_option_remain_registered(self):
+    def test_fongmi_interpolation_code_and_target_fps_option_remain_registered(self):
         prepare_source = (ROOT / "scripts/prepare-mpvflow.py").read_text(encoding="utf-8")
-        vo_patch = (ROOT / "app/src/main/cpp/mpvflow/mpvflow-vo-gpu-next.patch").read_text(encoding="utf-8")
         mpv_view = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/MPVView.kt").read_text(encoding="utf-8")
-        self.assertIn('gpu_source = "video/out/mpvflow_gpu.c"', prepare_source)
-        self.assertIn('meson_marker = "# MPVFLOW_ANDROID_GPU"', prepare_source)
-        self.assertIn("MPVFLOW_GPU_INTEGRATION", vo_patch)
-        self.assertIn("flow_render_frame", vo_patch)
-        self.assertIn('"mpvflow-target-fps", OPT_INT(mpvflow_target_fps)', vo_patch)
-        self.assertIn('PlaybackSession.setOptionString("mpvflow-target-fps", mpvFlowTargetFps.toString())', mpv_view)
+        self.assertNotIn("FONGMI_PATCH", prepare_source)
+        self.assertIn('"video/out/gpu_next/motion.c"', prepare_source)
+        self.assertIn('motion_option_marker = \'{"motion-interpolation", OPT_INT(motion_fps), M_RANGE(0, 240)}\'', prepare_source)
+        self.assertIn('"video/out/hwdec/hwdec_aimagereader_vk_direct.c"', prepare_source)
+        self.assertIn("prefer_fork_for_android_mpv_subprocesses", prepare_source)
+        self.assertIn('PlaybackSession.setOptionString("motion-interpolation", targetFps.toString())', mpv_view)
 
     def test_packaged_runtime_verifier_rejects_shared_spawn_but_accepts_fork_profile(self):
         path = Path("unused-libmpv.so")
@@ -62,6 +61,30 @@ class AndroidSubprocessFallbackTest(unittest.TestCase):
                     verifier.verify_mpv("arm64-v8a", path, False, False, require_fork_subprocess=True)
         with patch.object(verifier, "run_tool", return_value="List of enabled features: android vulkan"):
             verifier.verify_mpv("arm64-v8a", path, False, False, require_fork_subprocess=True)
+
+    def test_android_glesv2_dependency_is_allowed_and_unknown_dependency_is_rejected(self):
+        paths = {
+            "libmpv.so": Path("arm64-libmpv.so"),
+            "libudfread.so": Path("arm64-libudfread.so"),
+        }
+
+        def glesv2_dependencies(path):
+            if path.name == "arm64-libmpv.so":
+                return {"libudfread.so", "libGLESv2.so"}
+            return {"libc.so"}
+
+        self.assertIn("libGLESv2.so", verifier.ANDROID_SYSTEM_LIBS)
+        with patch.object(verifier, "needed_libraries", side_effect=glesv2_dependencies):
+            verifier.verify_dependency_closure("arm64-v8a", paths)
+
+        def unknown_dependencies(path):
+            if path.name == "arm64-libmpv.so":
+                return {"libudfread.so", "libvendor-private.so"}
+            return {"libc.so"}
+
+        with patch.object(verifier, "needed_libraries", side_effect=unknown_dependencies):
+            with self.assertRaisesRegex(SystemExit, "libvendor-private.so"):
+                verifier.verify_dependency_closure("arm64-v8a", paths)
 
     def test_debug_workflow_runs_regression_and_checks_overlaid_runtime(self):
         workflow = (ROOT / ".github/workflows/debug-apk.yml").read_text(encoding="utf-8")

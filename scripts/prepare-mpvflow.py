@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import argparse
 import os
-from pathlib import Path
 import re
 import shutil
 import subprocess
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 VENDOR = ROOT / "app/src/main/cpp/mpvflow"
@@ -15,17 +15,11 @@ VO_PATCH = VENDOR / "mpvflow-vo-gpu-next.patch"
 AIMAGE_VULKAN_PATCH = VENDOR / "mpvflow-aimagereader-vulkan.patch"
 MEDIACODEC_VULKAN_DIR = VENDOR / "mediacodec-vulkan"
 MEDIACODEC_VULKAN_FILES = (
-    "LICENSE.LGPL",
-    "hwdec_aimagereader.c",
-    "hwdec_aimagereader.comp",
-    "hwdec_aimagereader.frag",
-    "hwdec_aimagereader.vert",
-    "hwdec_aimagereader_comp.h",
-    "hwdec_aimagereader_frag.h",
-    "hwdec_aimagereader_vert.h",
-    "hwdec_aimagereader_vk.c",
-    "hwdec_aimagereader_vk.h",
-    "hwdec_aimagereader_vk_convert.c",
+    "LICENSE.LGPL", "hwdec_aimagereader.c", "hwdec_aimagereader.comp",
+    "hwdec_aimagereader.frag", "hwdec_aimagereader.vert",
+    "hwdec_aimagereader_comp.h", "hwdec_aimagereader_frag.h",
+    "hwdec_aimagereader_vert.h", "hwdec_aimagereader_vk.c",
+    "hwdec_aimagereader_vk.h", "hwdec_aimagereader_vk_convert.c",
     "hwdec_aimagereader_vk_private.h",
 )
 MPV_VULKAN_DEPENDENCY = "vulkan = dependency('vulkan', version: '>= 1.3.238', required: vulkan_opt)"
@@ -33,6 +27,7 @@ ANDROID_VULKAN_DEPENDENCY = "vulkan = dependency('vulkan', required: vulkan_opt)
 PLACEBO_SPIRV_LIBRARY_LOOKUP = "spirv = cxx.find_library('SPIRV', required: required, static: static, dirs: vulkan_lib_dirs)"
 PLACEBO_GLSLANG_LIBRARY_LOOKUP = "cxx.find_library('glslang', required: required, static: static)"
 ANDROID_PLACEBO_GLSLANG_LIBRARY_LOOKUP = "cxx.find_library('glslang', required: required, static: static, dirs: vulkan_lib_dirs)"
+PLACEBO_OPTIONS_HOOK_COUNT_MARKER = "/* MPVFLOW_OPTIONS_HOOK_COUNT */"
 MPV_CLONE_FEATURE = "features += {'clone': cc.has_header_symbol('sched.h', 'clone', args: '-D_GNU_SOURCE')}"
 MPV_ANDROID_CLONE_FEATURE = "features += {'clone': host_machine.system() != 'android' and cc.has_header_symbol('sched.h', 'clone', args: '-D_GNU_SOURCE')}"
 RENDERER_HOOK_PROBE = """
@@ -135,6 +130,24 @@ def patch_mpvflow_stats_lua(stats_lua: str) -> str:
         + "    end\n"
     )
     return stats_lua.replace(row_anchor, row, 1)
+
+
+def validate_fongmi_frame_priv_members(vo_source: str) -> None:
+    start = vo_source.find("struct frame_priv {")
+    if start < 0:
+        raise SystemExit("Pinned MPV vo_gpu_next.c has no struct frame_priv")
+    end = vo_source.find("\n};", start)
+    if end < 0:
+        raise SystemExit("Pinned MPV struct frame_priv is not closed")
+    body = vo_source[start:end]
+    required = (
+        "struct source_frame *source;", "bool motion_capture;",
+        "pl_tex motion_texture;", "struct mp_motion_frame motion_frame;",
+        "bool mapped_coordinates;", "struct mp_image_params mapped_params;",
+    )
+    missing = [member for member in required if member not in body]
+    if missing:
+        raise SystemExit("Pinned FongMi frame ownership/MEMC fields must be members of struct frame_priv; missing: " + ", ".join(missing))
 
 
 def validate_hwdec_frame_priv_members(vo_source: str) -> None:
@@ -254,6 +267,50 @@ def enlarge_libplacebo_timer_ring(gpu_c: str) -> str:
     return gpu_c
 
 
+def publish_libplacebo_hook_count(options_c: str) -> str:
+    """Patch the pinned FongMi helpers to publish params.num_hooks."""
+    marker_count = options_c.count(PLACEBO_OPTIONS_HOOK_COUNT_MARKER)
+    if marker_count == 3:
+        return options_c
+    if marker_count:
+        raise SystemExit("Pinned libplacebo hook-count patch is incomplete")
+    replacements = (
+        (
+            "    PL_ARRAY_APPEND(opts, p->hooks, hook);\n"
+            "    opts->params.hooks = p->hooks.elem;",
+            "    PL_ARRAY_APPEND(opts, p->hooks, hook);\n"
+            "    opts->params.hooks = p->hooks.elem;\n"
+            "    opts->params.num_hooks = p->hooks.num; "
+            + PLACEBO_OPTIONS_HOOK_COUNT_MARKER,
+        ),
+        (
+            "    PL_ARRAY_INSERT_AT(opts, p->hooks, idx, hook);\n"
+            "    opts->params.hooks = p->hooks.elem;",
+            "    PL_ARRAY_INSERT_AT(opts, p->hooks, idx, hook);\n"
+            "    opts->params.hooks = p->hooks.elem;\n"
+            "    opts->params.num_hooks = p->hooks.num; "
+            + PLACEBO_OPTIONS_HOOK_COUNT_MARKER,
+        ),
+        (
+            "    PL_ARRAY_REMOVE_AT(p->hooks, idx);\n"
+            "    opts->params.hooks = p->hooks.elem;",
+            "    PL_ARRAY_REMOVE_AT(p->hooks, idx);\n"
+            "    opts->params.hooks = p->hooks.elem;\n"
+            "    opts->params.num_hooks = p->hooks.num; "
+            + PLACEBO_OPTIONS_HOOK_COUNT_MARKER,
+        ),
+    )
+    for old, new in replacements:
+        if options_c.count(old) != 1:
+            raise SystemExit(
+                "Pinned libplacebo options.c hook helper changed; "
+                "refusing an unverified hook-count patch"
+            )
+        options_c = options_c.replace(old, new, 1)
+    return options_c
+
+
+
 def add_libplacebo_swapchain_diagnostics_api(vulkan_header: str) -> str:
     old = "PL_API bool pl_vulkan_swapchain_suboptimal(pl_swapchain sw);\n"
     set_api = "PL_API bool pl_vulkan_swapchain_set_diagnostics(pl_swapchain sw, bool enabled);\n"
@@ -300,12 +357,20 @@ def validate_libplacebo_suboptimal_recovery(swapchain_c: str) -> None:
         "case VK_SUBOPTIMAL_KHR:\n        p->suboptimal = true;\n        // fall through\n    case VK_SUCCESS:\n        return true;",
         *acquire_out_of_date,
         "case VK_ERROR_OUT_OF_DATE_KHR:\n        // We can silently ignore this error, since the next start_frame will\n        // recreate the swapchain automatically.\n        return true;",
-        "if (p->suboptimal || p->needs_recreate || width_changed || height_changed)\n        ok = vk_sw_recreate(sw, *width, *height);",
     )
-    if not all(item in swapchain_c for item in required):
+    resize_recovery = (
+        "if (p->suboptimal || p->needs_recreate || width_changed || height_changed)\n"
+        "        ok = vk_sw_recreate(sw, *width, *height);" in swapchain_c
+        or (
+            "bool recreate = p->suboptimal || p->needs_recreate || width_changed || height_changed;" in swapchain_c
+            and "if (ok && recreate)\n        ok = vk_sw_recreate(sw, *width, *height);" in swapchain_c
+        )
+    )
+    if not all(item in swapchain_c for item in required) or not resize_recovery:
         raise SystemExit(
             "Pinned libplacebo suboptimal/out-of-date/resize recovery changed; refusing an unverified Mailbox tolerance policy"
         )
+
 
 
 def instrument_libplacebo_swapchain(swapchain_c: str) -> str:
@@ -354,10 +419,16 @@ def instrument_libplacebo_swapchain(swapchain_c: str) -> str:
             raise SystemExit(f"Pinned libplacebo {name} changed; refusing unverified WSI instrumentation")
         return source.replace(old, new, 1)
 
-    swapchain_c = replace_once(
-        swapchain_c,
+    state_anchors = (
         "    bool has_swapchain_maintenance1;\n    struct pl_color_repr color_repr;",
-        "    bool has_swapchain_maintenance1;\n    atomic_bool flow_diagnostics;\n"
+        "    bool has_swapchain_maintenance1;\n    uint64_t generation;\n"
+        "    struct pl_color_repr color_repr;",
+    )
+    state_anchor = next((anchor for anchor in state_anchors if swapchain_c.count(anchor) == 1), None)
+    if state_anchor is None:
+        raise SystemExit("Pinned libplacebo swapchain diagnostic state changed; refusing unverified WSI instrumentation")
+    state_fields = (
+        "    atomic_bool flow_diagnostics;\n"
         "    VkPresentModeKHR flow_created_present_mode;\n"
         "    VkFormat flow_created_format;\n"
         "    VkColorSpaceKHR flow_created_color_space;\n"
@@ -372,8 +443,14 @@ def instrument_libplacebo_swapchain(swapchain_c: str) -> str:
         "    VkResult flow_diag_last_result[12];\n"
         "    uint64_t flow_diag_last_timeout_ns[12];\n"
         "    uint32_t flow_diag_last_image_index[12], flow_diag_image_index_valid[12];\n"
+    )
+    state_replacement = state_anchor.replace(
         "    struct pl_color_repr color_repr;",
-        "swapchain diagnostic state",
+        state_fields + "    struct pl_color_repr color_repr;",
+        1,
+    )
+    swapchain_c = replace_once(
+        swapchain_c, state_anchor, state_replacement, "swapchain diagnostic state"
     )
     swapchain_c = replace_once(
         swapchain_c,
@@ -488,8 +565,8 @@ static void flow_report_created_swapchain(struct priv *p)
 '''
     swapchain_c = replace_once(
         swapchain_c,
-        "static const struct pl_sw_fns vulkan_swapchain;\n\n\nstatic bool map_color_space(",
-        "static const struct pl_sw_fns vulkan_swapchain;\n" + helper + "static bool map_color_space(",
+        "static bool map_color_space(",
+        helper + "static bool map_color_space(",
         "diagnostic helpers",
     )
     swapchain_c = replace_once(
@@ -506,8 +583,7 @@ static void flow_report_created_swapchain(struct priv *p)
     )
     swapchain_c = replace_once(
         swapchain_c,
-        '    PL_VK_ASSERT(res, "vk->CreateSwapchainKHR(...)");\n\n    // Get the new swapchain images',
-        '    PL_VK_ASSERT(res, "vk->CreateSwapchainKHR(...)");\n\n'
+        "    // Get the new swapchain images",
         '    p->flow_created_present_mode = sinfo.presentMode;\n'
         '    p->flow_created_format = sinfo.imageFormat;\n'
         '    p->flow_created_color_space = sinfo.imageColorSpace;\n'
@@ -582,21 +658,30 @@ static void flow_report_created_swapchain(struct priv *p)
     )
     swapchain_c = replace_once(
         swapchain_c,
-        "    vk->lock_queue(vk->queue_ctx, pool->qf, qidx);\n"
-        "    VkResult res = vk->QueuePresentKHR(queue, &pinfo);\n"
-        "    vk->unlock_queue(vk->queue_ctx, pool->qf, qidx);",
+        "    vk->lock_queue(vk->queue_ctx, pool->qf, qidx);\n",
         "    pl_clock_t flow_queue_lock_start = atomic_load_explicit(&p->flow_diagnostics, memory_order_relaxed)\n"
         "        ? pl_clock_now() : 0;\n"
         "    vk->lock_queue(vk->queue_ctx, pool->qf, qidx);\n"
         "    pl_clock_t flow_present_start = flow_queue_lock_start ? pl_clock_now() : 0;\n"
         "    if (flow_queue_lock_start)\n"
-        "        flow_report_wsi_call(p, FLOW_WSI_PRESENT_QUEUE_LOCK, \"present_queue_lock\", flow_queue_lock_start, flow_present_start, VK_SUCCESS);\n"
+        "        flow_report_wsi_call(p, FLOW_WSI_PRESENT_QUEUE_LOCK, \"present_queue_lock\", flow_queue_lock_start, flow_present_start, VK_SUCCESS);\n",
+        "present queue-lock timing",
+    )
+    swapchain_c = replace_once(
+        swapchain_c,
+        "    VkResult res = vk->QueuePresentKHR(queue, &pinfo);\n",
+        "    pl_clock_t flow_present_start = flow_queue_lock_start ? pl_clock_now() : 0;\n"
         "    VkResult res = vk->QueuePresentKHR(queue, &pinfo);\n"
-        "    pl_clock_t flow_present_end = flow_queue_lock_start ? pl_clock_now() : 0;\n"
+        "    pl_clock_t flow_present_end = flow_present_start ? pl_clock_now() : 0;\n",
+        "vkQueuePresentKHR call timing",
+    )
+    swapchain_c = replace_once(
+        swapchain_c,
+        "    vk->unlock_queue(vk->queue_ctx, pool->qf, qidx);\n",
         "    vk->unlock_queue(vk->queue_ctx, pool->qf, qidx);\n"
         "    if (flow_queue_lock_start)\n"
-        "        flow_report_wsi_call(p, FLOW_WSI_PRESENT, \"vkQueuePresentKHR\", flow_present_start, flow_present_end, res);",
-        "vkQueuePresentKHR timing",
+        "        flow_report_wsi_call(p, FLOW_WSI_PRESENT, \"vkQueuePresentKHR\", flow_present_start, flow_present_end, res);\n",
+        "vkQueuePresentKHR duration report",
     )
     swapchain_c = replace_once(
         swapchain_c,
@@ -701,6 +786,7 @@ static void flow_report_created_swapchain(struct priv *p)
         "diagnostic toggle API",
     )
     return swapchain_c
+
 
 
 def add_libplacebo_swapchain_diagnostics_stub(stubs_c: str) -> str:
@@ -904,6 +990,7 @@ def enable_mailbox_suboptimal_tolerance(vulkan_context: str) -> str:
     marker = "/* MPVFLOW_MAILBOX_SUBOPTIMAL_TOLERANCE */"
     policy = (
         "    pl_params.allow_suboptimal =\n"
+        "        pl_params.allow_suboptimal ||\n"
         "        pl_params.present_mode == VK_PRESENT_MODE_MAILBOX_KHR;\n"
     )
     required = (
@@ -944,18 +1031,24 @@ def main() -> None:
     libplacebo_dir = args.libplacebo_dir.resolve()
     meson_path = mpv_dir / "meson.build"
     stats_lua_path = mpv_dir / "player/lua/stats.lua"
+    command_path = mpv_dir / "player/command.c"
     vo_path = mpv_dir / "video/out/vo_gpu_next.c"
+    motion_path = mpv_dir / "video/out/gpu_next/motion.c"
+    hwdec_header_path = mpv_dir / "video/out/gpu/hwdec.h"
     vulkan_context_path = mpv_dir / "video/out/vulkan/context.c"
     glslang_meson_path = libplacebo_dir / "src/glsl/meson.build"
     glslang_source_path = libplacebo_dir / "src/glsl/glslang.cc"
     gpu_timer_path = libplacebo_dir / "src/vulkan/gpu.c"
+    placebo_options_path = libplacebo_dir / "src/options.c"
     placebo_swapchain_path = libplacebo_dir / "src/vulkan/swapchain.c"
+    placebo_formats_path = libplacebo_dir / "src/vulkan/formats.c"
     placebo_vulkan_header_path = libplacebo_dir / "src/include/libplacebo/vulkan.h"
     placebo_stubs_path = libplacebo_dir / "src/vulkan/stubs.c"
     placebo_formats_path = libplacebo_dir / "src/vulkan/formats.c"
     for path in (
-        meson_path, stats_lua_path, vo_path, vulkan_context_path, glslang_meson_path, glslang_source_path, gpu_timer_path,
-        placebo_swapchain_path, placebo_vulkan_header_path, placebo_stubs_path,
+        meson_path, stats_lua_path, command_path, vo_path, motion_path, hwdec_header_path,
+        vulkan_context_path, placebo_options_path, glslang_meson_path, glslang_source_path, gpu_timer_path,
+        placebo_swapchain_path, placebo_vulkan_header_path, placebo_stubs_path, placebo_formats_path,
         placebo_formats_path,
     ):
         if not path.is_file():
@@ -988,6 +1081,38 @@ def main() -> None:
     for path in required:
         if not path.is_file():
             raise SystemExit(f"GPU Flow source is missing: {path}")
+
+    meson = meson_path.read_text(encoding="utf-8")
+    stats_lua = stats_lua_path.read_text(encoding="utf-8")
+    command = command_path.read_text(encoding="utf-8")
+    vo = vo_path.read_text(encoding="utf-8")
+    motion = motion_path.read_text(encoding="utf-8")
+    native_fongmi_markers = (
+        "version: '>=7.387.0'",
+        "video/out/gpu_next/motion.c", "libmpv_motion = static_library('mpv-motion'",
+        "video/out/hwdec/hwdec_aimagereader.c", "video/out/hwdec/hwdec_aimagereader_vk_direct.c",
+        "mp_motion_prepare_view", "mp_motion_render_views",
+    )
+    if not all(marker in (meson + vo) for marker in native_fongmi_markers):
+        raise SystemExit("Pinned MPV source is not the coordinated FongMi native source")
+    if ('{"motion-interpolation", OPT_INT(motion_fps), M_RANGE(0, 240)}' not in vo
+            or "mp_motion_capture" not in vo or "mp_motion_render" not in vo
+            or "mp_motion_prepare_view" not in motion or "mp_motion_render_views" not in motion
+            or '{"motion-interpolation-info", mp_property_motion_info}' not in command
+            or 'mp.get_property_native("motion-interpolation-info")' not in stats_lua):
+        raise SystemExit("The pinned native FongMi MEMC/Android/OSD source contract is incomplete")
+    validate_fongmi_frame_priv_members(vo)
+    mapper_sources = tuple(mpv_dir / "video/out/hwdec" / name for name in (
+        "hwdec_aimagereader.c", "hwdec_aimagereader_vk.c",
+        "hwdec_aimagereader_vk_convert.c", "hwdec_aimagereader_vk_direct.c"))
+    if any(not path.is_file() for path in mapper_sources):
+        raise SystemExit("Pinned FongMi MPV source is missing native AImageReader/Vulkan mapper files")
+    mapper_header = hwdec_header_path.read_text(encoding="utf-8")
+    if ("#define RA_HWDEC_MAP_RETRY (-2)" not in mapper_header
+            or "bool retry = result == RA_HWDEC_MAP_RETRY;" not in vo
+            or "p->hwdec_map_retry |= retry;" not in vo
+            or "fp->source->failed = ret != RA_HWDEC_MAP_RETRY;" not in vo):
+        raise SystemExit("Pinned FongMi VO is missing the transient hwdec-map retry/ownership contract")
 
     video_out_dir = mpv_dir / "video/out"
     gpu_source = (VENDOR / "mpvflow_gpu.c").read_text(encoding="utf-8")
@@ -1041,22 +1166,12 @@ def main() -> None:
     optimizer_disabled = "options.disableOptimizer = true;"
     enabled_count = glslang_source.count(optimizer_enabled)
     disabled_count = glslang_source.count(optimizer_disabled)
-    if enabled_count == 1 and disabled_count == 0:
-        # Diagnostic-only experiment: build this debug runtime with SPIR-V optimization
-        # disabled to test whether optimized shader code triggers Adreno artifacts.
-        glslang_source = glslang_source.replace(
-            optimizer_enabled, optimizer_disabled, 1
-        )
-    elif enabled_count == 0 and disabled_count == 1:
-        # prepare-mpvflow.py is intentionally called before and after dependency setup.
-        # The second invocation must accept the already-applied diagnostic patch.
-        pass
-    else:
-        raise SystemExit(
-            "Pinned libplacebo glslang optimizer setting is ambiguous; refusing an "
-            "unverified Adreno optimizer diagnostic build"
-        )
+    if enabled_count == 0 and disabled_count == 1:
+        glslang_source = glslang_source.replace(optimizer_disabled, optimizer_enabled, 1)
+    elif enabled_count != 1 or disabled_count != 0:
+        raise SystemExit("Pinned libplacebo glslang optimizer setting is ambiguous; refusing an unverified SPIR-V build")
     gpu_timer = enlarge_libplacebo_timer_ring(gpu_timer_path.read_text())
+    placebo_options = publish_libplacebo_hook_count(placebo_options_path.read_text(encoding="utf-8"))
     placebo_swapchain_source = placebo_swapchain_path.read_text()
     validate_libplacebo_suboptimal_recovery(placebo_swapchain_source)
     placebo_swapchain = instrument_libplacebo_swapchain(placebo_swapchain_source)
@@ -1107,7 +1222,7 @@ def main() -> None:
             "before the generic hardware-map fatal path"
         )
     meson = prefer_fork_for_android_mpv_subprocesses(
-        enable_android_vulkan_dependency(meson_path.read_text())
+        enable_android_vulkan_dependency(meson)
     )
     # Dependency setup reloads Meson from disk; preserve the capability-gated
     # renderer-hook probe on the final content we publish.
@@ -1141,12 +1256,12 @@ def main() -> None:
     vulkan_context_path.write_text(vulkan_context)
     glslang_meson_path.write_text(glslang_meson)
     glslang_source_path.write_text(glslang_source)
-    print("Adreno diagnostic: disabled glslang SPIR-V optimizer for this MPVFlow debug runtime")
-    gpu_timer_path.write_text(gpu_timer)
+    gpu_timer_path.write_text(gpu_timer, encoding="utf-8")
+    placebo_options_path.write_text(placebo_options, encoding="utf-8")
     placebo_swapchain_path.write_text(placebo_swapchain)
     placebo_vulkan_header_path.write_text(placebo_vulkan_header)
     placebo_stubs_path.write_text(placebo_stubs)
-    placebo_formats_path.write_text(placebo_formats)
+    placebo_formats_path.write_text(placebo_formats, encoding="utf-8")
     stats_lua_path.write_text(stats_lua)
     print(
         f"Installed direct GPU/OpenCL MPVFlow into {mpv_dir} and corrected libplacebo's "

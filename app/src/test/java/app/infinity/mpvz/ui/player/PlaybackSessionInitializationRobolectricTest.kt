@@ -75,9 +75,8 @@ class PlaybackSessionInitializationRobolectricTest {
     assertEquals("vulkan", ShadowPlaybackMpvLib.lastOption("gpu-api"))
     assertEquals("androidvk", ShadowPlaybackMpvLib.lastOption("gpu-context"))
     assertEquals("gpu-next", ShadowPlaybackMpvLib.lastOption("vo"))
-    assertEquals("yes", ShadowPlaybackMpvLib.lastOption("mpvflow"))
-    assertEquals("120", ShadowPlaybackMpvLib.lastOption("mpvflow-target-fps"))
-    assertEquals("no", ShadowPlaybackMpvLib.lastOption("mpvflow-soft-blend"))
+    assertEquals("120", ShadowPlaybackMpvLib.lastOption("motion-interpolation"))
+    assertEquals("display-resample", ShadowPlaybackMpvLib.lastOption("video-sync"))
     assertEquals("post-value", ShadowPlaybackMpvLib.property("post-property"))
     assertEquals("post-value", PlaybackSession.getPropertyString("post-property"))
     assertTrue(ShadowPlaybackMpvLib.addObserverCount >= 1)
@@ -210,9 +209,8 @@ class PlaybackSessionInitializationRobolectricTest {
       PlaybackSession.setOptionString("gpu-api", "vulkan")
       PlaybackSession.setOptionString("gpu-context", "androidvk")
       PlaybackSession.setOptionString("vo", "gpu-next")
-      PlaybackSession.setOptionString("mpvflow", "yes")
-      PlaybackSession.setOptionString("mpvflow-target-fps", "120")
-      PlaybackSession.setOptionString("mpvflow-soft-blend", "no")
+      PlaybackSession.setOptionString("motion-interpolation", "120")
+      PlaybackSession.setOptionString("video-sync", "display-resample")
     },
     postInitOptions = {
       PlaybackSession.setPropertyString("post-property", "post-value")

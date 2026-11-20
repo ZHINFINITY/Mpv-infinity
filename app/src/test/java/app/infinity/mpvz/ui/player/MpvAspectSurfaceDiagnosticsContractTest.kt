@@ -17,8 +17,8 @@ class MpvAspectSurfaceDiagnosticsContractTest {
     val mpvView = source("ui/player/MPVView.kt")
     val transition = viewModel.substringAfter("fun changeVideoAspect(")
       .substringBefore("fun setCustomAspectRatio(")
-    val inactiveFlowOptions = mpvView.substringAfter("if (!MpvConfigOverridePolicy.isOwnedByMpvConf(\"interpolation\"))")
-      .substringBefore("if (!MpvConfigOverridePolicy.isOwnedByMpvConf(\"video-sync\"))")
+    val fongmiInterpolationOptions = mpvView.substringAfter("val mpvFlowRendererOptionResult =")
+      .substringBefore("val appVideoFilters =")
 
     assertTrue(transition.contains("video-aspect-override"))
     assertTrue(transition.contains("panscan"))
@@ -26,7 +26,20 @@ class MpvAspectSurfaceDiagnosticsContractTest {
     assertFalse(transition.contains("unbindSurface("))
     assertFalse(transition.contains("initializeSession("))
     assertFalse(transition.contains("mpvFlowFrameInterpolation"))
-    assertTrue(inactiveFlowOptions.contains("if (mpvFlowFrameInterpolationEnabled) \"yes\" else \"no\""))
+    // FongMi uses a target-FPS option; do not revive mpv's separate boolean mixer.
+    assertTrue(
+      fongmiInterpolationOptions.contains(
+        "val targetFps = if (mpvFlowFrameInterpolationEnabled) mpvFlowTargetFps else 0",
+      ),
+    )
+    assertTrue(
+      fongmiInterpolationOptions.contains(
+        "PlaybackSession.setOptionString(\"motion-interpolation\", targetFps.toString())",
+      ),
+    )
+    assertFalse(
+      fongmiInterpolationOptions.contains("PlaybackSession.setOptionString(\"interpolation\","),
+    )
   }
 
   @Test fun debugTraceCorrelatesAspectPropertiesWithSurfaceLifecycle() {

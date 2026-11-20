@@ -58,7 +58,8 @@ android {
 
     buildConfigField("String", "GIT_SHA", "\"${getCommitSha()}\"")
     buildConfigField("int", "GIT_COUNT", getCommitCount())
-    buildConfigField("boolean", "MPV_HAS_MPVFLOW", includeMpvFlowMpvRuntime.toString())
+    buildConfigField("boolean", "MPV_HAS_MPVFLOW", "false")
+    buildConfigField("boolean", "MPV_HAS_FONGMI_MEMC", includeMpvFlowMpvRuntime.toString())
 
     externalNativeBuild {
       cmake {
@@ -99,6 +100,7 @@ android {
       buildConfigField("boolean", "SCOPED_STORAGE_ONLY", "false")
       buildConfigField("boolean", "MPV_SUPPORTS_VULKAN", "false")
       buildConfigField("boolean", "MPV_SUPPORTS_MEDIACODEC_VULKAN", "false")
+      buildConfigField("boolean", "MPV_HAS_FONGMI_MEMC", "false")
       externalNativeBuild {
         cmake {
           arguments += "-DMPVFLOW_ENABLE_VULKAN_BACKEND=OFF"

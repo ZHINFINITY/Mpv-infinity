@@ -2,3 +2,6 @@
 
 # Preserve pinned third-party source verbatim; upstream contains trailing whitespace.
 app/src/main/cpp/third_party/quickjs/** -whitespace
+
+# The exact upstream FongMi menu-info patch has trailing spaces in diff context.
+scripts/patches/mpvlibandroid-fongmi/libbluray-1.4.1-menu-info.patch whitespace=-blank-at-eol

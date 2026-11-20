@@ -11,9 +11,11 @@ and is reachable only through the NULL-terminated ``codec_list`` pointer array. 
 (``AVCodecDescriptor``) puts ``id``/``type`` *before* ``name`` and has zero padding after
 ``props``, so it can never match the decoder layout below. A decoder counts as present only when
 its record exists *and* some pointer in the image refers to that record (its codec_list entry).
-The project pins FFmpeg n9.0.2 for this arm64 runtime: ``sizeof(AVCodec)`` is 56 bytes and
-``FFCodec.is_decoder`` is bit 24 of the following 32-bit flags word. These private-ABI offsets
-must be revalidated if the FFmpeg pin or target ABI changes.
+The checked-in runtime pins FFmpeg n9.0.2; the experimental arm64 overlay pins FongMi/FFmpeg
+commit ``f2c5162b7c4b3e8835de270ff78cecc524decad1`` (n9.1). Both source layouts use
+``sizeof(AVCodec) == 56`` and keep ``FFCodec.is_decoder`` at bit 24 of the following 32-bit
+flags word. FongMi n9.1 adds color/alpha bitfields after that bit without shifting it. These
+private-ABI offsets must be revalidated if either FFmpeg pin or the target ABI changes.
 
 Pointers are read from the file image (RELR/implicit-addend relocations, as the Android NDK
 emits) and overlaid with any explicit ``R_AARCH64_RELATIVE`` RELA addends. Standard library only.

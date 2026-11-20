@@ -39,11 +39,10 @@ def pl_log_emits(message_level: str, threshold: str) -> bool:
 ROOT = Path(__file__).resolve().parents[2]
 PREPARE = ROOT / "scripts/prepare-mpvflow.py"
 BUILD = ROOT / "scripts/build-mpvflow-mpv-runtime.sh"
-VULKAN_MAPPER_PATCH = ROOT / "app/src/main/cpp/mpvflow/mpvflow-aimagereader-vulkan.patch"
-VULKAN_MAPPER_DIR = ROOT / "app/src/main/cpp/mpvflow/mediacodec-vulkan"
-VO_PATCH = ROOT / "app/src/main/cpp/mpvflow/mpvflow-vo-gpu-next.patch"
+FONGMI_DIR = ROOT / "app/src/main/cpp/mpvflow/fongmi"
 PLAYBACK_SESSION = ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/PlaybackSession.kt"
 MPV_VIEW = ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/MPVView.kt"
+MEDIA3_SINK = ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowVideoSink.kt"
 MPVFLOW_LOG_CONFIG = ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/MpvFlowLogConfig.kt"
 APP_BUILD = ROOT / "app/build.gradle.kts"
 MPV_CONF_POLICY = ROOT / "app/src/main/java/app/infinity/mpvz/preferences/MpvConfigOverride.kt"
@@ -51,9 +50,24 @@ POLICY = ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/RendererBackendPo
 POLICY_TEST = ROOT / "app/src/test/java/app/infinity/mpvz/ui/player/RendererBackendPolicyTest.kt"
 DECODER_SCREEN = ROOT / "app/src/main/java/app/infinity/mpvz/ui/preferences/DecoderPreferencesScreen.kt"
 STRING_RESOURCES = ROOT / "app/src/main/res/values/strings.xml"
+FFMPEG_SHA = "f2c5162b7c4b3e8835de270ff78cecc524decad1"
+FFMPEG_REPOSITORY = "https://github.com/FongMi/FFmpeg.git"
+VULKAN_HEADERS_SHA = "a4f8ada9f4f97c45b8c89c57997be9cebaae65d2"
+VULKAN_MAPPER_PATCH = ROOT / "app/src/main/cpp/mpvflow/mpvflow-aimagereader-vulkan.patch"
+VULKAN_MAPPER_DIR = ROOT / "app/src/main/cpp/mpvflow/mediacodec-vulkan"
+VO_PATCH = ROOT / "app/src/main/cpp/mpvflow/mpvflow-vo-gpu-next.patch"
 
 sys.dont_write_bytecode = True
+fongmi_motion = (FONGMI_DIR / "motion.c").read_text(encoding="utf-8")
+fongmi_test = (FONGMI_DIR / "test/gpu_motion.c").read_text(encoding="utf-8")
+media3_native = (ROOT / "app/src/main/cpp/media3flow_vulkan_jni.cpp").read_text(encoding="utf-8")
+assert 'pl_var_vec2("source_size")' in fongmi_motion
+assert 'pl_var_vec2("motion_size")' in fongmi_motion
+assert "mp_motion_render_sources_to" in fongmi_motion and "scaled_source_pair" in fongmi_test
+assert "mp_motion_" not in media3_native, "Native Media3 must remain on its pre-FongMi MPVFlow implementation"
+assert "mpvflow_gpu_synthesize_with_policy_to_texture(" in media3_native
 vo_patch = VO_PATCH.read_text(encoding="utf-8")
+assert "flow_release_frame(fp->vo, fp, true);" in vo_patch
 patch_hunks = re.split(r"(?m)(?=^@@ )", vo_patch)
 unmap_hunk = next((hunk for hunk in patch_hunks if hunk.startswith("@@") and "static void unmap_frame" in hunk.splitlines()[0]), "")
 discard_hunk = next((hunk for hunk in patch_hunks if hunk.startswith("@@") and "static void discard_frame" in hunk.splitlines()[0]), "")
@@ -65,27 +79,21 @@ assert "flow_release_frame(fp->vo, fp, true);" in discard_hunk, (
 )
 release_frame = vo_patch.split("+static void flow_release_frame(", 1)[1].split("\n+}", 1)[0]
 assert "if (discard) flow_release_pair_for_frame(p, fp->frame_id);" in release_frame
-assert "if (discard && fp->flow_source)" in release_frame and "if (discard && fp->flow_input)" in release_frame, (
-    "temporary unmap must not destroy the prepared GPU source textures"
-)
-assert "flow_prepare_input(vo, frame, mpi, fp);" in vo_patch, (
-    "MPVFlow remapping must reuse the prepared frame cache through the existing renderer path"
-)
+assert "if (discard && fp->flow_source)" in release_frame and "if (discard && fp->flow_input)" in release_frame
+assert "flow_prepare_input(vo, frame, mpi, fp);" in vo_patch
 for marker in (
-    "mpvflow_gpu_renderer_hook_supported",
-    "mpvflow_gpu_renderer_hook_begin",
-    "flow_compute_fusion_fallback",
-    "flow_cached_synthesis_hook",
-    "flow_renderer_fusion_disabled",
-    "params->num_hooks == 0",
-    "synthesis_rate_limited_cached",
-    "temporal_identity_valid",
+    "mpvflow_gpu_renderer_hook_supported", "mpvflow_gpu_renderer_hook_begin",
+    "flow_compute_fusion_fallback", "flow_cached_synthesis_hook",
+    "flow_renderer_fusion_disabled", "params->num_hooks == 0",
+    "synthesis_rate_limited_cached", "temporal_identity_valid",
 ):
-    assert marker in vo_patch, f"MPV renderer-fusion integration must preserve safe fallbacks and exact PTS caching: missing {marker!r}"
+    assert marker in vo_patch, f"MPV renderer-fusion integration missing {marker!r}"
 prepare_source = PREPARE.read_text(encoding="utf-8")
 for marker in (
     "MPVFLOW_HAVE_RENDERER_HOOK",
     "features.get('libplacebo', false)",
+    "pl_shader_custom",
+    "pl_shader_is_compute",
     "cc.has_header_symbol('libplacebo/shaders/custom.h', 'pl_shader_custom', dependencies: libplacebo)",
     "cc.has_header_symbol('libplacebo/shaders.h', 'pl_shader_is_compute', dependencies: libplacebo)",
 ):
@@ -98,15 +106,24 @@ assert "c_args += ['-DMPVFLOW_HAVE_RENDERER_HOOK=1']" not in prepare_source, (
 )
 
 cmake_config = (ROOT / "app/src/main/cpp/CMakeLists.txt").read_text(encoding="utf-8")
-for marker in (
-    "MPVFLOW_HAS_CUSTOM_SHADER_API",
-    "MPVFLOW_HAS_SHADER_COMPUTE_QUERY",
-    "MPVFLOW_HAVE_RENDERER_HOOK=1",
-    "MPVFlow renderer-fused synthesis API",
-):
-    assert marker in cmake_config, f"renderer fusion must be capability-gated by AAR exports: missing {marker!r}"
+runtime_packager = (ROOT / "scripts/package-mpv-runtime-aar.py").read_text(encoding="utf-8")
+assert "mpvflow/fongmi/motion.c" not in cmake_config, "FongMi motion must not be linked into Native Media3"
+assert "pl_shader_custom" in cmake_config, "Native MPVFlow must retain its generic renderer-hook shader API"
+assert '"pl_shader_custom"' in runtime_packager, "the MPV runtime overlay must export the MPVFlow renderer-hook shader API"
+assert 'PlaybackSession.setOptionString("motion-interpolation", targetFps.toString())' in MPV_VIEW.read_text(encoding="utf-8")
 runtime_builder = BUILD.read_text(encoding="utf-8")
 for marker in (
+    'EXPECTED_BUILDER_REVISION="1efc82739f6f7034cd63e7ee8b3ec5431df27467"',
+    'EXPECTED_MPV_REVISION="14b3999a1a3e322c217bc90ee4df5a8f1bc88f69"',
+    f'EXPECTED_FFMPEG_REVISION="{FFMPEG_SHA}"',
+    f'EXPECTED_FFMPEG_REPOSITORY="{FFMPEG_REPOSITORY}"',
+    'git -C "$MPV_BUILDER_DIR" rev-parse HEAD',
+    'git -C "$MPV_SOURCE_DIR" rev-parse HEAD',
+    "download.count(ffmpeg_clone) != 1",
+    'ffmpeg_version_suffix = f"mpvflow-fongmi-{ffmpeg_revision}"',
+    'if "--extra-version=" in ffmpeg_script:',
+    'git -C ffmpeg fetch --depth=1 origin {ffmpeg_revision}',
+    'git -C ffmpeg remote get-url origin',
     "dep_mpv=(ffmpeg libass lua libplacebo libbluray)",
     "v_libbluray=1.4.1",
     "LIBBLURAY_SHA256=76b5dc40097f28dca4ebb009c98ed51321b2927453f75cc72cf74acd09b9f449",
@@ -116,15 +133,80 @@ for marker in (
     "-Ddefault_library=static",
     "must statically link libbluray",
     "Shared library: [libudfread.so]",
+    "prepare-mpvflow-vulkan-headers.py",
     "LOCAL_MODULE := libudfread",
     "LOCAL_SHARED_LIBRARIES := swscale avcodec mpv udfread placebo",
 ):
-    assert marker in runtime_builder, f"MPVFlow build must preserve verified LGPL Blu-ray support: missing {marker!r}"
+    assert marker in runtime_builder, f"MPV build must preserve verified Blu-ray support: missing {marker!r}"
+safe_bluray_check = r"""strings -a "$MPV_LIBRARY" | grep -F 'libbluray' >/dev/null"""
+unsafe_bluray_check = r"""strings -a "$MPV_LIBRARY" | grep -Fq 'libbluray'"""
+assert safe_bluray_check in runtime_builder, "the Blu-ray feature check must consume strings output to avoid pipefail/SIGPIPE false negatives"
+assert unsafe_bluray_check not in runtime_builder, "grep -q may close the strings pipe early under pipefail"
+safe_udfread_check = r"""readelf -d "$MPV_LIBRARY" | grep -F 'Shared library: [libudfread.so]' >/dev/null"""
+unsafe_udfread_check = r"""readelf -d "$MPV_LIBRARY" | grep -Fq 'Shared library: [libudfread.so]'"""
+assert safe_udfread_check in runtime_builder, "the libudfread dependency check must consume readelf output under pipefail"
+assert unsafe_udfread_check not in runtime_builder, "grep -q may close readelf's pipe early under pipefail"
+producer = "python3 -c 'import os; os.write(1,b\"libbluray\\n\"); os.write(1,b\"x\"*1048576)'"
+unsafe_pipeline = subprocess.run(
+    ["bash", "-c", f"set -o pipefail; {producer} | grep -Fq libbluray"],
+    capture_output=True,
+    text=True,
+    timeout=10,
+)
+assert unsafe_pipeline.returncode != 0, "the test payload must reproduce the grep -q/pipefail false negative"
+subprocess.run(
+    ["bash", "-c", f"set -o pipefail; {producer} | grep -F libbluray >/dev/null"],
+    check=True,
+    capture_output=True,
+    text=True,
+    timeout=10,
+)
+
+vulkan_headers_helper = (ROOT / "scripts/prepare-mpvflow-vulkan-headers.py").read_text(encoding="utf-8")
+assert f'VULKAN_HEADERS_REVISION = "{VULKAN_HEADERS_SHA}"' in vulkan_headers_helper
+assert 'VULKAN_HEADERS_REPOSITORY = "https://github.com/KhronosGroup/Vulkan-Headers.git"' in vulkan_headers_helper
+
+for marker in (
+    '"$v_lua" != "5.2.4"',
+    "lua_sha256=b9e2e4aad6789b3b63a056d442f7b39f0ecfca3ae0f1fc0ae4e9614401b69f4b",
+    "https://www.lua.org/ftp/lua-$v_lua.tar.gz",
+    "https://ftp2.osuosl.org/pub/blfs/conglomeration/lua/lua-$v_lua.tar.gz",
+    "sha256sum --check",
+    "download.count(lua_source_original) != 1",
+):
+    assert marker in runtime_builder, f"Lua source fallback must remain checksum-pinned: missing {marker!r}"
 
 spec = importlib.util.spec_from_file_location("prepare_mpvflow", PREPARE)
 assert spec and spec.loader, "could not load MPVFlow preparation module"
 prepare = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(prepare)
+options_fixture = """
+void pl_options_add_hook(pl_options opts, const struct pl_hook *hook)
+{
+    PL_ARRAY_APPEND(opts, p->hooks, hook);
+    opts->params.hooks = p->hooks.elem;
+}
+void pl_options_insert_hook(pl_options opts, const struct pl_hook *hook, int idx)
+{
+    PL_ARRAY_INSERT_AT(opts, p->hooks, idx, hook);
+    opts->params.hooks = p->hooks.elem;
+}
+void pl_options_remove_hook_at(pl_options opts, int idx)
+{
+    PL_ARRAY_REMOVE_AT(p->hooks, idx);
+    opts->params.hooks = p->hooks.elem;
+}
+"""
+patched_options = prepare.publish_libplacebo_hook_count(options_fixture)
+assert patched_options.count("opts->params.num_hooks = p->hooks.num;") == 3
+assert patched_options.count(prepare.PLACEBO_OPTIONS_HOOK_COUNT_MARKER) == 3
+assert prepare.publish_libplacebo_hook_count(patched_options) == patched_options
+try:
+    prepare.publish_libplacebo_hook_count(options_fixture.replace("PL_ARRAY_INSERT_AT", "PL_ARRAY_INSERT"))
+except SystemExit as error:
+    assert "hook helper changed" in str(error)
+else:
+    raise AssertionError("hook-count adapter accepted an unverified upstream helper")
 gpu_source = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_gpu.c").read_text(encoding="utf-8")
 gpu_header = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_gpu.h").read_text(encoding="utf-8")
 assert "const int output_w = (int) state->source0->params.w;" in gpu_source
@@ -217,8 +299,8 @@ assert patched_mailbox_context.index("pl_params.present_mode = p->opts->swap_mod
 assert prepare.enable_mailbox_suboptimal_tolerance(patched_mailbox_context) == patched_mailbox_context, (
     "mailbox suboptimal preparation must be safe to repeat"
 )
-assert "pl_params.allow_suboptimal =\n        pl_params.present_mode == VK_PRESENT_MODE_MAILBOX_KHR;" in patched_mailbox_context, (
-    "only the effective Mailbox request may opt into suboptimal tolerance; FIFO and other modes remain false"
+assert "pl_params.allow_suboptimal =\n        pl_params.allow_suboptimal ||\n        pl_params.present_mode == VK_PRESENT_MODE_MAILBOX_KHR;" in patched_mailbox_context, (
+    "the effective Mailbox request must preserve prior suboptimal policy while enabling tolerance"
 )
 for bad_mailbox_context in (
     "no Vulkan swap-mode override here\n",
@@ -538,6 +620,40 @@ for bad_wsi_recovery in (
         raise AssertionError("unexpected pinned WSI recovery changes must fail closed")
 patched_wsi_source = prepare.instrument_libplacebo_swapchain(wsi_source)
 prepare.validate_libplacebo_suboptimal_recovery(patched_wsi_source)
+fongmi_wsi_source = wsi_source.replace(
+    "    bool has_swapchain_maintenance1;\n    struct pl_color_repr color_repr;",
+    "    bool has_swapchain_maintenance1;\n    uint64_t generation;\n    struct pl_color_repr color_repr;",
+    1,
+).replace(
+    "    if (p->suboptimal || p->needs_recreate || width_changed || height_changed)\n"
+    "        ok = vk_sw_recreate(sw, *width, *height);",
+    "    bool recreate = p->suboptimal || p->needs_recreate || width_changed || height_changed;\n"
+    "    if (ok && recreate)\n        ok = vk_sw_recreate(sw, *width, *height);",
+    1,
+).replace(
+    "    vk->lock_queue(vk->queue_ctx, pool->qf, qidx);\n"
+    "    VkResult res = vk->QueuePresentKHR(queue, &pinfo);\n"
+    "    vk->unlock_queue(vk->queue_ctx, pool->qf, qidx);",
+    "    vk->lock_queue(vk->queue_ctx, pool->qf, qidx);\n"
+    "    uint64_t begin = timing.presentID ? present_time(sw) : 0;\n"
+    "    VkResult res = vk->QueuePresentKHR(queue, &pinfo);\n"
+    "    vk_present_submit(history, timing.presentID, begin, res);\n"
+    "    vk->unlock_queue(vk->queue_ctx, pool->qf, qidx);",
+    1,
+)
+prepare.validate_libplacebo_suboptimal_recovery(fongmi_wsi_source)
+fongmi_patched_wsi_source = prepare.instrument_libplacebo_swapchain(fongmi_wsi_source)
+prepare.validate_libplacebo_suboptimal_recovery(fongmi_patched_wsi_source)
+assert "uint64_t generation;\n    atomic_bool flow_diagnostics;" in fongmi_patched_wsi_source
+assert "bool recreate = p->suboptimal || p->needs_recreate || width_changed || height_changed;" in fongmi_patched_wsi_source
+assert "vk_present_submit(history, timing.presentID, begin, res);" in fongmi_patched_wsi_source
+bad_fongmi_resize = fongmi_wsi_source.replace("width_changed || height_changed", "false", 1)
+try:
+    prepare.validate_libplacebo_suboptimal_recovery(bad_fongmi_resize)
+except SystemExit:
+    pass
+else:
+    raise AssertionError("FongMi resize recovery must fail closed if size-change handling is lost")
 bad_instrumented_recovery = patched_wsi_source.replace(
     "bool flow_retry_recreate_ok = vk_sw_recreate(sw, 0, 0);",
     "bool flow_retry_recreate_ok = false;",
@@ -679,20 +795,6 @@ assert mpv_view_source.index(logger_option_call) < mpv_view_source.index(vo_opti
     "Flow must apply the parent logger threshold before the gpu-next VO/libplacebo logger is created"
 )
 assert "event=logger_config" in mpv_view_source and "msg_level_apply_rc=" in mpv_view_source
-flow_vo_patch_source = VO_PATCH.read_text(encoding="utf-8")
-assert "logger_policy=all=info,vo/gpu-next=v" in flow_vo_patch_source
-assert "parent_msg_level=%d" in flow_vo_patch_source
-assert "libplacebo_info_enabled=%d" in flow_vo_patch_source
-assert "diagnostics_gate_enabled=%d" in flow_vo_patch_source
-assert "first_runtime_wsi_sample=next_start_frame" in flow_vo_patch_source
-toggle_offset = flow_vo_patch_source.index("event=wsi_diagnostics_toggle engine=mpv")
-created_offset = flow_vo_patch_source.index("event=wsi_swapchain_created engine=mpv")
-first_start_frame_offset = flow_vo_patch_source.index(
-    "+        should_draw && pl_swapchain_start_frame(p->sw, &swframe);"
-)
-assert toggle_offset < created_offset < first_start_frame_offset, (
-    "the enabled gate and effective created swapchain mode/image count must be reported before the first runtime WSI call"
-)
 assert "if (qcom->dispatches == 1 || qcom->dispatches % 120 == 0)" in qcom_source
 assert "if (qcom->dispatches % 120 == 0)" in qcom_source, (
     "QCOM timing reports must remain periodic, not add per-dispatch log overhead"
@@ -700,60 +802,25 @@ assert "if (qcom->dispatches % 120 == 0)" in qcom_source, (
 assert 'qcom_log(qcom->gpu, PL_LOG_INFO,\n             "MPVFLOW_DIAGNOSTIC event=qcom_block_match_image state=created' in qcom_source, (
     "QCOM image-sharing diagnostics must be visible at Flow verbosity and occur only during image creation"
 )
-assert 'VO_PATCH = VENDOR / "mpvflow-vo-gpu-next.patch"' in prepare_source, (
-    "MPV source preparation must keep the custom VO patch path explicit"
-)
-assert '"--input", str(VO_PATCH)' in prepare_source, (
-    "MPV source preparation must never derive its patch input from the positional native-source list"
-)
-assert '"--input", str(required[2])' not in prepare_source, (
-    "adding OpenCL sources must not silently redirect the mpv patch command"
-)
-assert 'AIMAGE_VULKAN_PATCH = VENDOR / "mpvflow-aimagereader-vulkan.patch"' in prepare_source
-assert '"--input", str(AIMAGE_VULKAN_PATCH)' in prepare_source
-assert 'gpu_video_path = mpv_dir / "video/out/gpu/video.c"' in prepare_source
-assert 'retry_marker = "if (map_result == RA_HWDEC_MAP_RETRY) {"' in prepare_source
-assert '"unref_current_image(p);" not in retry_branch' in prepare_source
-assert '"return false;" not in retry_branch' in prepare_source
-assert 'retry_start >= fatal_index' in prepare_source
-assert "Pinned MPV video.c is missing the non-fatal AImageReader retry guard" in prepare_source
+assert 'FONGMI_PATCH = VENDOR / "fongmi/mpv-fongmi-android.patch"' not in prepare_source
+assert '"--input", str(FONGMI_PATCH)' not in prepare_source
+assert '"mpvflow-vo-gpu-next.patch"' in prepare_source
+assert '"mpvflow-aimagereader-vulkan.patch"' in prepare_source
+assert '"video/out/gpu_next/motion.c"' in prepare_source
+assert '"motion-interpolation", OPT_INT(motion_fps)' in prepare_source
+assert '"video/out/hwdec/hwdec_aimagereader_vk_direct.c"' in prepare_source
+assert '"motion-interpolation-info", mp_property_motion_info' in prepare_source
+assert 'mp.get_property_native("motion-interpolation-info")' in prepare_source
+assert "validate_fongmi_frame_priv_members(vo)" in prepare_source
+assert '"bool retry = result == RA_HWDEC_MAP_RETRY;"' in prepare_source
+assert '"fp->source->failed = ret != RA_HWDEC_MAP_RETRY;"' in prepare_source
+assert "Pinned FongMi VO is missing the transient hwdec-map retry/ownership contract" in prepare_source
 assert "vulkan_context = enable_mailbox_suboptimal_tolerance(vulkan_context)" in prepare_source, (
     "the measured mailbox suboptimal fix must be applied by the pinned MPV preparation pipeline"
 )
-assert prepare_source.count('"mpvflow_opencl_validation.h"') == 2, (
-    "MPV native preparation must validate and copy the OpenCL synthesis validation header"
-)
-for marker in (
-    'VENDOR / "mpvflow_vulkan_optical.c"',
-    'VENDOR / "mpvflow_vulkan_optical.h"',
-    'VENDOR / "mpvflow_vulkan_qcom.c"',
-    'VENDOR / "mpvflow_vulkan_qcom.h"',
-    'VENDOR / "mpvflow_qcom_seed.comp"',
-    'VENDOR / "mpvflow_qcom_seed_spv.h"',
-    '"mpvflow_vulkan_optical.c"',
-    '"mpvflow_vulkan_optical.h"',
-    '"mpvflow_vulkan_qcom.c"',
-    '"mpvflow_vulkan_qcom.h"',
-    '"mpvflow_qcom_seed.comp"',
-    '"mpvflow_qcom_seed_spv.h"',
-    '"video/out/mpvflow_vulkan_optical.c"',
-    '"video/out/mpvflow_vulkan_qcom.c"',
-    'placebo_formats_path = libplacebo_dir / "src/vulkan/formats.c"',
-    "enable_nv_optical_flow_sampleability",
-):
-    assert marker in prepare_source, f"MPV native preparation must include optional optical integration: {marker!r}"
-assert VULKAN_MAPPER_PATCH.is_file(), "the pinned MPV mapper compatibility patch must be vendored"
-for source in (
-    "hwdec_aimagereader.c",
-    "hwdec_aimagereader_vk.c",
-    "hwdec_aimagereader_vk_convert.c",
-    "hwdec_aimagereader_vk.h",
-    "hwdec_aimagereader_vk_private.h",
-):
-    assert (VULKAN_MAPPER_DIR / source).is_file(), f"missing AImageReader/Vulkan source {source}"
-assert not (VULKAN_MAPPER_DIR / "hwdec_aimagereader_vk_direct.c").exists(), (
-    "the pinned upstream libplacebo build must not include its unsupported direct-YCbCr wrapper"
-)
+assert "mpvflow_gpu.c" in prepare_source, "MPVFlow renderer source must be staged into the runtime"
+assert "FONGMI_PATCH" not in prepare_source, "MPV runtime must compile the pinned FongMi source directly"
+assert "mpvflow_gpu.c" in prepare_source, "MPVFlow renderer source must be staged into the runtime"
 prepare_call = 'python3 "$ROOT/scripts/prepare-mpvflow.py" --mpv-dir "$BUILDSCRIPTS/deps/mpv" --libplacebo-dir "$BUILDSCRIPTS/deps/libplacebo"'
 assert prepare_call in build, "the native build must patch pinned libplacebo before compilation"
 native_cmake = (ROOT / "app/src/main/cpp/CMakeLists.txt").read_text(encoding="utf-8")
@@ -810,39 +877,6 @@ for marker in (
     assert marker in optical_adapter, f"Android-safe Vulkan promoted-function dispatch is missing {marker!r}"
 assert "vkGetPhysicalDeviceProperties2(optical->vk->phys_device" not in optical_adapter
 assert "vkGetPhysicalDeviceImageFormatProperties2(" not in optical_adapter
-vo_patch = VO_PATCH.read_text(encoding="utf-8")
-for marker in (
-    "event=swapchain_wait stage=pl_swapchain_start_frame",
-    "event=swapchain_wait stage=swap_buffers",
-    "metric=cpu_blocking_call_not_scanout",
-    "submit_call_avg_ms=%.3f",
-    "event=wsi_diagnostics_toggle engine=mpv",
-    "event=wsi_swapchain_created engine=mpv",
-    "pl_vulkan_swapchain_get_diagnostics",
-    "actual_images=%u",
-    "event=optical_flow_backend engine=mpv",
-    "optical_flow_reason",
-    '.diagnostic_engine = "mpv"',
-    "qcom2_adapter_ready=%d",
-    "qcom2_luma_pass_ready=%d",
-    "event=qcom_runtime",
-    "pair_attempts=%llu dispatches=%llu fallbacks=%llu",
-    "mpvflow_gpu_get_qcom_diagnostics",
-):
-    assert marker in vo_patch, f"MPV Flow must distinguish real blocking swapchain waits from submit time: missing {marker!r}"
-patch_parse = subprocess.run(
-    ["git", "apply", "--numstat", str(VO_PATCH)],
-    cwd=ROOT,
-    check=False,
-    capture_output=True,
-    text=True,
-)
-assert patch_parse.returncode == 0, (
-    f"MPV VO patch must be a valid unified diff:\n{patch_parse.stdout}{patch_parse.stderr}"
-)
-assert "+        target_fps >= 120 ? 448 : target_fps >= 96 ? 440 : 640;" in vo_patch, (
-    "the MPV renderer must preserve its 448-pixel 120-fps safety ceiling"
-)
 rate_limit_header = ROOT / "app/src/main/cpp/mpvflow/mpvflow_rate_limit.h"
 synthesis_scale_header = ROOT / "app/src/main/cpp/mpvflow/mpvflow_synthesis_scale.h"
 assert synthesis_scale_header.is_file(), "the aspect-preserving synthesis-size policy must be vendored"
@@ -850,70 +884,10 @@ assert rate_limit_header.is_file(), "the shared MPVFlow output limiter must be v
 visibility_shader_header = ROOT / "app/src/main/cpp/mpvflow/mpvflow_visibility_resolver_shader.h"
 assert visibility_shader_header.is_file(), "the validated visibility-resolver shader must be embedded for native builds"
 assert flow_visibility_header.is_file(), "the shared internal-symbol visibility header must be vendored"
-assert 'VENDOR / "mpvflow_rate_limit.h"' in prepare_source and \
-       'VENDOR / "mpvflow_visibility.h"' in prepare_source and \
-       '"mpvflow_visibility.h"' in prepare_source and \
-       'VENDOR / "mpvflow_visibility_resolver_shader.h"' in prepare_source and \
-       'shutil.copy2(VENDOR / "mpvflow_visibility_resolver_shader.h", video_out_dir / "mpvflow_visibility_resolver_shader.h")' in prepare_source and \
-       'shutil.copy2(VENDOR / "mpvflow_rate_limit.h", video_out_dir / "mpvflow_rate_limit.h")' in prepare_source and \
-       'VENDOR / "mpvflow_synthesis_scale.h"' in prepare_source and \
-       'shutil.copy2(VENDOR / "mpvflow_synthesis_scale.h", video_out_dir / "mpvflow_synthesis_scale.h")' in prepare_source, (
-    "native preparation must stage the limiter and synthesis-size headers into MPV's video/out tree"
-)
-rate_gate_offset = vo_patch.index("mpvflow_rate_limiter_ready(&p->flow_rate_limiter")
-rate_prepare_offset = vo_patch.index("flow_prepare_frame(vo, &mix, &flow_prepared, frame->still,")
-rate_acquire_offset = vo_patch.index(
-    "+        should_draw && pl_swapchain_start_frame(p->sw, &swframe);"
-)
-assert rate_gate_offset < rate_prepare_offset < rate_acquire_offset, (
-    "the synthesis-rate gate must precede Flow preparation while source-frame acquisition stays enabled"
-)
-rate_submit_guard = vo_patch.index("if (p->next_opts->mpvflow && submitted)")
-rate_commit_offset = vo_patch.index("mpvflow_rate_limiter_commit(&p->flow_rate_limiter")
-assert rate_submit_guard < rate_commit_offset, "the rate interval may only be committed after successful swap submission"
-assert "flow_pending_rate_limiter_timestamp_ns =" in vo_patch
-assert "mpvflow_rate_limiter_timestamp_ns(frame->pts," in vo_patch
-assert "mpvflow_rate_limiter_timestamp_ns(&p->flow_rate_limiter, frame->pts," not in vo_patch
-assert "(uint64_t) flow_render_start_ns);" in vo_patch
-assert "p->flow_pending_rate_limiter_timestamp_ns," in vo_patch
-assert "mpvflow_rate_limiter_commit(&p->flow_rate_limiter, (uint64_t) now_ns" not in vo_patch, (
-    "rate admission must commit the selected render-callback timestamp, not swap completion"
-)
-assert '"mpvflow-synthesis-max-dimension", OPT_INT(mpvflow_synthesis_max_dimension), M_RANGE(0, 7680)' in vo_patch
-assert "+        .mpvflow_synthesis_max_dimension = 1920," in vo_patch
-assert "mpvflow_synthesis_size_for(source_w, source_h" in vo_patch
-assert "p->flow_synthesis_max_dimension != requested_synthesis_max_dimension" in vo_patch
-assert "+        .w = synthesis_size.width," in vo_patch and "+        .h = synthesis_size.height," in vo_patch
-assert "synthesis_processing=%dx%d presentation_target=%dx%d video_params=%dx%d" in vo_patch
-assert "target->num_planes > 0 ? target->planes[0].texture : NULL" in vo_patch
-assert "target_texture->params.w" in vo_patch
-assert "target_texture->params.h" in vo_patch
-assert "source_copy_params.upscaler = &pl_filter_bilinear;" in vo_patch
-assert "source_copy_params.downscaler = &pl_filter_bilinear;" in vo_patch
-assert vo_patch.count(".pixel_aspect_ratio = frame->pixel_aspect_ratio,") == 2
-assert "flow_render_source_frame(vo, mix->frames[prepared->nearest]" in vo_patch
-assert "return pl_render_image(p->rr, source, target, params);" in vo_patch
-assert "fp->flow_synthesis_w < fp->flow_source_w" in vo_patch
-assert 'strcmp(bypass_reason, "paused")' in vo_patch and 'strcmp(bypass_reason, "still_frame")' in vo_patch
-flow_prepare_body = vo_patch.split("+static bool flow_prepare_input", 1)[1].split(
-    "\n+static void flow_release_frame", 1
-)[0]
-crop_call = "+    apply_source_crop(&source_frame, p->src, vo->params->w, vo->params->h, fp);"
-assert crop_call in flow_prepare_body, "MPVFlow must crop the decoder image before motion analysis"
-assert flow_prepare_body.index(crop_call) < flow_prepare_body.index("pl_render_image("), (
-    "the mapped AImage crop must be applied before copying source pixels into Flow textures"
-)
-flow_synthesis_body = vo_patch.split("+static void flow_prepare_frame", 1)[1].split(
-    "\n+static bool flow_render_frame", 1
-)[0]
-paused_still_guard = "+    if (p->paused || source_is_still) {"
-assert paused_still_guard in flow_synthesis_body, "paused and still frames must bypass MPVFlow analysis"
-assert flow_synthesis_body.index(paused_still_guard) < flow_synthesis_body.index("mpvflow_gpu_analyze_pair(")
-assert flow_synthesis_body.index(paused_still_guard) < flow_synthesis_body.index("mpvflow_gpu_synthesize_with_policy(")
-assert "flow_prepare_frame(vo, &mix, &flow_prepared, frame->still," in vo_patch
-assert '+        const char *queue_state = p->paused ? "paused" :' in vo_patch, (
-    "the paused state must not be hidden by empty-batch or still-frame diagnostics"
-)
+assert "mpvflow_rate_limiter_ready" in (ROOT / "app/src/main/cpp/mpvflow/mpvflow_rate_limit.h").read_text(encoding="utf-8")
+assert "FONGMI_PATCH" not in prepare_source
+assert "motion-interpolation" in MPV_VIEW.read_text(encoding="utf-8")
+assert "motion-interpolation" in (ROOT / "app/src/main/java/app/infinity/mpvz/preferences/MpvConfigOverride.kt").read_text(encoding="utf-8")
 
 playback_session_source = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/PlaybackSession.kt").read_text(
     encoding="utf-8"
@@ -992,11 +966,11 @@ version_guard = build.split(version_guard_start, 1)[1].split("\nPY\n", 1)[0]
 with tempfile.TemporaryDirectory(prefix="mpvflow-placebo-version-test-") as temporary:
     dependencies_file = Path(temporary) / "intro-dependencies.json"
     dependencies_file.write_text(
-        json.dumps([{"name": "libplacebo", "version": "7.374.0"}]),
+        json.dumps([{"name": "libplacebo", "version": "7.387.0"}]),
         encoding="utf-8",
     )
     matching = subprocess.run(
-        [sys.executable, "-", str(dependencies_file), "7.374.0"],
+        [sys.executable, "-", str(dependencies_file), "7.387.0"],
         input=version_guard,
         check=False,
         capture_output=True,
@@ -1013,7 +987,7 @@ with tempfile.TemporaryDirectory(prefix="mpvflow-placebo-version-test-") as temp
     assert mismatching.returncode != 0, "a real MPV/libplacebo Meson version mismatch must fail closed"
     dependencies_file.write_text("[]\n", encoding="utf-8")
     missing = subprocess.run(
-        [sys.executable, "-", str(dependencies_file), "7.374.0"],
+        [sys.executable, "-", str(dependencies_file), "7.387.0"],
         input=version_guard,
         check=False,
         capture_output=True,
@@ -1055,7 +1029,7 @@ init_options = view_source.split("override fun initOptions()", 1)[1].split(
     "override fun observeProperties()", 1
 )[0]
 timing_candidate = init_options.split("val mpvFlowFrameInterpolationCandidate =", 1)[1].split(
-    "val flowInterpolationRc", 1
+    "val flowVideoSyncRc", 1
 )[0]
 assert "!frameInterpolationConfigOwned" in timing_candidate, (
     "MPV Flow timing must not override interpolation or sync options owned by mpv.conf"
@@ -1076,22 +1050,24 @@ assert "PlaybackSession.isInitialized" in surface_hint and "PlaybackSession.surf
 )
 for marker in (
     'PlaybackSession.setOptionString("display-fps-override", displayRefreshRate.hz.toString())',
-    'PlaybackSession.setOptionString("interpolation", "yes")',
     'PlaybackSession.setOptionString("video-sync", "display-resample")',
     "displayRefreshRate != null",
     "flowDisplayFpsOverrideRc == 0",
+    "displayRefreshRate == null || flowDisplayFpsOverrideRc == 0",
     "snapshotDisplayRefreshRateOnMain()",
     "else cachedDisplayRefreshRate",
-    "val mpvFlowFrameInterpolationEnabled =",
+    "var mpvFlowFrameInterpolationEnabled =",
     "mpvFlowFrameInterpolationCandidate && flowTimingOptionsReady",
-    'PlaybackSession.setOptionString("interpolation", "no")',
+    'PlaybackSession.setOptionString("motion-interpolation", targetFps.toString())',
     'PlaybackSession.setOptionString("video-sync", "audio")',
     "fallback=source_passthrough",
 ):
-    assert marker in init_options, f"MPV Flow must establish and safely gate its display cadence: missing {marker!r}"
-assert init_options.index('PlaybackSession.setOptionString("interpolation", "yes")') < init_options.index(
-    'PlaybackSession.setOptionString("mpvflow",'
-), "the GPU frame mixer must be configured before enabling Flow synthesis"
+    assert marker in init_options, f"FongMi MPV must establish and safely gate its display cadence: missing {marker!r}"
+assert init_options.index('PlaybackSession.setOptionString("video-sync", "display-resample")') < init_options.index(
+    'PlaybackSession.setOptionString("motion-interpolation", targetFps.toString())'
+), "display sync must be configured before enabling FongMi motion"
+assert 'PlaybackSession.setOptionString(\n        "interpolation"' not in init_options, "FongMi must not enable mpv's separate interpolation mixer"
+assert "val targetFps = if (mpvFlowFrameInterpolationEnabled) mpvFlowTargetFps else 0" in init_options
 renderer_option_order = (
     'PlaybackSession.setOptionString("gpu-api", backend.gpuApi)',
     'PlaybackSession.setOptionString("gpu-context", backend.gpuContext)',
@@ -1124,7 +1100,7 @@ flow_selector = view_source.split("val flowRequiresVulkan =", 1)[1].split(
     "val gpuNextEnabled =", 1
 )[0]
 for marker in (
-    "BuildConfig.MPV_HAS_MPVFLOW",
+    "BuildConfig.MPV_HAS_FONGMI_MEMC",
     "BuildConfig.MPV_SUPPORTS_VULKAN",
     "!MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.FRAME_INTERPOLATION)",
     "PlaybackEngineMode.NATIVE",
@@ -1193,6 +1169,14 @@ bridge_header = (ROOT / "app/src/main/cpp/mpvflow/mpvflow_opencl_vk_bridge.h").r
 media3_jni_source = (ROOT / "app/src/main/cpp/media3flow_vulkan_jni.cpp").read_text(encoding="utf-8")
 assert 'config.diagnostic_engine = "media3";' in media3_jni_source
 assert "qcom2_adapter_ready=%d qcom2_luma_pass_ready=%d" in media3_jni_source
+native_synthesis = media3_jni_source.split(
+    "Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeSynthesize(", 1
+)[1].split("Java_app_infinity_mpvz_ui_player_Media3FlowVulkanNative_nativeReleasePair(", 1)[0]
+assert "const bool outputOwned = context->images.find(output) != context->images.end();" in native_synthesis
+assert "if (!source0Owned || !source1Owned || !outputOwned" in native_synthesis
+assert "context->pairs.find(pair) == context->pairs.end()" in native_synthesis, (
+    "Native Media3 must retain the 8852 baseline's registered-pair validation"
+)
 cmake_source = (ROOT / "app/src/main/cpp/CMakeLists.txt").read_text(encoding="utf-8")
 manifest_source = (ROOT / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
 for marker in (
@@ -1434,19 +1418,7 @@ assert "} else {\n                        *owned[i] = NULL;\n                   
        "\n                *owned[i] = NULL;\n" not in pair_cleanup, (
     "failed OpenCL buffer destruction must retain its handle so runtime fallback cannot mistake live interop resources for cleaned resources"
 )
-failed_synthesis_context = vo_patch.split(
-    'bypass_reason = output ? "synthesis_failed" : "synthesis_output_missing";', 1
-)[1].splitlines()[:5]
-assert any("flow_release_pair(p);" in line for line in failed_synthesis_context), (
-    "a failed synthesis may tear down pair-owned resources; the MPV frame-ID cache must not reuse that pair"
-)
-for marker in (
-    "flow_init_retry_count < 2",
-    '"opencl_initialization"',
-    "flow_init_retry_after_ns",
-    "retry_scheduled=%d",
-):
-    assert marker in vo_patch, f"explicit OpenCL initialization should use a bounded retry: missing {marker!r}"
+assert "mp_motion_" not in media3_jni_source, "Native Media3 must not initialize, call, or destroy the MPV-only FongMi core"
 media3_sink_source = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowVideoSink.kt").read_text(
     encoding="utf-8"
 )
@@ -1654,6 +1626,7 @@ with tempfile.TemporaryDirectory(prefix="mpvflow-builder-patch-test-") as tempor
     )
     depinfo.write_text(
         "v_libxml2=2.15.2\n"
+        "v_lua=5.2.4\n"
         "dep_libplacebo=()\n"
         "dep_mpv=(ffmpeg libass lua libplacebo qairt)\n"
         "v_ci_ffmpeg=n8.0.1\n"
@@ -1661,7 +1634,20 @@ with tempfile.TemporaryDirectory(prefix="mpvflow-builder-patch-test-") as tempor
         encoding="utf-8",
     )
     downloads.write_text(
-        "[ ! -d libplacebo ] && git clone --recursive https://github.com/haasn/libplacebo\n# mpv\n",
+        "[ ! -d libplacebo ] && git clone --recursive https://github.com/haasn/libplacebo\n"
+        "# ffmpeg\n"
+        "if [ ! -d ffmpeg ]; then\n"
+        "\targs=()\n"
+        '\t[ $IN_CI -eq 1 ] && args+=(--depth=1 -b "$v_ci_ffmpeg")\n'
+        '\tgit clone https://github.com/FFmpeg/FFmpeg ffmpeg "${args[@]}"\n'
+        "fi\n"
+        "# lua\n"
+        "if [ ! -d lua ]; then\n"
+        "\tmkdir lua\n"
+        "\t$WGET https://www.lua.org/ftp/lua-$v_lua.tar.gz -O - | \\\n"
+        "\t\ttar -xz -C lua --strip-components=1\n"
+        "fi\n"
+        "# mpv\n",
         encoding="utf-8",
     )
     libplacebo.write_text(
@@ -1689,11 +1675,15 @@ with tempfile.TemporaryDirectory(prefix="mpvflow-builder-patch-test-") as tempor
         encoding="utf-8",
     )
     ffmpeg.write_text(
-        "--disable-static --enable-shared --enable-{gpl,version3}\n",
+        "#!/bin/bash -e\n"
+        "args=(\n"
+        "\t--disable-static --enable-shared --enable-{gpl,version3}\n"
+        ")\n"
+        '../configure "${args[@]}"\n',
         encoding="utf-8",
     )
     result = subprocess.run(
-        [sys.executable, "-", str(ci), str(depinfo), str(downloads), str(libplacebo), str(android_mk), str(mpv), str(ffmpeg), str(libbluray_script)],
+        [sys.executable, "-", str(ci), str(depinfo), str(downloads), str(libplacebo), str(android_mk), str(mpv), str(ffmpeg), str(libbluray_script), FFMPEG_SHA, FFMPEG_REPOSITORY],
         input=builder_patcher,
         check=False,
         capture_output=True,
@@ -1701,14 +1691,23 @@ with tempfile.TemporaryDirectory(prefix="mpvflow-builder-patch-test-") as tempor
     )
     assert result.returncode == 0, f"builder patcher fixture failed:\n{result.stdout}{result.stderr}"
     patched_downloads = downloads.read_text(encoding="utf-8")
-    assert "0d043c7f6f79cd3687c023454bdacbe615e4d96f" in patched_downloads, "libplacebo pin was lost"
+    assert "https://github.com/FongMi/libplacebo.git" in patched_downloads, "FongMi libplacebo source was lost"
+    assert "b89c10e1bdd5d7742ca576ebad94a906ddca91e8" in patched_downloads, "FongMi libplacebo pin was lost"
+    assert FFMPEG_REPOSITORY in patched_downloads, "FongMi FFmpeg source repository was lost"
+    assert f"git -C ffmpeg fetch --depth=1 origin {FFMPEG_SHA}" in patched_downloads, "FongMi FFmpeg commit pin was lost"
+    assert f'ffmpeg_actual" != "{FFMPEG_SHA}"' in patched_downloads, "FFmpeg checkout must be verified against the exact commit"
     assert "git -C glslang fetch --depth 1 origin 1062752a891c95b2bfeed9e356562d88f9df84ac" in patched_downloads
+    assert "lua_sha256=b9e2e4aad6789b3b63a056d442f7b39f0ecfca3ae0f1fc0ae4e9614401b69f4b" in patched_downloads
+    assert "https://ftp2.osuosl.org/pub/blfs/conglomeration/lua/lua-$v_lua.tar.gz" in patched_downloads
+    subprocess.run(["bash", "-n", str(downloads)], check=True)
     patched_ci = ci.read_text(encoding="utf-8")
     early_prepare = 'python3 "$MPVFLOW_ROOT/scripts/prepare-mpvflow.py" --mpv-dir deps/mpv --libplacebo-dir deps/libplacebo'
+    headers_prepare = 'python3 "$MPVFLOW_ROOT/scripts/prepare-mpvflow-vulkan-headers.py" "$PWD"'
     assert early_prepare in patched_ci, "Flow preparation must be injected after source download"
-    assert patched_ci.index(early_prepare) < patched_ci.index('msg "Compiling"') < patched_ci.index(
+    assert headers_prepare in patched_ci, "Khronos Vulkan-Headers must be staged after source download"
+    assert patched_ci.index(early_prepare) < patched_ci.index(headers_prepare) < patched_ci.index('msg "Compiling"') < patched_ci.index(
         "./buildall.sh --arch arm64 --only-deps mpv"
-    ), "Flow Vulkan/glslang source fixes must run before the dependency prefix builds libplacebo"
+    ), "Flow source fixes and newer Khronos headers must run before the dependency prefix builds libplacebo"
     patched_placebo = libplacebo.read_text(encoding="utf-8")
     assert "-Dglslang=enabled" in patched_placebo and "-Dvulkan=enabled" in patched_placebo
     assert "cmake --install" in patched_placebo and "libSPIRV.a" in patched_placebo
@@ -1742,68 +1741,58 @@ with tempfile.TemporaryDirectory(prefix="mpvflow-builder-patch-test-") as tempor
     assert "dep_mpv=(ffmpeg libass lua libplacebo libbluray)" in patched_depinfo
     assert "v_libbluray=1.4.1" in patched_depinfo and "dep_libbluray=()" in patched_depinfo
     assert "-libbluray-${v_libbluray}-fontconfig-" in patched_depinfo, "dependency cache key must include libbluray"
+    assert f"v_ci_ffmpeg={FFMPEG_SHA}" in patched_depinfo, "dependency-prefix identity must include the immutable FFmpeg source commit"
     patched_libbluray = libbluray_script.read_text(encoding="utf-8")
     assert libbluray_script.stat().st_mode & 0o111, "generated libbluray build script must be executable"
     for marker in ("-Dembed_udfread=false", "-Ddefault_library=static", "-Dlibxml2=enabled", "-ludfread"):
         assert marker in patched_libbluray, f"LGPL Blu-ray build is missing {marker!r}"
     patched_ffmpeg = ffmpeg.read_text(encoding="utf-8")
-    assert "--disable-gpl --enable-version3" in patched_ffmpeg, (
-        "FFmpeg must stay GPL-free while using LGPLv3 for Apache-2.0 mbedTLS"
+    assert "--disable-gpl --disable-nonfree --enable-version3" in patched_ffmpeg, (
+        "FFmpeg must stay GPL/nonfree-free while using LGPLv3 for Apache-2.0 mbedTLS"
     )
-    assert "--enable-gpl" not in patched_ffmpeg and "--disable-version3" not in patched_ffmpeg, (
-        "FFmpeg's GPL flags or incompatible LGPLv2.1 mode were not removed"
+    assert "--enable-gpl" not in patched_ffmpeg and "--enable-nonfree" not in patched_ffmpeg and "--disable-version3" not in patched_ffmpeg, (
+        "FFmpeg's GPL/nonfree flags or incompatible LGPLv2.1 mode were not removed"
     )
+    assert f"--extra-version=mpvflow-fongmi-{FFMPEG_SHA}" in patched_ffmpeg, (
+        "FFmpeg must embed a version marker bound to the exact pinned FongMi source commit"
+    )
+    subprocess.run(["bash", "-n", str(ffmpeg)], check=True)
     assert "--arch arm64" in ci.read_text(encoding="utf-8"), "native build must remain arm64-only"
 
-ahb_patch = VULKAN_MAPPER_PATCH.read_text(encoding="utf-8")
-assert "@@ -648,5 +648,9 @@ struct frame_priv {" in ahb_patch, (
-    "Android mapper members must use struct context, not a fragile line-only insertion"
-)
-assert "struct frame_priv {\n     struct vo *vo;\n+    bool hwdec_preloaded;" in ahb_patch
-assert "@@ -645,0 +646,3 @@ struct frame_priv {" not in ahb_patch
-
 frame_priv_fixture = """\
-static void unrelated(void) {
-    bool hwdec_preloaded;
-}
 struct frame_priv {
-    struct vo *vo;
-    bool hwdec_preloaded;
-    bool el_hwdec_preloaded;
+    struct source_frame *source;
+    bool motion_capture;
+    pl_tex motion_texture;
+    struct mp_motion_frame motion_frame;
     bool mapped_coordinates;
     struct mp_image_params mapped_params;
 };
 """
-prepare.validate_hwdec_frame_priv_members(frame_priv_fixture)
+prepare.validate_fongmi_frame_priv_members(frame_priv_fixture)
 misplaced_frame_priv_fixture = """\
 static void unrelated(void) {
-    bool hwdec_preloaded;
-    bool el_hwdec_preloaded;
-    bool mapped_coordinates;
-    struct mp_image_params mapped_params;
+    struct source_frame *source;
+    bool motion_capture;
+    pl_tex motion_texture;
+    struct mp_motion_frame motion_frame;
 }
 struct frame_priv {
-    struct vo *vo;
+    bool mapped_coordinates;
+    struct mp_image_params mapped_params;
 };
 """
 try:
-    prepare.validate_hwdec_frame_priv_members(misplaced_frame_priv_fixture)
+    prepare.validate_fongmi_frame_priv_members(misplaced_frame_priv_fixture)
 except SystemExit:
     pass
 else:
-    raise AssertionError("mapper members outside frame_priv must fail native preparation")
+    raise AssertionError("FongMi frame ownership fields outside frame_priv must fail native preparation")
 
-flow_vo_patch = flow_vo_patch_source
-assert "flow_prepare_frame(vo, &mix, &flow_prepared, frame->still," in flow_vo_patch
-assert "if (!allow_synthesis)" in flow_vo_patch
-assert "should_draw && pl_swapchain_start_frame(p->sw, &swframe)" in flow_vo_patch
-assert "should_draw && !flow_synthesis_rate_limited && pl_swapchain_start_frame" not in flow_vo_patch
-assert "flow_pending_rate_limiter_eligible && p->flow_pending_synthesized" in flow_vo_patch
-assert "high_precision_rgba16f_synthesis_unavailable" in flow_vo_patch
-assert "analysis=bt709_bt1886_tonemapped" in flow_vo_patch
-assert "frame->repr.bits.color_depth > 8" in flow_vo_patch
-assert "source_color.transfer = PL_COLOR_TRC_LINEAR" in flow_vo_patch
-assert "flow_color.transfer = PL_COLOR_TRC_LINEAR" in flow_vo_patch
+assert "static void scaled_source_pair(" in fongmi_test
+assert "assert(mp_motion_render_sources_to(" in fongmi_test
+assert "assert(error < 0.025);" in fongmi_test, "the scaled full-resolution result must pass the pixel-error threshold"
+assert "source_size" in fongmi_motion and "motion_size" in fongmi_motion
 
 rate_limit_test = r"""
 #include <assert.h>

@@ -110,7 +110,7 @@ object DecoderPreferencesScreen : Screen {
     val isDeviceVulkanSupported = remember { VulkanCapabilities.isDeviceSupported(context) }
     val isVulkanSupported = BuildConfig.MPV_SUPPORTS_VULKAN && isDeviceVulkanSupported
     val mpvFlowAvailable =
-      BuildConfig.MPV_HAS_MPVFLOW &&
+      BuildConfig.MPV_HAS_FONGMI_MEMC &&
         isVulkanSupported &&
         !frameInterpolationConfigOwned &&
         !rendererBackendConfigOwned &&

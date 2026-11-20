@@ -1,0 +1,89 @@
+--- a/src/libbluray/bdnav/navigation.h
++++ b/src/libbluray/bdnav/navigation.h
+@@ -139,6 +139,7 @@
+     NAV_TITLE_INFO  *title_info;
+ 
+     unsigned int     main_title_idx;
++    uint8_t          has_interactive_graphics;
+ };
+ 
+ /* title list */
+--- a/src/libbluray/bdnav/navigation.c
++++ b/src/libbluray/bdnav/navigation.c
+@@ -442,6 +442,13 @@
+         }
+         pl = mpls_get(disc, ent.d_name);
+         if (pl != NULL) {
++            /* Menus can live in playlists removed by the title filters. */
++            for (unsigned jj = 0; jj < pl->list_count &&
++                                  !title_list->has_interactive_graphics; jj++) {
++                if (pl->play_item[jj].stn.num_ig) {
++                    title_list->has_interactive_graphics = 1;
++                }
++            }
+             if ((flags & TITLES_FILTER_DUP_TITLE) &&
+                 !_filter_dup(pl_list, ii, pl)) {
+                 mpls_free(&pl);
+--- a/src/libbluray/bluray.c
++++ b/src/libbluray/bluray.c
+@@ -2816,10 +2816,15 @@
+  * title lists
+  */
+ 
+-uint32_t bd_get_titles(BLURAY *bd, uint8_t flags, uint32_t min_title_length)
++uint32_t bd_get_titles_with_menu_info(BLURAY *bd, uint8_t flags, uint32_t min_title_length,
++                                      int *has_interactive_graphics)
+ {
+     NAV_TITLE_LIST *title_list;
+     uint32_t count;
++
++    if (has_interactive_graphics) {
++        *has_interactive_graphics = 0;
++    }
+ 
+     if (!bd) {
+         return 0;
+@@ -2838,10 +2843,18 @@
+ 
+     disc_event(bd->disc, DISC_EVENT_START, bd->disc_info.num_titles);
+     count = bd->title_list->count;
++    if (has_interactive_graphics) {
++        *has_interactive_graphics = title_list->has_interactive_graphics;
++    }
+ 
+     bd_mutex_unlock(&bd->mutex);
+ 
+     return count;
++}
++
++uint32_t bd_get_titles(BLURAY *bd, uint8_t flags, uint32_t min_title_length)
++{
++    return bd_get_titles_with_menu_info(bd, flags, min_title_length, NULL);
+ }
+ 
+ int bd_get_main_title(BLURAY *bd)
+--- a/src/libbluray/bluray.h
++++ b/src/libbluray/bluray.h
+@@ -459,6 +459,22 @@
+  * @return number of titles found
+  */
+ BD_PUBLIC uint32_t bd_get_titles(BLURAY *bd, uint8_t flags, uint32_t min_title_length);
++
++/**
++ *  Build the title list and report interactive graphics in any playlist.
++ *
++ *  Like bd_get_titles(), but reports graphics before applying title filters.
++ *  No additional playlist or clip information reads are required.
++ *  This does not report BD-J menu support or whether navigation is supported.
++ *
++ * @param bd  libbluray instance
++ * @param flags  title filter flags
++ * @param min_title_length  minimum title length in seconds
++ * @param has_interactive_graphics  optional output, set to 0 on failure
++ * @return number of titles in the filtered list
++ */
++BD_PUBLIC uint32_t bd_get_titles_with_menu_info(BLURAY *bd, uint8_t flags, uint32_t min_title_length,
++                                               int *has_interactive_graphics);
+ 
+ /**
+  *

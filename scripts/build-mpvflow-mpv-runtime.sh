@@ -5,9 +5,22 @@ ROOT="${GITHUB_WORKSPACE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 MPV_BUILDER_DIR="${MPV_BUILDER_DIR:-$ROOT/native-builder}"
 MPV_SOURCE_DIR="${MPV_SOURCE_DIR:-$ROOT/mpv-source}"
 BUILDSCRIPTS="$MPV_BUILDER_DIR/buildscripts"
+EXPECTED_BUILDER_REVISION="1efc82739f6f7034cd63e7ee8b3ec5431df27467"
+EXPECTED_MPV_REVISION="14b3999a1a3e322c217bc90ee4df5a8f1bc88f69"
+EXPECTED_FFMPEG_REVISION="f2c5162b7c4b3e8835de270ff78cecc524decad1"
+EXPECTED_FFMPEG_REPOSITORY="https://github.com/FongMi/FFmpeg.git"
 
 [[ -d "$BUILDSCRIPTS" ]] || { echo "Missing pinned Android MPV build tools: $BUILDSCRIPTS" >&2; exit 1; }
-[[ -d "$MPV_SOURCE_DIR/.git" ]] || { echo "Missing pinned MPV checkout: $MPV_SOURCE_DIR" >&2; exit 1; }
+actual_builder_revision="$(git -C "$MPV_BUILDER_DIR" rev-parse HEAD 2>/dev/null || true)"
+[[ "$actual_builder_revision" == "$EXPECTED_BUILDER_REVISION" ]] || {
+  echo "Unexpected Android MPV builder revision: expected $EXPECTED_BUILDER_REVISION, got ${actual_builder_revision:-not-a-git-checkout}" >&2
+  exit 1
+}
+actual_mpv_revision="$(git -C "$MPV_SOURCE_DIR" rev-parse HEAD 2>/dev/null || true)"
+[[ "$actual_mpv_revision" == "$EXPECTED_MPV_REVISION" ]] || {
+  echo "Unexpected MPV source revision: expected FongMi $EXPECTED_MPV_REVISION, got ${actual_mpv_revision:-not-a-git-checkout}" >&2
+  exit 1
+}
 [[ -n "${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}" ]] || { echo "ANDROID_HOME/ANDROID_SDK_ROOT is required" >&2; exit 1; }
 export ANDROID_HOME="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
 export ANDROID_SDK_ROOT="$ANDROID_HOME"
@@ -27,11 +40,14 @@ python3 - \
   "$MPV_BUILDER_DIR/app/src/main/jni/Android.mk" \
   "$BUILDSCRIPTS/scripts/mpv.sh" \
   "$BUILDSCRIPTS/scripts/ffmpeg.sh" \
-  "$BUILDSCRIPTS/scripts/libbluray.sh" <<'PY'
+  "$BUILDSCRIPTS/scripts/libbluray.sh" \
+  "$EXPECTED_FFMPEG_REVISION" \
+  "$EXPECTED_FFMPEG_REPOSITORY" <<'PY'
 from pathlib import Path
 import sys
 
-ci_path, depinfo_path, download_path, libplacebo_path, android_mk_path, mpv_script_path, ffmpeg_script_path, libbluray_script_path = map(Path, sys.argv[1:])
+ci_path, depinfo_path, download_path, libplacebo_path, android_mk_path, mpv_script_path, ffmpeg_script_path, libbluray_script_path = map(Path, sys.argv[1:9])
+ffmpeg_revision, ffmpeg_repository = sys.argv[9:11]
 lines = ci_path.read_text().splitlines()
 expected = [
     'msg "Fetching mpv"',
@@ -66,23 +82,56 @@ if ci.count(download_marker) != 1:
     raise SystemExit(f"Expected one dependency download step in {ci_path}; refusing unsafe patch")
 symver_patch = 'python3 "$GITHUB_WORKSPACE/scripts/patch-ffmpeg-symver.py" deps/ffmpeg/configure\n'
 flow_prepare = 'python3 "$MPVFLOW_ROOT/scripts/prepare-mpvflow.py" --mpv-dir deps/mpv --libplacebo-dir deps/libplacebo\n'
+vulkan_headers_prepare = 'python3 "$MPVFLOW_ROOT/scripts/prepare-mpvflow-vulkan-headers.py" "$PWD"\n'
 ci = ci.replace(download_marker, download_marker + symver_patch + flow_prepare, 1)
+if ci.count(flow_prepare) != 1:
+    raise SystemExit(f"Expected exactly one Flow preparation call in {ci_path}; refusing to stage mismatched Vulkan headers")
+ci = ci.replace(flow_prepare, flow_prepare + vulkan_headers_prepare, 1)
 ci_path.write_text(ci)
 print("Prepared the pinned Android MPV builder, FFmpeg probe, and MPVFlow sources before dependency compilation")
 
 download = download_path.read_text()
+ffmpeg_clone = (
+    "# ffmpeg\n"
+    "if [ ! -d ffmpeg ]; then\n"
+    "\targs=()\n"
+    '\t[ $IN_CI -eq 1 ] && args+=(--depth=1 -b "$v_ci_ffmpeg")\n'
+    '\tgit clone https://github.com/FFmpeg/FFmpeg ffmpeg "${args[@]}"\n'
+    "fi"
+)
+if download.count(ffmpeg_clone) != 1:
+    raise SystemExit(f"Expected one stock FFmpeg clone in {download_path}; refusing unpinned source")
+ffmpeg_fongmi_clone = (
+    "# ffmpeg\n"
+    "if [ ! -d ffmpeg ]; then\n"
+    "\tgit init ffmpeg\n"
+    f'\tgit -C ffmpeg remote add origin "{ffmpeg_repository}"\n'
+    f"\tgit -C ffmpeg fetch --depth=1 origin {ffmpeg_revision}\n"
+    "\tgit -C ffmpeg checkout --detach FETCH_HEAD\n"
+    "fi\n"
+    'ffmpeg_actual="$(git -C ffmpeg rev-parse HEAD)"\n'
+    'ffmpeg_origin="$(git -C ffmpeg remote get-url origin)"\n'
+    f'if [ "$ffmpeg_actual" != "{ffmpeg_revision}" ] || [ "$ffmpeg_origin" != "{ffmpeg_repository}" ]; then\n'
+    '\techo "Unexpected FFmpeg source: origin=$ffmpeg_origin revision=$ffmpeg_actual" >&2\n'
+    '\texit 1\n'
+    "fi"
+)
+download = download.replace(ffmpeg_clone, ffmpeg_fongmi_clone, 1)
+print(f"Pinned FongMi/FFmpeg {ffmpeg_revision} from {ffmpeg_repository}")
+
 libplacebo_clone = "[ ! -d libplacebo ] && git clone --recursive https://github.com/haasn/libplacebo"
 if download.count(libplacebo_clone) != 1:
     raise SystemExit(f"Expected one unpinned libplacebo clone in {download_path}")
-libplacebo_revision = "0d043c7f6f79cd3687c023454bdacbe615e4d96f"
+libplacebo_revision = "b89c10e1bdd5d7742ca576ebad94a906ddca91e8"
+libplacebo_fongmi_clone = "[ ! -d libplacebo ] && git clone --recursive https://github.com/FongMi/libplacebo.git"
 download = download.replace(
     libplacebo_clone,
-    libplacebo_clone + "\n" +
+    libplacebo_fongmi_clone + "\n" +
     f"git -C libplacebo checkout --detach {libplacebo_revision}\n" +
     "git -C libplacebo submodule update --init --recursive",
     1,
 )
-print(f"Pinned libplacebo {libplacebo_revision} to satisfy MPV and GPU Flow APIs")
+print(f"Pinned FongMi/libplacebo {libplacebo_revision} for native FongMi MEMC renderer APIs")
 
 glslang_revision = "1062752a891c95b2bfeed9e356562d88f9df84ac"
 glslang_insert_after = "git -C libplacebo submodule update --init --recursive\n"
@@ -98,19 +147,67 @@ glslang_download = (
     "git -C glslang submodule update --init --recursive --depth 1\n"
 )
 download = download.replace(glslang_insert_after, glslang_insert_after + glslang_download, 1)
+lua_source_original = (
+    "# lua\n"
+    "if [ ! -d lua ]; then\n"
+    "\tmkdir lua\n"
+    "\t$WGET https://www.lua.org/ftp/lua-$v_lua.tar.gz -O - | \\\n"
+    "\t\ttar -xz -C lua --strip-components=1\n"
+    "fi\n"
+)
+if download.count(lua_source_original) != 1:
+    raise SystemExit(f"Expected one pinned Lua source download block in {download_path}; refusing unverified fallback")
+lua_source_replacement = """# lua
+if [ ! -d lua ]; then
+	if [ "$v_lua" != "5.2.4" ]; then
+		echo "Unexpected Lua source version: $v_lua" >&2
+		exit 1
+	fi
+	lua_sha256=b9e2e4aad6789b3b63a056d442f7b39f0ecfca3ae0f1fc0ae4e9614401b69f4b
+	lua_archive=$(mktemp)
+	lua_primary_ok=0
+	if curl --fail --location --silent --show-error --retry 1 --retry-all-errors --connect-timeout 10 --max-time 45 "https://www.lua.org/ftp/lua-$v_lua.tar.gz" -o "$lua_archive"; then
+		if echo "$lua_sha256  $lua_archive" | sha256sum --check --status; then
+			lua_primary_ok=1
+		fi
+	fi
+	if [ "$lua_primary_ok" -ne 1 ]; then
+		echo "Official Lua source fetch failed or checksum mismatched; using verified OSUOSL mirror" >&2
+		rm -f "$lua_archive"
+		lua_archive=$(mktemp)
+		curl --fail --location --silent --show-error --retry 2 --retry-all-errors --connect-timeout 10 --max-time 60 "https://ftp2.osuosl.org/pub/blfs/conglomeration/lua/lua-$v_lua.tar.gz" -o "$lua_archive"
+	fi
+	echo "$lua_sha256  $lua_archive" | sha256sum --check -
+	mkdir lua
+	tar -xz -C lua --strip-components=1 -f "$lua_archive"
+	rm -f "$lua_archive"
+fi
+"""
+download = download.replace(lua_source_original, lua_source_replacement, 1)
 download_path.write_text(download)
 print(f"Pinned Android SPIR-V compiler glslang {glslang_revision}")
+print("Pinned Lua 5.2.4 with official-checksum verification and OSUOSL fallback")
 
 ffmpeg_script = ffmpeg_script_path.read_text()
 ffmpeg_gpl_switch = "--disable-static --enable-shared --enable-{gpl,version3}"
 if ffmpeg_script.count(ffmpeg_gpl_switch) != 1:
     raise SystemExit(f"Expected one FFmpeg GPL configure switch in {ffmpeg_script_path}")
+if "--extra-version=" in ffmpeg_script:
+    raise SystemExit(f"Unexpected pre-existing FFmpeg version suffix in {ffmpeg_script_path}")
+ffmpeg_version_suffix = f"mpvflow-fongmi-{ffmpeg_revision}"
+ffmpeg_script_replacement = (
+    "--disable-static --enable-shared --disable-gpl --disable-nonfree --enable-version3\n"
+    f"\t--extra-version={ffmpeg_version_suffix}"
+)
 ffmpeg_script_path.write_text(ffmpeg_script.replace(
     ffmpeg_gpl_switch,
-    "--disable-static --enable-shared --disable-gpl --enable-version3",
+    ffmpeg_script_replacement,
     1,
 ))
-print("Configured FFmpeg as LGPLv3-or-later with GPL disabled to retain Apache-2.0 mbedTLS")
+print(
+    "Configured FFmpeg as LGPLv3-or-later with GPL/nonfree disabled and embedded "
+    f"{ffmpeg_version_suffix}"
+)
 
 libplacebo_script = libplacebo_path.read_text()
 libplacebo_setup = "unset CC CXX\nmeson setup $build --cross-file \"$prefix_dir\"/crossfile.txt \\\n\t-Dvulkan=enabled -Ddemos=false\n"
@@ -199,7 +296,7 @@ if depinfo.count(placebo_dependency) != 1 or "dep_libbluray=" in depinfo:
 depinfo = depinfo.replace(placebo_dependency, placebo_dependency + "dep_libbluray=()\n", 1)
 if depinfo.count("v_ci_ffmpeg=n8.0.1") != 1:
     raise SystemExit(f"Expected the pinned FFmpeg 8.0.1 line in {depinfo_path}")
-depinfo = depinfo.replace("v_ci_ffmpeg=n8.0.1", "v_ci_ffmpeg=n9.0.2", 1)
+depinfo = depinfo.replace("v_ci_ffmpeg=n8.0.1", f"v_ci_ffmpeg={ffmpeg_revision}", 1)
 cache_marker = "-libxml2-${v_libxml2}-fontconfig-"
 if depinfo.count(cache_marker) != 1:
     raise SystemExit(f"Expected one dependency-cache key marker in {depinfo_path}")
@@ -208,7 +305,7 @@ depinfo_path.write_text(depinfo.replace(
     "-libxml2-${v_libxml2}-libbluray-${v_libbluray}-fontconfig-",
     1,
 ))
-print("Excluded unused QAIRT; pinned FFmpeg 9.0.2 and LGPL libbluray 1.4.1 for the arm64 AAR ABI")
+print(f"Excluded unused QAIRT; pinned FongMi FFmpeg {ffmpeg_revision} and LGPL libbluray 1.4.1 for the arm64 AAR ABI")
 
 libbluray_build_script = '''#!/bin/bash -e
 . ../../include/path.sh
@@ -256,6 +353,7 @@ mkdir -p "$BUILDSCRIPTS/deps" "$LIBBLURAY_SOURCE"
 curl -fsSL "https://downloads.videolan.org/pub/videolan/libbluray/$LIBBLURAY_VERSION/libbluray-$LIBBLURAY_VERSION.tar.xz" -o "$LIBBLURAY_ARCHIVE"
 echo "$LIBBLURAY_SHA256  $LIBBLURAY_ARCHIVE" | sha256sum -c -
 tar -xJf "$LIBBLURAY_ARCHIVE" -C "$LIBBLURAY_SOURCE" --strip-components=1
+"$ROOT/scripts/patches/mpvlibandroid-fongmi/patch-libbluray.sh" "$LIBBLURAY_SOURCE"
 rm -f "$LIBBLURAY_ARCHIVE"
 
 cd "$BUILDSCRIPTS"
@@ -302,7 +400,7 @@ if ! readelf -d "$MPV_LIBRARY" | grep -Eq 'Shared library: \[libplacebo\.so([.][
   echo "MPVFlow libmpv.so must dynamically use the shared libplacebo.so runtime" >&2
   exit 1
 fi
-if ! readelf -d "$MPV_LIBRARY" | grep -Fq 'Shared library: [libudfread.so]'; then
+if ! readelf -d "$MPV_LIBRARY" | grep -F 'Shared library: [libudfread.so]' >/dev/null; then
   echo "MPVFlow libmpv.so must retain its LGPL libudfread dependency through libbluray" >&2
   exit 1
 fi
@@ -310,7 +408,7 @@ if readelf -d "$MPV_LIBRARY" | grep -Eq 'Shared library: \[libbluray\.so([.][0-9
   echo "MPVFlow libmpv.so must statically link libbluray; the AAR does not bundle libbluray.so" >&2
   exit 1
 fi
-if ! strings -a "$MPV_LIBRARY" | grep -Fq 'libbluray'; then
+if ! strings -a "$MPV_LIBRARY" | grep -F 'libbluray' >/dev/null; then
   echo "MPVFlow libmpv.so is missing the required LGPL Blu-ray feature" >&2
   exit 1
 fi

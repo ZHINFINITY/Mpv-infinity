@@ -18,12 +18,12 @@ sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
 
 
-def patch_runtime_validation() -> None:
+def patch_runtime_validation(*, include_shader_api: bool = False) -> None:
     MODULE.assert_abi_library = lambda _path, _abi: None
     MODULE.assert_lgpl_runtime = lambda _abi, _entries, _temp: None
     MODULE.needed_libraries = lambda path: {"libudfread.so"} if path.name.endswith("libmpv.so") else set()
     MODULE.elf_version_tags = lambda _path: set()
-    MODULE.dynamic_defined_symbols = lambda _path: {
+    exports = {
         "pl_vulkan_default_params",
         "pl_vulkan_create",
         "pl_vulkan_destroy",
@@ -31,6 +31,9 @@ def patch_runtime_validation() -> None:
         "pl_vulkan_hold_ex",
         "pl_vulkan_release_ex",
     }
+    if include_shader_api:
+        exports.add("pl_shader_custom")
+    MODULE.dynamic_defined_symbols = lambda _path: set(exports)
 
 
 def runtime_verifier_command() -> None:
@@ -51,8 +54,13 @@ def runtime_verifier_command() -> None:
     run.assert_not_called()
 
 
-def overlay_case(*, omit_udfread: bool = False) -> None:
-    abi = "x86_64"
+def overlay_case(
+    *,
+    abi: str = "x86_64",
+    omit_udfread: bool = False,
+    omit_shader_api: bool = False,
+) -> None:
+    other_abi = "x86_64" if abi == "arm64-v8a" else "arm64-v8a"
     runtime_libs = sorted(MODULE.REQUIRED_LIBS)
     if omit_udfread:
         runtime_libs.remove("libudfread.so")
@@ -72,15 +80,15 @@ def overlay_case(*, omit_udfread: bool = False) -> None:
         with zipfile.ZipFile(mpv_aar, "w", compression=zipfile.ZIP_DEFLATED) as aar:
             aar.writestr("AndroidManifest.xml", b"fixture-manifest")
             aar.writestr(f"jni/{abi}/libplayer.so", player_blob)
-            aar.writestr("jni/arm64-v8a/libplayer.so", other_abi_player_blob)
+            aar.writestr(f"jni/{other_abi}/libplayer.so", other_abi_player_blob)
             # A stale RIFE binary must be pruned even when its ABI is not overlaid.
             aar.writestr(f"jni/{abi}/librife_vfi.so", b"old-rife-selected-abi")
-            aar.writestr("jni/arm64-v8a/librife_vfi.so", b"old-rife-other-abi")
+            aar.writestr(f"jni/{other_abi}/librife_vfi.so", b"old-rife-other-abi")
             for name in runtime_libs:
                 if name != missing_from_old_aar:
                     aar.writestr(f"jni/{abi}/{name}", f"old:{name}".encode())
 
-        patch_runtime_validation()
+        patch_runtime_validation(include_shader_api=abi == "arm64-v8a" and not omit_shader_api)
         verification_calls: list[tuple[Path, tuple[str, ...]]] = []
         MODULE.verify_media3_runtime = lambda path, abis: verification_calls.append((path, abis))
         argv = [
@@ -102,6 +110,14 @@ def overlay_case(*, omit_udfread: bool = False) -> None:
                     assert verification_calls == []
                     return
                 raise AssertionError("runtime overlay accepted an APK without required libudfread.so")
+            if omit_shader_api:
+                try:
+                    MODULE.main()
+                except SystemExit as error:
+                    assert "pl_shader_custom" in str(error)
+                    assert verification_calls == []
+                    return
+                raise AssertionError("arm64 runtime overlay accepted a libplacebo without pl_shader_custom")
             MODULE.main()
             assert len(verification_calls) == 1
             verified_path, verified_abis = verification_calls[0]
@@ -112,7 +128,7 @@ def overlay_case(*, omit_udfread: bool = False) -> None:
             assert result.testzip() is None
             assert result.read("AndroidManifest.xml") == b"fixture-manifest"
             assert result.read(f"jni/{abi}/libplayer.so") == player_blob
-            assert result.read("jni/arm64-v8a/libplayer.so") == other_abi_player_blob
+            assert result.read(f"jni/{other_abi}/libplayer.so") == other_abi_player_blob
             assert result.read(f"jni/{abi}/{missing_from_old_aar}") == runtime_blobs[missing_from_old_aar]
             for name in runtime_libs:
                 assert result.read(f"jni/{abi}/{name}") == runtime_blobs[name]
@@ -125,6 +141,8 @@ def main() -> None:
     runtime_verifier_command()
     overlay_case(omit_udfread=True)
     overlay_case()
+    overlay_case(abi="arm64-v8a")
+    overlay_case(abi="arm64-v8a", omit_shader_api=True)
     print("MPV runtime AAR overlay tests passed (Flow-only closure and stale-RIFE pruning).")
 
 

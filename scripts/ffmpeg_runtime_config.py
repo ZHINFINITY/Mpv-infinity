@@ -9,6 +9,12 @@ import re
 _SWITCH = re.compile(
     r"--(?P<action>enable|disable)-(?P<features>\{[^}]+\}|[A-Za-z0-9_.+-]+)(?:=[^\s]+)?"
 )
+_FFMPEG_VERSION_MARKER = re.compile(r"(?m)^FFmpeg version (?P<version>\S+)$")
+_FFMPEG_N90_VERSION = re.compile(r"n9\.0(?:\.\d+)?(?:[-+][A-Za-z0-9._-]+)?\Z")
+_FONGMI_FFMPEG_REVISION = "f2c5162b7c4b3e8835de270ff78cecc524decad1"
+_FONGMI_FFMPEG_DATE_PREFIX = "git-2026-11-10-"
+_FONGMI_FFMPEG_VERSION_SUFFIX = f"mpvflow-fongmi-{_FONGMI_FFMPEG_REVISION}"
+_FONGMI_FFMPEG_VERSION = f"{_FONGMI_FFMPEG_DATE_PREFIX}{_FONGMI_FFMPEG_REVISION[:7]}-{_FONGMI_FFMPEG_VERSION_SUFFIX}"
 
 
 class RuntimeEvidenceError(ValueError):
@@ -26,9 +32,9 @@ def configuration_line(text: str) -> str:
 def effective_ffmpeg_flags(configuration: str) -> dict[str, int]:
     """Derive CONFIG_GPL and CONFIG_NONFREE from FFmpeg's opt-in switches.
 
-    FFmpeg 9.0.2 defaults both features off. An absent `--disable-*` switch is
-    therefore not evidence that either feature was enabled; only an effective
-    enable switch can set the corresponding generated CONFIG_* value to 1.
+    Supported FFmpeg 9.x builds use opt-in switches for GPL and nonfree. An
+    absent `--disable-*` switch is therefore not evidence that either feature
+    was enabled; only an effective enable switch can set CONFIG_* to 1.
     Braced configure syntax such as `--enable-{gpl,version3}` is expanded too.
     """
     settings = {"gpl": 0, "nonfree": 0}
@@ -45,9 +51,35 @@ def effective_ffmpeg_flags(configuration: str) -> dict[str, int]:
     return {"CONFIG_GPL": settings["gpl"], "CONFIG_NONFREE": settings["nonfree"]}
 
 
+def ffmpeg_runtime_version(text: str) -> str:
+    """Accept checked-in FFmpeg n9.0 or the exact commit-stamped FongMi build."""
+    versions = set(_FFMPEG_VERSION_MARKER.findall(text))
+    if len(versions) == 1:
+        version = next(iter(versions))
+        if _FFMPEG_N90_VERSION.fullmatch(version):
+            return version
+        if version.startswith(_FONGMI_FFMPEG_DATE_PREFIX):
+            remainder = version[len(_FONGMI_FFMPEG_DATE_PREFIX):]
+            stamp = f"-{_FONGMI_FFMPEG_VERSION_SUFFIX}"
+            abbreviation, separator, trailing = remainder.partition(stamp)
+            if (
+                separator
+                and trailing == ""
+                and 7 <= len(abbreviation) <= len(_FONGMI_FFMPEG_REVISION)
+                and _FONGMI_FFMPEG_REVISION.startswith(abbreviation)
+            ):
+                return f"n9.1-FongMi-{_FONGMI_FFMPEG_REVISION[:8]}"
+    found = ", ".join(sorted(versions)) if versions else "none"
+    raise RuntimeEvidenceError(
+        "expected FFmpeg n9.0 or the exact FongMi version marker "
+        f"{_FONGMI_FFMPEG_VERSION}; found {found}"
+    )
+
+
 def verify_runtime_evidence(text: str) -> dict[str, int]:
     """Require a GPL/nonfree-free LGPL FFmpeg runtime containing the DCA decoder."""
     configuration = configuration_line(text)
+    ffmpeg_runtime_version(text)
     effective = effective_ffmpeg_flags(configuration)
     if effective["CONFIG_GPL"] != 0:
         raise RuntimeEvidenceError(f"effective CONFIG_GPL={effective['CONFIG_GPL']}; expected 0")
@@ -57,7 +89,6 @@ def verify_runtime_evidence(text: str) -> dict[str, int]:
         )
 
     required = {
-        "FFmpeg n9.0 runtime": "FFmpeg version n9.0" in text,
         "LGPLv3-or-later license": "libavcodec license: LGPL version 3 or later" in text,
         "version-3 LGPL configuration": "--enable-version3" in configuration,
         "DCA decoder marker": "DCA (DTS Coherent Acoustics)" in text,

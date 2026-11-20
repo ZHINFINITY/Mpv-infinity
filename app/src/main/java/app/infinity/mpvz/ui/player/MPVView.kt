@@ -167,14 +167,13 @@ class MPVView(
         displayRefreshRate?.hz ?: 0f,
       )
     val requestedMpvFlowComputeApi = decoderPreferences.mpvFlowComputeApi.get()
-    val requestedMpvFlowQuality = decoderPreferences.mpvFlowQuality.get().coerceIn(0, 100)
     val mpvFlowFrameInterpolationActive =
       mpvFlowRequested &&
-        BuildConfig.MPV_HAS_MPVFLOW &&
+        BuildConfig.MPV_HAS_FONGMI_MEMC &&
         !frameInterpolationConfigOwned &&
         (forceMpvInterpolationOwner || decoderPreferences.playbackEngine.get() != PlaybackEngineMode.NATIVE)
     val mpvFlowSoftBlendDebugActive =
-      Media3FlowDebugSettingsPolicy.mpvFlowFeatureEnabled(
+      BuildConfig.MPV_HAS_MPVFLOW && Media3FlowDebugSettingsPolicy.mpvFlowFeatureEnabled(
         debugBuild = BuildConfig.DEBUG,
         requested = decoderPreferences.mpvFlowSoftBlendDebug.get(),
         interpolationActive = mpvFlowFrameInterpolationActive,
@@ -185,11 +184,11 @@ class MPVView(
       )
     val effectiveMpvFlowComputeApi =
       if (mpvFlowSoftBlendDebugActive) MpvFlowComputeApi.VULKAN else requestedMpvFlowComputeApi
-    mpvFlowOsdStatsEnabled = mpvFlowFrameInterpolationActive
-    mpvFlowDiagnosticsEnabled = BuildConfig.DEBUG && mpvFlowFrameInterpolationActive
+    mpvFlowOsdStatsEnabled = false
+    mpvFlowDiagnosticsEnabled = BuildConfig.DEBUG && BuildConfig.MPV_HAS_MPVFLOW && mpvFlowFrameInterpolationActive
     val coreConfigurationKey =
       "${requestedBackend.configurationKey}|conf=${MpvConfigOverridePolicy.configurationKey()}|" +
-        "mpvflow=${if (mpvFlowFrameInterpolationActive) "$requestedMpvFlowTargetFps,compute_api=${effectiveMpvFlowComputeApi.nativeValue},quality=$requestedMpvFlowQuality,soft_blend=$mpvFlowSoftBlendDebugActive" else "off"}"
+        "motion=${if (mpvFlowFrameInterpolationActive) requestedMpvFlowTargetFps else "off"}"
     val result =
       PlaybackSession.initialize(
         context = context.applicationContext,
@@ -573,14 +572,12 @@ class MPVView(
         displayRefreshRate?.hz ?: 0f,
       )
     val mpvFlowComputeApi = decoderPreferences.mpvFlowComputeApi.get()
-    val mpvFlowQuality = decoderPreferences.mpvFlowQuality.get().coerceIn(0, 100)
-    val mpvFlowMaxDimension = effectiveMpvFlowMaxDimension(mpvFlowTargetFps, mpvFlowQuality)
     val frameInterpolationConfigOwned =
       MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.FRAME_INTERPOLATION)
     val anime4kActive = decoderPreferences.enableAnime4K.get() && decoderPreferences.anime4kMode.get() != "OFF"
     val mpvFlowFrameInterpolationCandidate =
       mpvFlowFrameInterpolationPreference &&
-        BuildConfig.MPV_HAS_MPVFLOW &&
+        BuildConfig.MPV_HAS_FONGMI_MEMC &&
         !frameInterpolationConfigOwned &&
         !anime4kActive &&
         RendererBackendPolicy.canUseDirectGpuFlow(backend.vo, backend.gpuApi) &&
@@ -594,15 +591,9 @@ class MPVView(
           PlaybackSession.setOptionString("display-fps-override", "0")
         else -> null
       }
-    // Flow consumes gpu-next's before/after frame mix and needs a display-timed output tick between
-    // source PTS values. Keep this scoped to the Flow path; the config-ownership gate above prevents
-    // overriding an explicit mpv.conf interpolation or video-sync choice.
-    val flowInterpolationRc =
-      if (mpvFlowFrameInterpolationCandidate) {
-        PlaybackSession.setOptionString("interpolation", "yes")
-      } else {
-        null
-      }
+    // FongMi MEMC replaces mpv's ordinary `interpolation` frame mixer. Match its MPV-RX
+    // contract: enable the motion option with display-synced ticks, without also enabling
+    // the separate built-in interpolation path.
     val flowVideoSyncRc =
       if (mpvFlowFrameInterpolationCandidate) {
         PlaybackSession.setOptionString("video-sync", "display-resample")
@@ -610,34 +601,31 @@ class MPVView(
         null
       }
     val flowTimingOptionsReady =
-      flowInterpolationRc == 0 &&
-        flowVideoSyncRc == 0 &&
-        flowDisplayFpsOverrideRc == 0 &&
-        displayRefreshRate != null
+      flowVideoSyncRc == 0 &&
+        (displayRefreshRate == null || flowDisplayFpsOverrideRc == 0)
     if (mpvFlowFrameInterpolationCandidate && !flowTimingOptionsReady) {
-      val resetInterpolationRc = PlaybackSession.setOptionString("interpolation", "no")
       val resetVideoSyncRc = PlaybackSession.setOptionString("video-sync", "audio")
       val resetDisplayFpsOverrideRc = PlaybackSession.setOptionString("display-fps-override", "0")
       Log.e(
         TAG,
         "MPVFLOW_DIAGNOSTIC event=timing_config state=failed " +
-          "interpolation_rc=$flowInterpolationRc video_sync_rc=$flowVideoSyncRc " +
+          "video_sync_rc=$flowVideoSyncRc " +
           "display_fps_override_rc=${flowDisplayFpsOverrideRc ?: "unavailable"} " +
           "display_refresh_hz=${displayRefreshRate?.hz ?: "unavailable"} " +
-          "rollback_interpolation_rc=$resetInterpolationRc rollback_video_sync_rc=$resetVideoSyncRc " +
+          "rollback_video_sync_rc=$resetVideoSyncRc " +
           "rollback_display_fps_override_rc=$resetDisplayFpsOverrideRc " +
           "fallback=source_passthrough",
       )
     }
-    val mpvFlowFrameInterpolationEnabled =
+    var mpvFlowFrameInterpolationEnabled =
       mpvFlowFrameInterpolationCandidate && flowTimingOptionsReady
-    mpvFlowOsdStatsEnabled = mpvFlowFrameInterpolationEnabled
-    mpvFlowDiagnosticsEnabled = BuildConfig.DEBUG && mpvFlowFrameInterpolationEnabled
+    mpvFlowOsdStatsEnabled = false
+    mpvFlowDiagnosticsEnabled = BuildConfig.DEBUG && BuildConfig.MPV_HAS_MPVFLOW && mpvFlowFrameInterpolationEnabled
     if (mpvFlowFrameInterpolationEnabled) {
       Log.i(
         TAG,
         "MPVFLOW_DIAGNOSTIC event=timing_config state=applied " +
-          "interpolation_rc=$flowInterpolationRc video_sync_rc=$flowVideoSyncRc " +
+          "video_sync_rc=$flowVideoSyncRc " +
           "display_fps_override_rc=$flowDisplayFpsOverrideRc " +
           "display_refresh_hz=${displayRefreshRate?.hz} " +
           "display_refresh_source=${displayRefreshRate?.source} video_sync=display-resample",
@@ -671,7 +659,7 @@ class MPVView(
     // Mailbox replaces stale queued presentation images without reducing the requested output rate.
     // libplacebo falls back to FIFO on Android surfaces that do not support mailbox presentation.
     val flowSwapMode =
-      if (BuildConfig.MPV_HAS_MPVFLOW && backend.gpuApi == "vulkan") {
+      if (BuildConfig.MPV_HAS_FONGMI_MEMC && backend.gpuApi == "vulkan") {
         when {
           MpvConfigOverridePolicy.isOwnedByMpvConf("vulkan-swap-mode") -> null
           mpvFlowFrameInterpolationEnabled -> "mailbox"
@@ -699,7 +687,7 @@ class MPVView(
         TAG,
         "MPVFLOW_DIAGNOSTIC event=present_mode state=$presentModeState " +
           "request=${flowSwapMode ?: "mpv.conf"} result=${flowSwapModeApplyResult ?: "unchanged"} " +
-          "fallback=FIFO_if_unsupported swapchain_depth_result=${flowSwapchainDepthResult ?: "unchanged"} target_fps=$mpvFlowTargetFps quality=$mpvFlowQuality",
+          "fallback=FIFO_if_unsupported swapchain_depth_result=${flowSwapchainDepthResult ?: "unchanged"} target_fps=$mpvFlowTargetFps",
       )
     }
     val rendererApplyResult = PlaybackSession.setVideoOutput(backend.vo)
@@ -751,7 +739,7 @@ class MPVView(
     if (mpvFlowFrameInterpolationEnabled) {
       // Prefer direct MediaCodec/Vulkan frames when supported. The standard flavor uses
       // mediacodec-copy so hardware decoding remains enabled when direct Vulkan import is absent;
-      // Flow still performs interpolation on Vulkan and never reads synthesized output back.
+      // FongMi motion synthesis stays on Vulkan and never reads synthesized output back.
       val hardwareDecodeMode =
         RendererBackendPolicy.gpuFlowHwdecMode(
           hardwareDecodingEnabled = decoderPreferences.tryHWDecoding.get(),
@@ -766,9 +754,8 @@ class MPVView(
         }
       Log.i(
         TAG,
-        "MPVFLOW_OPTIONS hwdec_mode=$hardwareDecodeMode hwdec_rc=$hardwareDecodeOptionResult " +
-          "hwdec_codecs_rc=${hardwareDecodeCodecsOptionResult ?: "mpv.conf"} target_fps=$mpvFlowTargetFps " +
-          "max_dimension=$mpvFlowMaxDimension quality=$mpvFlowQuality search_radius=${effectiveMpvFlowSearchRadius(mpvFlowTargetFps, mpvFlowQuality)}",
+        "MPV_MEMC_OPTIONS hwdec_mode=$hardwareDecodeMode hwdec_rc=$hardwareDecodeOptionResult " +
+          "hwdec_codecs_rc=${hardwareDecodeCodecsOptionResult ?: "mpv.conf"} target_fps=$mpvFlowTargetFps",
       )
     } else {
       if (!MpvConfigOverridePolicy.isOwnedByMpvConf("hwdec")) {
@@ -839,41 +826,21 @@ class MPVView(
         null
       }
     val mpvFlowRendererOptionResult =
-      if (BuildConfig.MPV_HAS_MPVFLOW && !MpvConfigOverridePolicy.isOwnedByMpvConf("mpvflow")) {
-        val targetFpsResult =
-          if (mpvFlowFrameInterpolationEnabled) {
-            PlaybackSession.setOptionString("mpvflow-target-fps", mpvFlowTargetFps.toString())
-          } else {
-            null
-          }
-        val dimensionResult =
-          if (mpvFlowFrameInterpolationEnabled) {
-            PlaybackSession.setOptionString("mpvflow-max-dimension", mpvFlowMaxDimension.toString())
-          } else {
-            null
-          }
-        val qualityResult =
-          if (mpvFlowFrameInterpolationEnabled) {
-            PlaybackSession.setOptionString("mpvflow-quality", mpvFlowQuality.toString())
-          } else null
-        val enabledResult =
-          PlaybackSession.setOptionString("mpvflow", if (mpvFlowFrameInterpolationEnabled) "yes" else "no")
-        acceptedInterpolationConfiguration = if (enabledResult == 0 &&
-          (!mpvFlowFrameInterpolationEnabled || (targetFpsResult == 0 && dimensionResult == 0 &&
-            qualityResult == 0 && mpvFlowComputeApiOptionResult == 0))) {
+      if (BuildConfig.MPV_HAS_FONGMI_MEMC &&
+        !MpvConfigOverridePolicy.isOwnedByMpvConf("motion-interpolation")) {
+        val targetFps = if (mpvFlowFrameInterpolationEnabled) mpvFlowTargetFps else 0
+        val result = PlaybackSession.setOptionString("motion-interpolation", targetFps.toString())
+        acceptedInterpolationConfiguration = if (result == 0) {
           mpvFlowFrameInterpolationEnabled to mpvFlowTargetFps
-        } else null
-        "mpvflow_rc=$enabledResult compute_api=${effectiveMpvFlowComputeApi.name.lowercase()} " +
-          "compute_api_rc=${mpvFlowComputeApiOptionResult ?: "mpv.conf_or_unavailable"} " +
-          "target_fps_rc=${targetFpsResult ?: "unchanged"} " +
-          "max_dimension_rc=${dimensionResult ?: "unchanged"} quality=$mpvFlowQuality quality_rc=${qualityResult ?: "unchanged"} " +
-          "visibility_resolver=$mpvFlowVisibilityResolverDebugEnabled " +
-          "visibility_resolver_rc=${mpvFlowVisibilityResolverOptionResult ?: "mpv.conf_or_unavailable"} " +
-          "soft_blend=$mpvFlowSoftBlendDebugEnabled soft_blend_rc=${mpvFlowSoftBlendOptionResult ?: "mpv.conf_or_unavailable"} " +
-          "capture_control_rc=${captureControlOptionResult ?: "skipped"}"
+        } else {
+          // Do not advertise a target hint when native rejected the option.
+          mpvFlowFrameInterpolationEnabled = false
+          null
+        }
+        "motion_interpolation_rc=$result target_fps=$targetFps"
       } else {
-        "compute_api=${effectiveMpvFlowComputeApi.name.lowercase()} " +
-          "compute_api_rc=${mpvFlowComputeApiOptionResult ?: "mpv.conf_or_unavailable"} mpvflow=mpv.conf"
+        acceptedInterpolationConfiguration = null
+        "motion_interpolation=mpv.conf_or_unavailable"
       }
 
     val appVideoFilters =
@@ -896,7 +863,7 @@ class MPVView(
       val reason =
         when {
           mpvFlowFrameInterpolationEnabled -> "enabled"
-          !BuildConfig.MPV_HAS_MPVFLOW -> "runtime_unavailable"
+          !BuildConfig.MPV_HAS_FONGMI_MEMC -> "runtime_unavailable"
           frameInterpolationConfigOwned -> "mpv_config_owns_options"
           anime4kActive -> "anime4k_active"
           !RendererBackendPolicy.canUseDirectGpuFlow(backend.vo, backend.gpuApi) ->
@@ -984,15 +951,8 @@ class MPVView(
     PlaybackSession.setOptionString("hr-seek", if (preciseSeek) "yes" else "no")
     PlaybackSession.setOptionString("hr-seek-framedrop", if (preciseSeek) "no" else "yes")
 
-    // GPU-next's Flow stage needs mpv's display-synchronized temporal queue so it can synthesize
-    // at the presentation timestamp without a CPU filter queue. Keep the existing audio sync for
-    // all other playback modes.
-    if (!MpvConfigOverridePolicy.isOwnedByMpvConf("interpolation")) {
-      PlaybackSession.setOptionString(
-        "interpolation",
-        if (mpvFlowFrameInterpolationEnabled) "yes" else "no",
-      )
-    }
+    // FongMi motion-interpolation replaces mpv's ordinary frame mixer; never enable the separate
+    // `interpolation` option here.
     if (!MpvConfigOverridePolicy.isOwnedByMpvConf("video-sync")) {
       PlaybackSession.setOptionString(
         "video-sync",
@@ -1424,7 +1384,7 @@ class MPVView(
         (decoderPreferences.anime4kMode.get() != "OFF")
     val flowRequiresVulkan =
       decoderPreferences.mpvFlowFrameInterpolation.get() &&
-        BuildConfig.MPV_HAS_MPVFLOW &&
+        BuildConfig.MPV_HAS_FONGMI_MEMC &&
         BuildConfig.MPV_SUPPORTS_VULKAN &&
         !MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.FRAME_INTERPOLATION) &&
         !anime4kEnabled &&

@@ -337,7 +337,11 @@ internal fun DebugLogEntry.isMpvFlowDiagnostic(): Boolean =
     tag.contains("MpvInfinityFlowVk", ignoreCase = true) ||
     message.contains("MPVFLOW_DIAGNOSTIC", ignoreCase = true) ||
     message.contains("MPVFLOW_GPU_DIAGNOSTIC", ignoreCase = true) ||
-    message.contains("vf_mpvflow", ignoreCase = true)
+    message.contains("vf_mpvflow", ignoreCase = true) ||
+    message.contains("Motion interpolation:", ignoreCase = true) ||
+    message.contains("DequeueBuffer time out", ignoreCase = true) ||
+    tag.contains("RenderInspector", ignoreCase = true) ||
+    tag.contains("RenderPoller", ignoreCase = true)
 
 internal fun DebugLogEntry.isNativeMedia3FlowDiagnostic(): Boolean =
   tag.contains("MpvInfinityFlowVk", ignoreCase = true) ||
@@ -439,6 +443,14 @@ internal fun selectMpvFlowDiagnosticLines(logcat: String): String =
         "MPVFLOW_GPU_DIAGNOSTIC",
         "vf_mpvflow",
         "MpvInfinityFlowVk",
+        "Mpv∞-Media3Flow",
+        "media3_flow_route",
+        "component=native-media3",
+        "flow_summary",
+        "Motion interpolation:",
+        "DequeueBuffer time out",
+        "RenderInspector",
+        "RenderPoller",
       ).any { marker -> line.contains(marker, ignoreCase = true) }
     }
     .joinToString("\n")

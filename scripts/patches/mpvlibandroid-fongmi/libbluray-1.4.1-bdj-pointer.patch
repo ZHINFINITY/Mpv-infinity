@@ -1,0 +1,46 @@
+--- a/src/libbluray/bdj/java/java/awt/BDJHelper.java
++++ b/src/libbluray/bdj/java/java/awt/BDJHelper.java
+@@ -100,15 +100,34 @@
+     private static boolean postMouseEventImpl(int id, int button) {
+         Component focusOwner = KeyboardFocusManager.getCurrentKeyboardFocusManager().getGlobalFocusOwner();
+         if (focusOwner != null) {
+-            EventQueue eq = BDToolkit.getEventQueue(focusOwner);
+-            if (eq != null) {
+-                long when = System.currentTimeMillis();
+-                try {
+-                    eq.postEvent(new MouseEvent(focusOwner, id, when, mouseMask, mouseX, mouseY,
+-                                                (id == MouseEvent.MOUSE_CLICKED) ? 1 : 0, false, button));
+-                    return true;
+-                } catch (Exception e) {
+-                    logger.error("postMouseEvent failed: " + e);
++            synchronized (focusOwner.getTreeLock()) {
++                // Mouse coordinates refer to the graphics plane, not the keyboard focus owner.
++                Component root = focusOwner;
++                while (root.getParent() != null) {
++                    root = root.getParent();
++                }
++                if (!(root instanceof Container)) {
++                    return false;
++                }
++                Component target = ((Container)root).getMouseEventTarget(mouseX, mouseY, true);
++                if (target == null) {
++                    return false;
++                }
++                int x = mouseX, y = mouseY;
++                for (Component component = target; component != root; component = component.getParent()) {
++                    x -= component.getX();
++                    y -= component.getY();
++                }
++                EventQueue eq = BDToolkit.getEventQueue(target);
++                if (eq != null) {
++                    long when = System.currentTimeMillis();
++                    try {
++                        eq.postEvent(new MouseEvent(target, id, when, mouseMask, x, y,
++                                                    (id == MouseEvent.MOUSE_CLICKED) ? 1 : 0, false, button));
++                        return true;
++                    } catch (Exception e) {
++                        logger.error("postMouseEvent failed: " + e);
++                    }
+                 }
+             }
+         }
