@@ -16,7 +16,7 @@ import org.robolectric.RuntimeEnvironment
 
 @RunWith(RobolectricTestRunner::class)
 class MusicPlaybackResumeStoreTest {
-  private val context = RuntimeEnvironment.getApplication<android.app.Application>()
+  private val context = RuntimeEnvironment.getApplication()
   private val preferences = context.getSharedPreferences("music_resume_store_test", Context.MODE_PRIVATE)
 
   @Before
