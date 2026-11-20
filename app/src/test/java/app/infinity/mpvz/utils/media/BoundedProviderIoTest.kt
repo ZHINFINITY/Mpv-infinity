@@ -9,6 +9,7 @@ package app.infinity.mpvz.utils.media
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -41,7 +42,8 @@ class BoundedProviderIoTest {
     val cleaned = CountDownLatch(1)
     // Parallel M3U tests may use the production lane; isolate this cancellation test.
     val lane = BoundedProviderIo.BoundedLane("mpv-provider-cancellation-test")
-    val job = launch {
+    // Blocking latch waits below must not starve runBlocking's event loop.
+    val job = launch(Dispatchers.Default) {
       lane.run(
         timeoutMs = 10_000L,
         fallback = Unit,
