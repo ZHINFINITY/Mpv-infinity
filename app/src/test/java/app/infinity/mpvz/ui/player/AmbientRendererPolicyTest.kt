@@ -50,6 +50,8 @@ class AmbientRendererPolicyTest {
   @Test
   fun frameCapturedBackgroundKeepsMoreDetailWithoutRemovingItsSoftness() {
     val ambient = source("ui/player/components/VideoAmbientBackground.kt")
+    val publish = ambient.substringAfter("private suspend fun publish(): VideoAmbientFrame {")
+      .substringBefore("private fun resetScene()")
 
     listOf(
       "private const val SAMPLE_WIDTH = 384",
@@ -62,6 +64,13 @@ class AmbientRendererPolicyTest {
     ).forEach { declaration ->
       assertTrue(ambient.lineSequence().any { it.trim() == declaration })
     }
+    val backgroundDispatcher = publish.indexOf("withContext(Dispatchers.Default)")
+    val encodePixels = publish.indexOf("encodeAmbientPixels(currentGrid, outputPixels)")
+    val mainDispatcher = publish.indexOf("withContext(Dispatchers.Main.immediate)")
+    val publishBitmap = publish.indexOf("bitmap.setPixels(")
+    val wrapImageBitmap = publish.indexOf("bitmap.asImageBitmap()")
+    assertTrue(backgroundDispatcher >= 0 && encodePixels > backgroundDispatcher && mainDispatcher > encodePixels)
+    assertTrue(mainDispatcher >= 0 && publishBitmap > mainDispatcher && wrapImageBitmap > publishBitmap)
   }
 
   @Test

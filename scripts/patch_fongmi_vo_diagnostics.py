@@ -25,8 +25,17 @@ def replace_once(source: str, old: str, new: str, label: str) -> str:
 CAPTURE_HELPERS = r'''/* MPVFLOW_FONGMI_VO_SINGLE_OUTPUT_CAPTURE_V2 */
 static const char *fongmi_capture_backend(const struct priv *p)
 {
-    return p->ra_ctx && p->ra_ctx->fns && p->ra_ctx->fns->type
-        ? p->ra_ctx->fns->type : "unknown";
+    const char *backend = p->ra_ctx && p->ra_ctx->fns && p->ra_ctx->fns->type
+        ? p->ra_ctx->fns->type : NULL;
+    if (!backend)
+        return "unavailable";
+    if (!strcmp(backend, "vulkan") || !strcmp(backend, "vulkan-spirv"))
+        return "vulkan";
+    if (!strcmp(backend, "opencl") || !strcmp(backend, "opencl-qcom"))
+        return "opencl";
+    if (!strcmp(backend, "unknown"))
+        return "unknown";
+    return "unavailable";
 }
 
 static void fongmi_capture_settings(const struct priv *p, const char *reason,
@@ -322,6 +331,9 @@ def transform_vo(source: str) -> tuple[str, bool]:
             "direct ? \"prepared_view_shader\" : \"prepared_view_texture\"",
             "fongmi_capture_source_frame_route(mix, pair)",
             "fongmi_capture_finish(vo)",
+            "strcmp(backend, \"vulkan-spirv\")",
+            "return \"unavailable\";",
+            "if (strcmp(fongmi_capture_backend(p), \"vulkan\"))",
             "active_route",
             "fongmi_diagnostic_actual_hdr_source_unsupported",
             "fongmi-diagnostic-control-file",

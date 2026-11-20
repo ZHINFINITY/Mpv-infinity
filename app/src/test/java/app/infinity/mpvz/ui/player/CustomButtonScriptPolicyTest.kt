@@ -13,6 +13,41 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CustomButtonScriptPolicyTest {
+  private fun synchronizedBodies(source: String): List<String> {
+    val marker = "synchronized(customButtonScriptsLock) {"
+    val bodies = mutableListOf<String>()
+    var searchFrom = 0
+    while (true) {
+      val markerStart = source.indexOf(marker, searchFrom)
+      if (markerStart < 0) return bodies
+      var index = markerStart + marker.length
+      var depth = 1
+      var inString = false
+      var inChar = false
+      var escaped = false
+      while (index < source.length && depth > 0) {
+        val character = source[index]
+        if (escaped) {
+          escaped = false
+        } else if ((inString || inChar) && character == '\\') {
+          escaped = true
+        } else if (!inChar && character == '"') {
+          inString = !inString
+        } else if (!inString && character == '\'') {
+          inChar = !inChar
+        } else if (!inString && !inChar && character == '{') {
+          depth++
+        } else if (!inString && !inChar && character == '}') {
+          depth--
+        }
+        index++
+      }
+      check(depth == 0) { "Unterminated synchronized(customButtonScriptsLock) block" }
+      bodies += source.substring(markerStart + marker.length, index - 1)
+      searchFrom = index
+    }
+  }
+
   @Test
   fun cleanupMatchesOnlyKnownTargetsAndGeneratedNames() {
     val targets = setOf("custombuttons.lua", "custombuttons.js")
@@ -50,13 +85,12 @@ class CustomButtonScriptPolicyTest {
     val viewModel = File(root, "app/infinity/mpvz/ui/player/PlayerViewModel.kt").readText()
     val setup = viewModel.substringAfter("private fun setupCustomButtons() {")
       .substringBefore("private fun isCurrentCustomButtonSetup")
-    val generationLock = setup.substringAfter("val generation = synchronized(customButtonScriptsLock) {")
-      .substringBefore("val jsonString")
-    assertTrue(generationLock.contains("customButtonsSetupComplete = false"))
-    val completionLock = setup.substringAfterLast("synchronized(customButtonScriptsLock) {")
-      .substringBefore("} catch (cancelled: CancellationException)")
+    val setupLocks = synchronizedBodies(setup)
+    val generationLock = setupLocks.first { it.contains("customButtonsSetupComplete = false") }
+    assertFalse(generationLock.contains("val jsonString"))
+    val completionLock = setupLocks.first { it.contains("customButtonsSetupComplete = true") }
     assertTrue(completionLock.contains("if (!isCurrentCustomButtonSetup(generation)) throw CancellationException"))
-    assertTrue(completionLock.contains("customButtonsSetupComplete = true"))
+    assertFalse(completionLock.contains("catch (cancelled: CancellationException)"))
     assertTrue(viewModel.contains("CustomButtonScriptInstancePolicy.versionToken(generation)"))
     assertTrue(viewModel.contains("mp.get_property_native(version_property) == instance_version"))
     assertTrue(viewModel.contains("mp.get_property_native(versionProperty) === instanceVersion"))

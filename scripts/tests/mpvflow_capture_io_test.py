@@ -259,6 +259,8 @@ int main(int argc, char **argv) {
         "hdr_dolby_vision_or_unknown_color_refused"));
     assert(!mpvflow_capture_io_write_single_terminal_manifest(argv[2], "single_terminal",
         "mpv", "unknown", "{\"capture_mode\":\"one_output\"}", "user_stopped_before_output"));
+    assert(!mpvflow_capture_io_write_single_terminal_manifest(argv[2], "single_terminal_unavailable",
+        "mpv", "unavailable", "{\"capture_mode\":\"one_output\"}", "unsupported_backend"));
     assert(mpvflow_capture_io_write_terminal_manifest(argv[2], "paired_terminal_bad",
         "mpv", "unknown", "{\"soft_blend\":false}", 1, "capture_refused"));
     assert(!mpvflow_capture_io_start(argv[2], "../oops", &meta, reason, sizeof(reason)));
@@ -389,6 +391,9 @@ with tempfile.TemporaryDirectory() as temp_dir:
     assert single_terminal["single_output_diagnostic"] is True
     assert single_terminal["limits"]["pairs"] == 1 and single_terminal["limits"]["samples_per_pair"] == 1
     assert single_terminal["image_policy"]["maps"] == "captured output resolution; dimensions unavailable before first sample"
+    unavailable_terminal = json.loads((directory / "single_terminal_unavailable" / "manifest.json").read_text())
+    assert unavailable_terminal["status"] == "failed" and unavailable_terminal["backend"] == "unavailable"
+    assert unavailable_terminal["terminal_reason"] == "unsupported_backend"
     paired_manifest = json.loads((directory / "paired" / "manifest.json").read_text())
     assert paired_manifest["paired_output_diagnostic"] is True
     assert paired_manifest["limits"]["pairs"] == 1

@@ -155,6 +155,31 @@ static const char match_body[] = GLSL(
 );
 
 static const char refine_header[] = GLSL(
+    // MPVFLOW_REFINEMENT_BOUNDARY_STEP_V1: clamp only the normal scalar to the feasible image interval.
+    bool bounded_aperture_candidate(vec2 vector, vec2 normal, float requested_step,
+                                    vec2 p, vec2 size, out vec2 candidate)
+    {
+        float lower_step = -1e20;
+        float upper_step = 1e20;
+        for (int axis = 0; axis < 2; axis++) {
+            float direction = normal[axis];
+            float minimum = -p[axis];
+            float maximum = size[axis] - 1.0 - p[axis];
+            if (abs(direction) > 0.000001) {
+                float first_step = (minimum - vector[axis]) / direction;
+                float second_step = (maximum - vector[axis]) / direction;
+                lower_step = max(lower_step, min(first_step, second_step));
+                upper_step = min(upper_step, max(first_step, second_step));
+            } else if (vector[axis] < minimum || vector[axis] > maximum) {
+                return false;
+            }
+        }
+        if (lower_step > upper_step)
+            return false;
+        candidate = vector + normal * clamp(requested_step, lower_step, upper_step);
+        return true;
+    }
+
     // Keep FP32 ordering scores exact in the supported RGBA16F format.
     vec4 pack_evidence(float evidence)
     {
@@ -390,9 +415,12 @@ static const char refine_body[] = GLSL(
                 vec2 selected = vector;
                 bool unique = false;
                 for (int offset = -1; offset <= 1; offset++) {
-                    vec2 candidate = clamp(vector + aperture_normal *
-                                           (round(projected) + float(offset) - projected),
-                                           -p, size - 1.0 - p);
+                    vec2 candidate;
+                    if (!bounded_aperture_candidate(
+                            vector, aperture_normal,
+                            round(projected) + float(offset) - projected,
+                            p, size, candidate))
+                        continue;
                     float cost = patch_cost(second, p, candidate);
                     float delta = abs(dot(candidate, aperture_normal) - projected);
                     float norm = dot(candidate, candidate);
@@ -428,9 +456,12 @@ static const char refine_body[] = GLSL(
                 float magnitude = dot(vector, vector);
                 float distance = 0.0;
                 for (int offset = -settings.z; offset <= settings.z; offset++) {
-                    vec2 candidate = clamp(vector + aperture_normal *
-                                           (float(offset) - dot(vector, aperture_normal)),
-                                           -p, size - 1.0 - p);
+                    vec2 candidate;
+                    if (!bounded_aperture_candidate(
+                            vector, aperture_normal,
+                            float(offset) - dot(vector, aperture_normal),
+                            p, size, candidate))
+                        continue;
                     float norm = dot(candidate, candidate);
                     float delta = dot(candidate - original, candidate - original);
                     if ((norm < magnitude || (norm == magnitude && delta < distance)) &&
@@ -548,19 +579,19 @@ static const char scene_body[] = GLSL(
     // MPVFLOW_SCENE_CUT_SPATIAL_V1: detect spatially rearranged cuts with shared colors.
     float global_luma_delta = dot((mean0 - mean1) / 256.0,
                                   vec3(0.2126, 0.7152, 0.0722));
+    float scene_brightness_error = dot(mean_distance, vec3(0.25)) +
+        0.25 * abs(global_luma_delta);
+    float scene_residual = max(0.0, residual / 256.0 - scene_brightness_error);
     float spatial_cut = 0.0;
     for (int i = 0; i < 16; i++) {
         float local_luma_delta = abs(tile_luma_delta[i] / 16.0 - global_luma_delta);
         if (local_luma_delta > 0.15)
             spatial_cut += 1.0 / 16.0;
     }
-    // Tile disagreement is ambiguous: camera translation can produce it too.
-    // Spatial-only evidence must stay below the hard source-frame hold threshold.
-    cut = max(cut, min(spatial_cut, 0.44));
-    // A global brightness change contributes matching error without a cut.
-    float brightness_error = dot(mean_distance, vec3(0.25)) +
-        0.25 * abs(dot((mean0 - mean1) / 256.0, vec3(0.2126, 0.7152, 0.0722)));
-    color = vec4(cut, max(0.0, residual / 256.0 - brightness_error), 0.0, 1.0);
+    // Tile disagreement alone is ambiguous; require failed motion matching to distinguish cuts from translations.
+    bool spatial_corroborated = spatial_cut > 0.45 && scene_residual > 0.04;
+    cut = max(cut, spatial_corroborated ? 0.46 : min(spatial_cut, 0.44));
+    color = vec4(cut, scene_residual, 0.0, 1.0);
 );
 
 static const char synthesis_header[] = GLSL(
@@ -751,7 +782,6 @@ static const char warp_body[] = GLSL(
     reverse.xy /= map_size;
     float cycle = length((f.xy + reverse.xy) * map_size);
     float residual = best_residual;
-    float trust = quality(f);
     float reliable = 1.0 - smoothstep(0.001, 0.01, max(f.z, reverse.z));
     reliable *= 1.0 - smoothstep(0.1, 0.5, cycle);
     // MPVFLOW_WARP_TRAJECTORY_COHERENCE_V1: gate primary warp and uncertain recovery on path stability.
@@ -760,6 +790,7 @@ static const char warp_body[] = GLSL(
     if (isnan(trajectory_quality) || isinf(trajectory_quality))
         trajectory_quality = 0.0;
     reliable *= trajectory_quality;
+    float trust = quality(f);
     // MPVFLOW_WARP_PRIMARY_TRUST_CAP_V1: unstable inverse paths cannot bypass the gate via primary match confidence.
     trust = min(trust, trajectory_quality);
     float geometry = (1.0 - smoothstep(0.5, 1.5, cycle)) *

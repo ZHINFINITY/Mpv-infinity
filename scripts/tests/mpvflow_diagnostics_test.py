@@ -117,6 +117,12 @@ require(VO_CAPTURE_PATCH, r"%80[^\t\r\n]", "STOP IDs must not absorb LF or CRLF 
 require(VO_CAPTURE_PATCH, "p->fongmi_capture_output_pts = mpi0->pts + alpha * (mpi1->pts - mpi0->pts);", "capture PTS must remain in the source-media time domain")
 require(VO_CAPTURE_PATCH, r'\"resolution_limit\":[1920,1920]', "capture limits must apply independently to both axes")
 assert VO_CAPTURE_PATCH.count(r'\"capture_pixel_limit\":2073600') == 2, "successful and terminal settings must both report the area cap"
+require(VO_CAPTURE_PATCH, 'if (!strcmp(backend, "vulkan") || !strcmp(backend, "vulkan-spirv"))', "Vulkan aliases must normalize to a supported terminal label")
+require(VO_CAPTURE_PATCH, 'if (!strcmp(backend, "opencl") || !strcmp(backend, "opencl-qcom"))', "OpenCL aliases must normalize to a supported terminal label")
+require(VO_CAPTURE_PATCH, 'return "unavailable";', "unsupported renderer names must still permit terminal refusal manifests")
+require(VO_CAPTURE_PATCH, 'if (strcmp(fongmi_capture_backend(p), "vulkan"))', "single-output readback must remain Vulkan-only")
+require(FONGMI_HELPER_README, "synthetic inputs to that unsupported legacy transformer", "the retained oblique fixture must not be described as active-runtime coverage")
+require(FONGMI_HELPER_README, "not active-runtime or device coverage", "legacy synthetic fixtures must not imply active GPU/device validation")
 assert abs((10.0 + 0.5 * (10.04 - 10.0)) - 10.02) < 1e-12
 warp_body = FONGMI_MOTION.split("static const char warp_body[] = GLSL(", 1)[1].split("\n);", 1)[0]
 require(warp_body, "vec2 displacement = (best_source - uv) * map_size;", "warp output must represent the source coordinate used by its residual")
@@ -125,7 +131,8 @@ require(synthesis_body, "spatial_trust_consensus(forward, backward, uv, f, r)", 
 require(synthesis_body, "motion_field_medoid(forward, backward, uv, f, r, coherent0, coherent1, coherent_support)", "medoid fallback must use dispatch-bound sampler names")
 assert not re.search(r"\b(?:spatial_trust_consensus|motion_field_medoid)\(warp[01]\b", synthesis_body)
 scene_body = FONGMI_MOTION.split("static const char scene_body[] = GLSL(", 1)[1].split("\n);", 1)[0]
-require(scene_body, "cut = max(cut, min(spatial_cut, 0.44));", "spatial-only disagreement must not independently cross the 0.45 hard-hold threshold")
+require(scene_body, "bool spatial_corroborated = spatial_cut > 0.45 && scene_residual > 0.04;", "spatial disagreement must be corroborated by motion residual")
+require(scene_body, "cut = max(cut, spatial_corroborated ? 0.46 : min(spatial_cut, 0.44));", "only corroborated spatial disagreement may affect the hard-hold threshold")
 require(DIAGNOSTICS_GUIDE, "does **not** expose FongMi one-shot capture", "the guide must accurately describe the currently disabled capture path")
 require(DIAGNOSTICS_GUIDE, "unavailable in the current build", "older capture instructions must not be presented as a current feature")
 require(LEGACY_PATCHER, "no legacy upstream/runtime revision is supported", "the legacy patcher must remain test-only without claiming support for an upstream runtime revision")

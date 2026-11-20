@@ -36,6 +36,7 @@ ANALYSIS_DOWNSAMPLE_MARKER = "MPVFLOW_ANALYSIS_DOWNSAMPLE_ANTIALIAS_V1"
 SPATIAL_TRUST_MARKER = "MPVFLOW_SPATIAL_TRUST_DOWNWARD_CAP_V3"
 REFINEMENT_APERTURE_NORMAL_MARKER = "MPVFLOW_REFINEMENT_APERTURE_NORMAL_V1"
 REFINEMENT_APERTURE_TANGENT_MARKER = "MPVFLOW_REFINEMENT_APERTURE_TANGENT_V1"
+REFINEMENT_BOUNDARY_STEP_MARKER = "MPVFLOW_REFINEMENT_BOUNDARY_STEP_V1"
 SOURCE_VISIBILITY_MARKER = "MPVFLOW_SOURCE_SPECIFIC_VISIBILITY_V1"
 SPATIAL_VISIBILITY_CAP_MARKER = "MPVFLOW_SPATIAL_VISIBILITY_CAP_V1"
 
@@ -217,6 +218,9 @@ WARP_VECTOR_PATTERN = re.compile(
 WARP_RELIABILITY_PATTERN = re.compile(
     r"(?m)^(?P<indent>[ \t]*)reliable \*= 1\.0 - smoothstep\(0\.1, 0\.5, cycle\);$"
 )
+WARP_TRUST_DECLARATION_PATTERN = re.compile(
+    r"(?m)^(?P<indent>[ \t]*)float trust = quality\(f\);$"
+)
 WARP_PRIMARY_TRUST_PATTERN = re.compile(
     r"(?m)^(?P<indent>[ \t]*)reliable \*= trajectory_quality;$"
 )
@@ -256,9 +260,7 @@ float trajectory_error = abs(weight) * length(motion_vector - initial_motion);
 float trajectory_quality = 1.0 - smoothstep(0.125, 0.5, trajectory_error);
 if (isnan(trajectory_quality) || isinf(trajectory_quality))
     trajectory_quality = 0.0;
-reliable *= trajectory_quality;
-// MPVFLOW_WARP_PRIMARY_TRUST_CAP_V1: unstable inverse paths cannot bypass the gate via primary match confidence.
-trust = min(trust, trajectory_quality);"""
+reliable *= trajectory_quality;"""
 PRIMARY_TRAJECTORY_TRUST_BLOCK = """// MPVFLOW_WARP_PRIMARY_TRUST_CAP_V1: unstable inverse paths cannot bypass the gate via primary match confidence.
 trust = min(trust, trajectory_quality);"""
 
@@ -278,16 +280,20 @@ SCENE_CUT_PATTERN = re.compile(
 SCENE_TILE_INIT_BLOCK = """float tile_luma_delta[16];
 for (int i = 0; i < 16; i++)
     tile_luma_delta[i] = 0.0;"""
-SCENE_CUT_BLOCK = """// MPVFLOW_SCENE_CUT_SPATIAL_V1: detect spatially rearranged cuts with shared colors.
+SCENE_CUT_BLOCK = """// MPVFLOW_SCENE_CUT_SPATIAL_V1: spatial evidence requires residual corroboration to reject translations.
 float global_luma_delta = dot((mean0 - mean1) / 256.0,
                               vec3(0.2126, 0.7152, 0.0722));
+float scene_brightness_error = dot(mean_distance, vec3(0.25)) +
+    0.25 * abs(global_luma_delta);
+float scene_residual = max(0.0, residual / 256.0 - scene_brightness_error);
 float spatial_cut = 0.0;
 for (int i = 0; i < 16; i++) {
     float local_luma_delta = abs(tile_luma_delta[i] / 16.0 - global_luma_delta);
     if (local_luma_delta > 0.15)
         spatial_cut += 1.0 / 16.0;
 }
-cut = max(cut, spatial_cut);"""
+bool spatial_corroborated = spatial_cut > 0.45 && scene_residual > 0.04;
+cut = max(cut, spatial_corroborated ? 0.46 : min(spatial_cut, 0.44));"""
 
 FINE_GRID_PATTERN = re.compile(
     r"(?m)^(?P<indent>[ \t]*)int spacing = level == LEVELS - 1 \? 4 : 8;$"
@@ -344,6 +350,43 @@ REFINEMENT_DELTA_PATTERN = re.compile(
 REFINEMENT_PROJECTED_PATTERN = re.compile(
     r"(?m)^(?P<indent>[ \t]*)float projected = dot\(vector, aperture_normal\);$"
 )
+REFINEMENT_HEADER_PATTERN = re.compile(
+    r"(?m)^(?P<indent>[ \t]*)static const char refine_header\[\] = GLSL\(\n"
+)
+REFINEMENT_TANGENT_CANDIDATE_PATTERN = re.compile(
+    r"(?m)^(?P<indent>[ \t]*)vec2 candidate = clamp\(vector \+ aperture_normal \*\n"
+    r"(?P=indent)[ \t]+\(round\(projected\) \+ float\(offset\) - projected\),\n"
+    r"(?P=indent)[ \t]+-p, size - 1\.0 - p\);$"
+)
+REFINEMENT_TANGENT_DENSE_CANDIDATE_PATTERN = re.compile(
+    r"(?m)^(?P<indent>[ \t]*)vec2 candidate = clamp\(vector \+ aperture_normal \*\n"
+    r"(?P=indent)[ \t]+\(float\(offset\) - dot\(vector, aperture_normal\)\),\n"
+    r"(?P=indent)[ \t]+-p, size - 1\.0 - p\);$"
+)
+REFINEMENT_BOUNDARY_HELPER = """    // MPVFLOW_REFINEMENT_BOUNDARY_STEP_V1: constrain the normal scalar to the feasible image interval.
+    bool bounded_aperture_candidate(vec2 vector, vec2 normal, float requested_step,
+                                    vec2 p, vec2 size, out vec2 candidate)
+    {
+        float lower_step = -1e20;
+        float upper_step = 1e20;
+        for (int axis = 0; axis < 2; axis++) {
+            float direction = normal[axis];
+            float minimum = -p[axis];
+            float maximum = size[axis] - 1.0 - p[axis];
+            if (abs(direction) > 0.000001) {
+                float first_step = (minimum - vector[axis]) / direction;
+                float second_step = (maximum - vector[axis]) / direction;
+                lower_step = max(lower_step, min(first_step, second_step));
+                upper_step = min(upper_step, max(first_step, second_step));
+            } else if (vector[axis] < minimum || vector[axis] > maximum) {
+                return false;
+            }
+        }
+        if (lower_step > upper_step)
+            return false;
+        candidate = vector + normal * clamp(requested_step, lower_step, upper_step);
+        return true;
+    }"""
 LEGACY_REFINEMENT_CANDIDATE_PATTERN = re.compile(
     r"(?m)^(?P<indent>[ \t]*)vec2 candidate = clamp\(aperture_normal \* \(round\(projected\) \+ float\(offset\)\),\n"
     r"(?P=indent)[ \t]+-p, size - 1\.0 - p\);$"
@@ -1394,16 +1437,42 @@ def _has_warp_trajectory_path_guard(source: str) -> bool:
 
 
 def _has_warp_primary_trust_cap(source: str) -> bool:
+    cap = re.search(
+        r"(?m)^[ \t]*// " + re.escape(PRIMARY_TRAJECTORY_TRUST_MARKER)
+        + r": unstable inverse paths cannot bypass the gate via primary match confidence\.\n"
+        r"[ \t]*trust = min\(trust, trajectory_quality\);$",
+        source,
+    )
+    if (
+        source.count(PRIMARY_TRAJECTORY_TRUST_MARKER) != 1
+        or source.count("float trust = quality(f);") != 1
+        or source.count("trust = min(trust, trajectory_quality);") != 1
+        or cap is None
+    ):
+        return False
     return (
-        source.count(PRIMARY_TRAJECTORY_TRUST_MARKER) == 1
-        and source.count("trust = min(trust, trajectory_quality);") == 1
-        and re.search(
-            r"(?m)^[ \t]*reliable \*= trajectory_quality;\n"
-            r"[ \t]*// " + re.escape(PRIMARY_TRAJECTORY_TRUST_MARKER)
-            + r": unstable inverse paths cannot bypass the gate via primary match confidence\.\n"
-            r"[ \t]*trust = min\(trust, trajectory_quality\);$",
-            source,
-        ) is not None
+        source.index("float trajectory_quality =") < source.index("float trust = quality(f);")
+        < cap.start()
+        and source.index("reliable *= trajectory_quality;") < cap.start()
+    )
+
+
+def _insert_primary_trajectory_trust_cap(source: str) -> str:
+    trust_matches = list(WARP_TRUST_DECLARATION_PATTERN.finditer(source))
+    reliability_matches = list(WARP_PRIMARY_TRUST_PATTERN.finditer(source))
+    if len(trust_matches) != 1 or len(reliability_matches) != 1:
+        raise ValueError("FongMi primary trajectory trust insertion anchors are not unique")
+    trust_match = trust_matches[0]
+    reliability_match = reliability_matches[0]
+    anchor = trust_match if trust_match.start() > reliability_match.start() else reliability_match
+    if source.index("float trajectory_quality =") > anchor.start():
+        raise ValueError("FongMi trajectory quality must be computed before the trust cap")
+    indent = anchor.group("indent")
+    return (
+        source[:anchor.end()]
+        + "\n"
+        + _indent_block(PRIMARY_TRAJECTORY_TRUST_BLOCK, indent)
+        + source[anchor.end():]
     )
 
 
@@ -1433,6 +1502,8 @@ def _has_warp_best_residual_guard(source: str) -> bool:
         and source.count("candidate_residual < best_residual") == 1
         and source.count("source = best_source;") == 1
         and source.count("f = best_field;") == 1
+        and source.count("vec2 displacement = (best_source - uv) * map_size;") == 1
+        and "vec2 displacement = -weight * f.xy;" not in source
         and source.count("float residual = best_residual;") == 1
         and WARP_ITERATION_PATTERN.search(source) is None
         and WARP_RESIDUAL_PATTERN.search(source) is None
@@ -1450,13 +1521,9 @@ def _has_scene_cut_guard(source: str) -> bool:
         and source.count("float spatial_cut = 0.0;") == 1
         and source.count("float local_luma_delta = abs(tile_luma_delta[i] / 16.0 - global_luma_delta);") == 1
         and source.count("if (local_luma_delta > 0.15)") == 1
-        and sum(
-            source.count(expression)
-            for expression in (
-                "cut = max(cut, spatial_cut);",
-                "cut = max(cut, min(spatial_cut, 0.44));",
-            )
-        ) == 1
+        and source.count("float scene_residual = max(0.0, residual / 256.0 - scene_brightness_error);") == 1
+        and source.count("bool spatial_corroborated = spatial_cut > 0.45 && scene_residual > 0.04;") == 1
+        and source.count("cut = max(cut, spatial_corroborated ? 0.46 : min(spatial_cut, 0.44));") == 1
     )
 
 
@@ -1483,7 +1550,9 @@ def _has_analysis_downsample_filter(source: str) -> bool:
     )
 
 
-def _has_refinement_aperture_normal(source: str, require_tangent: bool = True) -> bool:
+def _has_refinement_aperture_normal(
+    source: str, require_tangent: bool = True, require_boundary: bool = True
+) -> bool:
     common = (
         source.count(REFINEMENT_APERTURE_NORMAL_MARKER) == 1
         and source.count("bool aperture_ambiguous = false;") == 1
@@ -1510,13 +1579,22 @@ def _has_refinement_aperture_normal(source: str, require_tangent: bool = True) -
     if not common:
         return False
     if require_tangent:
+        tangent = source.count(REFINEMENT_APERTURE_TANGENT_MARKER) == 1
+        if not require_boundary:
+            return (
+                tangent
+                and source.count("vec2 candidate = clamp(vector + aperture_normal *\n") == 2
+                and source.count("(round(projected) + float(offset) - projected),") == 1
+                and source.count("(float(offset) - dot(vector, aperture_normal)),") == 1
+            )
         return (
-            source.count(REFINEMENT_APERTURE_TANGENT_MARKER) == 1
-            and source.count("vec2 candidate = clamp(vector + aperture_normal *\n") == 2
-            and source.count("(round(projected) + float(offset) - projected),") == 1
-            and source.count("(float(offset) - dot(vector, aperture_normal)),") == 1
-            and "aperture_normal * (round(projected) + float(offset))" not in source
-            and "aperture_normal * float(offset), -p" not in source
+            tangent
+            and source.count(REFINEMENT_BOUNDARY_STEP_MARKER) == 1
+            and source.count("bool bounded_aperture_candidate(") == 1
+            and source.count("if (!bounded_aperture_candidate(") == 2
+            and source.count("candidate = vector + normal * clamp(requested_step, lower_step, upper_step);") == 1
+            and "vec2 candidate = clamp(vector + aperture_normal *" not in source
+            and "vec2 candidate = clamp(aperture_normal *" not in source
         )
     return (
         REFINEMENT_APERTURE_TANGENT_MARKER not in source
@@ -1540,42 +1618,90 @@ def _is_patched(source: str) -> bool:
     )
 
 
+def _patch_aperture_boundary_step(source: str) -> str:
+    if REFINEMENT_BOUNDARY_STEP_MARKER in source:
+        if not _has_refinement_aperture_normal(source):
+            raise ValueError("FongMi boundary-safe aperture marker/source mismatch")
+        return source
+    source = _replace_one(
+        REFINEMENT_HEADER_PATTERN,
+        source,
+        lambda match: match.group(0) + REFINEMENT_BOUNDARY_HELPER + "\n",
+        "boundary-safe aperture-step helper",
+    )
+    source = _replace_one(
+        REFINEMENT_TANGENT_CANDIDATE_PATTERN,
+        source,
+        lambda match: (
+            match.group("indent") + "vec2 candidate;\n"
+            + match.group("indent") + "if (!bounded_aperture_candidate(\n"
+            + match.group("indent") + "        vector, aperture_normal,\n"
+            + match.group("indent") + "        round(projected) + float(offset) - projected,\n"
+            + match.group("indent") + "        p, size, candidate))\n"
+            + match.group("indent") + "    continue;"
+        ),
+        "boundary-safe normal-lattice candidate",
+    )
+    source = _replace_one(
+        REFINEMENT_TANGENT_DENSE_CANDIDATE_PATTERN,
+        source,
+        lambda match: (
+            match.group("indent") + "vec2 candidate;\n"
+            + match.group("indent") + "if (!bounded_aperture_candidate(\n"
+            + match.group("indent") + "        vector, aperture_normal,\n"
+            + match.group("indent") + "        float(offset) - dot(vector, aperture_normal),\n"
+            + match.group("indent") + "        p, size, candidate))\n"
+            + match.group("indent") + "    continue;"
+        ),
+        "boundary-safe dense normal candidate",
+    )
+    if not _has_refinement_aperture_normal(source):
+        raise ValueError("FongMi boundary-safe aperture-step patch failed its postconditions")
+    return source
+
+
 def _patch_refinement_aperture_normal(source: str) -> str:
     if REFINEMENT_APERTURE_NORMAL_MARKER in source:
         if _has_refinement_aperture_normal(source):
             return source
-        if not _has_refinement_aperture_normal(source, require_tangent=False):
+        legacy_aperture = _has_refinement_aperture_normal(source, require_tangent=False)
+        old_tangent_aperture = _has_refinement_aperture_normal(
+            source, require_boundary=False
+        )
+        if not legacy_aperture and not old_tangent_aperture:
             raise ValueError("FongMi refinement aperture-normal marker/source mismatch")
-        source = _replace_one(
-            REFINEMENT_PROJECTED_PATTERN,
-            source,
-            lambda match: (
-                match.group("indent") + "// " + REFINEMENT_APERTURE_TANGENT_MARKER
-                + ": preserve inherited tangential flow; refine only its normal projection.\n"
-                + match.group(0)
-            ),
-            "legacy aperture tangential-flow preservation marker",
-        )
-        source = _replace_one(
-            LEGACY_REFINEMENT_CANDIDATE_PATTERN,
-            source,
-            lambda match: (
-                match.group("indent") + "vec2 candidate = clamp(vector + aperture_normal *\n"
-                + match.group("indent") + "                       (round(projected) + float(offset) - projected),\n"
-                + match.group("indent") + "                       -p, size - 1.0 - p);"
-            ),
-            "legacy normal-only refinement candidate",
-        )
-        source = _replace_one(
-            LEGACY_DENSE_CANDIDATE_PATTERN,
-            source,
-            lambda match: (
-                match.group("indent") + "vec2 candidate = clamp(vector + aperture_normal *\n"
-                + match.group("indent") + "                       (float(offset) - dot(vector, aperture_normal)),\n"
-                + match.group("indent") + "                       -p, size - 1.0 - p);"
-            ),
-            "legacy normal-only dense candidate",
-        )
+        if legacy_aperture:
+            source = _replace_one(
+                REFINEMENT_PROJECTED_PATTERN,
+                source,
+                lambda match: (
+                    match.group("indent") + "// " + REFINEMENT_APERTURE_TANGENT_MARKER
+                    + ": preserve inherited tangential flow; refine only its normal projection.\n"
+                    + match.group(0)
+                ),
+                "legacy aperture tangential-flow preservation marker",
+            )
+            source = _replace_one(
+                LEGACY_REFINEMENT_CANDIDATE_PATTERN,
+                source,
+                lambda match: (
+                    match.group("indent") + "vec2 candidate = clamp(vector + aperture_normal *\n"
+                    + match.group("indent") + "                       (round(projected) + float(offset) - projected),\n"
+                    + match.group("indent") + "                       -p, size - 1.0 - p);"
+                ),
+                "legacy normal-only refinement candidate",
+            )
+            source = _replace_one(
+                LEGACY_DENSE_CANDIDATE_PATTERN,
+                source,
+                lambda match: (
+                    match.group("indent") + "vec2 candidate = clamp(vector + aperture_normal *\n"
+                    + match.group("indent") + "                       (float(offset) - dot(vector, aperture_normal)),\n"
+                    + match.group("indent") + "                       -p, size - 1.0 - p);"
+                ),
+                "legacy normal-only dense candidate",
+            )
+        source = _patch_aperture_boundary_step(source)
         if not _has_refinement_aperture_normal(source):
             raise ValueError("FongMi tangent-preserving aperture upgrade failed its postconditions")
         return source
@@ -1669,6 +1795,7 @@ def _patch_refinement_aperture_normal(source: str) -> str:
         ),
         "dense normal-lattice candidate search",
     )
+    source = _patch_aperture_boundary_step(source)
     if not _has_refinement_aperture_normal(source):
         raise ValueError("FongMi aperture-normal refinement patch failed its postconditions")
     return source
@@ -1699,14 +1826,7 @@ def _patch_warp_trajectory(source: str) -> str:
         if PRIMARY_TRAJECTORY_TRUST_MARKER in source and not _has_warp_primary_trust_cap(source):
             raise ValueError("FongMi primary trajectory trust marker/source mismatch")
         if PRIMARY_TRAJECTORY_TRUST_MARKER not in source:
-            source = _replace_one(
-                WARP_PRIMARY_TRUST_PATTERN,
-                source,
-                lambda match: match.group(0) + "\n" + _indent_block(
-                    PRIMARY_TRAJECTORY_TRUST_BLOCK, match.group("indent")
-                ),
-                "primary warp confidence trajectory cap",
-            )
+            source = _insert_primary_trajectory_trust_cap(source)
         if not _has_warp_trajectory_guard(source):
             raise ValueError("FongMi primary trajectory trust cap failed its postconditions")
         return source
@@ -1733,6 +1853,7 @@ def _patch_warp_trajectory(source: str) -> str:
         lambda match: match.group(0) + "\n" + _indent_block(WARP_TRAJECTORY_BLOCK, match.group("indent")),
         "inverse-warp trajectory gate",
     )
+    source = _insert_primary_trajectory_trust_cap(source)
     if not _has_warp_trajectory_guard(source):
         raise ValueError("FongMi trajectory trust cap failed its postconditions")
     return source
@@ -1770,6 +1891,12 @@ def _patch_warp_best_residual(source: str) -> str:
         source,
         lambda match: match.group("indent") + "float residual = best_residual;",
         "selected inverse-warp closure residual",
+    )
+    source = _replace_one(
+        WARP_VECTOR_PATTERN,
+        source,
+        lambda match: match.group("indent") + "vec2 displacement = (best_source - uv) * map_size;",
+        "selected inverse-warp source-coordinate displacement",
     )
     if not _has_warp_best_residual_guard(source):
         raise ValueError("FongMi best inverse-residual warp patch failed its postconditions")
