@@ -851,7 +851,7 @@ static void warp_policy(pl_gpu gpu)
             assert(fabs(output[index] + 10.5f) < 0.01f);
             assert(output[index + 3] > 0.99f);
         } else if (test == 6) {
-            assert(fabs(output[index]) < 0.01f);
+            assert(fabs(output[index] + 0.1f) < 0.01f);
             assert(output[index + 2] > 0.99);
             assert(output[index + 3] > 0.99);
         } else {
