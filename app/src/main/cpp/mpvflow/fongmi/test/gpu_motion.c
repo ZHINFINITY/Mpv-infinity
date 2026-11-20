@@ -906,25 +906,28 @@ static void synthesis_policy(pl_gpu gpu)
             policy_sampled("scene", inputs[4]),
         };
         float size[] = {WIDTH, HEIGHT};
-        float source_size[] = {WIDTH, HEIGHT};
         float alpha = 0.5f;
+        int linear_hdr = 0;
+        float projection_ratio[] = {1.0f, 1.0f};
         struct pl_shader_var variables[] = {
-            {.var = pl_var_vec2("motion_size"), .data = size},
             {.var = pl_var_vec2("output_size"), .data = size},
-            {.var = pl_var_vec2("source_size"), .data = source_size},
+            {.var = pl_var_vec2("motion_size"), .data = size},
             {.var = pl_var_float("alpha"), .data = &alpha},
+            {.var = pl_var_int("linear_hdr"), .data = &linear_hdr},
+            {.var = pl_var_vec2("projection_ratio"), .data = projection_ratio},
         };
         pl_shader shader = pl_dispatch_begin(dispatch);
         assert(pl_shader_custom(shader, &(struct pl_custom_shader) {
             .header = test_sample_header,
         }));
         assert(pl_shader_custom(shader, &(struct pl_custom_shader) {
-            .header = test_synthesis_header,
+            .header = test_synthesis_pixel_header,
             .body = test_synthesis_body,
             .compute = true, .compute_group_size = {8, 8},
             .output = PL_SHADER_SIG_COLOR,
             .descriptors = descriptors, .num_descriptors = 5,
-            .variables = variables, .num_variables = 4,
+            .variables = variables,
+            .num_variables = sizeof(variables) / sizeof(variables[0]),
         }));
         assert(pl_dispatch_finish(dispatch, pl_dispatch_params(
             .shader = &shader, .target = target,

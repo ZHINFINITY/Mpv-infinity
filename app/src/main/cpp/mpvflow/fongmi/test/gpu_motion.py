@@ -14,7 +14,8 @@ def main():
     source = args.source.read_text(encoding='utf-8')
     shaders = []
     for name in ('sample_header', 'match_header', 'match_body', 'refine_header',
-                 'synthesis_header', 'warp_body', 'synthesis_body'):
+                 'synthesis_header', 'synthesis_pixel_header', 'warp_body',
+                 'synthesis_body'):
         match = re.search(r'^static const char ' + name +
                           r'\[\] = GLSL\(\n.*?^\);', source, re.M | re.S)
         if not match:
