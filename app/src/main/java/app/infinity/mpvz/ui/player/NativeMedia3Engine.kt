@@ -357,6 +357,11 @@ class NativeMedia3Engine internal constructor(
   }
   private val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
     .setSubtitleParserFactory(assSubtitleParserFactory)
+  private val localMediaSourceFactory =
+    DefaultMediaSourceFactory(
+      DefaultDataSource.Factory(context.applicationContext),
+      extractorsFactory,
+    ).setSubtitleParserFactory(assSubtitleParserFactory)
   private val nativeTrackSelector = NativeRendererTrackSelector(appContext)
   private val player = playerFactoryForTesting?.invoke(appContext, nativeTrackSelector)
     ?: ExoPlayer.Builder(context.applicationContext)
@@ -384,10 +389,16 @@ class NativeMedia3Engine internal constructor(
     .setRenderersFactory(createRenderersFactory())
     .build()
   private var attachedView: PlayerView? = null
+  private var videoZoom = 0f
+  private var horizontalFlip = false
+  private var verticalFlip = false
+  private var videoPanX = 0f
+  private var videoPanY = 0f
   private val videoAspect = Media3AspectModeState()
   private var customAspectRatio: Float? = null
   private var subtitleOverlay: LibassSubtitleSurfaceView? = null
   private var libassRenderer: LibassSubtitleRenderer? = null
+  private var libassRendererSize: Pair<Int, Int>? = null
   private val externalAssEnabled = mutableMapOf<String, Boolean>()
   private var subtitleScale = 1f
   private var subtitlePosition = 100
@@ -677,6 +688,7 @@ class NativeMedia3Engine internal constructor(
       }
       _currentPlaybackErrorToken.value = itemToken
       Log.e(logTag, "player error itemEpoch=${itemToken.mediaItemEpoch}", error)
+      publishPlaybackSnapshot()
       onPlaybackError?.let { callback ->
         runCatching { callback(error, itemToken) }
           .onFailure { Log.e(logTag, "Native playback error callback failed", it) }
@@ -772,6 +784,9 @@ class NativeMedia3Engine internal constructor(
     override fun onIsLoadingChanged(isLoading: Boolean) {
       val elapsed = preparationStartedAtMs.takeIf { it > 0L }?.let { SystemClock.elapsedRealtime() - it }
       Log.d(logTag, "loading=$isLoading prepareElapsedMs=$elapsed ${bufferingLogState()}")
+      // Player.STATE_READY can arrive while loading is still true (for example after a seek). The
+      // loading=false edge must reach the controls snapshot too, or its buffering badge can stick.
+      publishSnapshot()
     }
 
     override fun onMetadata(metadata: Metadata) {
@@ -825,6 +840,7 @@ class NativeMedia3Engine internal constructor(
     view.useController = false
     applyVideoViewport(view)
     view.player = player
+    applyVideoScale()
     media3FlowSink?.setVideoAspect(media3OutputAspect(videoAspect.aspect(), customAspectRatio))
     configureSubtitleView()
     view.post {
@@ -832,6 +848,7 @@ class NativeMedia3Engine internal constructor(
       // PlayerView may apply its natural ratio while binding the player. Reapply persisted policy
       // after that callback, including across Activity recreation/view reattachment.
       applyVideoViewport(view)
+      applyVideoScale()
       configureSubtitleView()
     }
     startTimelineUpdates()
@@ -1089,14 +1106,34 @@ class NativeMedia3Engine internal constructor(
   }
 
   fun setZoom(zoom: Float) {
-    val scale = 2f.pow(zoom.coerceIn(-1f, 3f))
-    attachedView?.scaleX = scale
-    attachedView?.scaleY = scale
+    videoZoom = zoom.coerceIn(-1f, 3f)
+    applyVideoScale()
+  }
+
+  fun setHorizontalFlip(enabled: Boolean) {
+    horizontalFlip = enabled
+    applyVideoScale()
+  }
+
+  fun setVerticalFlip(enabled: Boolean) {
+    verticalFlip = enabled
+    applyVideoScale()
+  }
+
+  private fun applyVideoScale() {
+    val scale = videoScaleFactors(videoZoom, horizontalFlip, verticalFlip)
+    attachedView?.videoSurfaceView?.apply {
+      scaleX = scale.x
+      scaleY = scale.y
+      translationX = videoPanX
+      translationY = videoPanY
+    }
   }
 
   fun setPan(x: Float, y: Float) {
-    attachedView?.translationX = x
-    attachedView?.translationY = y
+    videoPanX = x
+    videoPanY = y
+    applyVideoScale()
   }
 
   fun setSubtitleScale(scale: Float) {
@@ -1458,12 +1495,18 @@ class NativeMedia3Engine internal constructor(
     val height = sourceHeight.coerceAtLeast(1)
     if (width <= 0 || height <= 0) return null
     libassRenderer?.let {
-      if (it.getWidth() != width || it.getHeight() != height) it.setSize(width, height)
+      // getWidth/getHeight synchronize with renderSurface. That renderer may hold its monitor
+      // while rasterizing a 4K subtitle, so never query its dimensions from this UI-thread path.
+      if (libassRendererSize != (width to height)) {
+        view.requestRendererSize(width, height)
+        libassRendererSize = width to height
+      }
       return it
     }
     return runCatching {
       LibassSubtitleRenderer(width, height, null).also {
         libassRenderer = it
+        libassRendererSize = width to height
         view.setRenderer(it)
         applyAssStyle()
         Log.i(logTag, "libass initialized size=${width}x${height} tracks=0")
@@ -1586,7 +1629,14 @@ class NativeMedia3Engine internal constructor(
     metadataChapters = emptyList()
     Log.d(logTag, "prepare begin uri=$preparationUri")
     val taggedMediaItem = tagMediaItemForNextPlayback(mediaItem)
-    player.setMediaItem(taggedMediaItem, startPositionMs.coerceAtLeast(0L))
+    if (shouldBypassNativeReadCache(mediaUri.toString())) {
+      player.setMediaSource(
+        localMediaSourceFactory.createMediaSource(taggedMediaItem),
+        startPositionMs.coerceAtLeast(0L),
+      )
+    } else {
+      player.setMediaItem(taggedMediaItem, startPositionMs.coerceAtLeast(0L))
+    }
     // The PlayerView is attached once during Activity creation. Preparing immediately here is
     // required for local HDR files; deferring this through View.post can leave Media3 in BUFFERING
     // without ever starting the local data pipeline on Xiaomi devices.
@@ -2068,6 +2118,7 @@ class NativeMedia3Engine internal constructor(
     attachedView?.player = null
     subtitleOverlay?.setRenderer(null)
     libassRenderer?.close()
+    libassRendererSize = null
     libassRenderer = null
     subtitleOverlay = null
     attachedView = null

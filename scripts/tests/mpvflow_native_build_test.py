@@ -80,7 +80,7 @@ assert "flow_release_frame(fp->vo, fp, true);" in discard_hunk, (
 release_frame = vo_patch.split("+static void flow_release_frame(", 1)[1].split("\n+}", 1)[0]
 assert "if (discard) flow_release_pair_for_frame(p, fp->frame_id);" in release_frame
 assert "if (discard && fp->flow_source)" in release_frame and "if (discard && fp->flow_input)" in release_frame
-assert "flow_prepare_input(vo, frame, mpi, fp);" in vo_patch
+assert "flow_prepare_input(fp->vo, &fp->native_frame, mpi, fp);" in vo_patch
 for marker in (
     "mpvflow_gpu_renderer_hook_supported", "mpvflow_gpu_renderer_hook_begin",
     "flow_compute_fusion_fallback", "flow_cached_synthesis_hook",
@@ -114,7 +114,7 @@ assert 'PlaybackSession.setOptionString("motion-interpolation", targetFps.toStri
 runtime_builder = BUILD.read_text(encoding="utf-8")
 for marker in (
     'EXPECTED_BUILDER_REVISION="1efc82739f6f7034cd63e7ee8b3ec5431df27467"',
-    'EXPECTED_MPV_REVISION="95ec8e929f8ad2f97c8415c486971493a0b408df"',
+    'EXPECTED_MPV_REVISION="645f8ecdd3c94379048e9ee3e7014e174de0bd02"',
     f'EXPECTED_FFMPEG_REVISION="{FFMPEG_SHA}"',
     f'EXPECTED_FFMPEG_REPOSITORY="{FFMPEG_REPOSITORY}"',
     'git -C "$MPV_BUILDER_DIR" rev-parse HEAD',
@@ -232,7 +232,7 @@ capture_default = prepare.configure_debug_capture_source(gpu_source, enabled=Fal
 assert capture_define not in capture_default, "default MPV source preparation must not enable debug capture"
 prepare_source = PREPARE.read_text(encoding="utf-8")
 assert 'debug_capture_enabled = os.environ.get("MPVFLOW_DEBUG_CAPTURE") == "1"' in prepare_source
-assert "MPVFLOW_DEBUG_CAPTURE is unsupported with the MPVRx-pinned FongMi 95ec motion core" in prepare_source
+assert "MPVFLOW_DEBUG_CAPTURE is unsupported with the pinned FongMi 645 motion core" in prepare_source
 assert "Enabled bounded one-shot FongMi diagnostics for this debug runtime" not in prepare_source
 assert "FongMi one-shot diagnostics disabled; leaving motion/VO sources uninstrumented" in prepare_source
 capture_debug = prepare.configure_debug_capture_source(gpu_source, enabled=True)
@@ -246,8 +246,15 @@ app_build = (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
 assert "val includeMpvFlowFongmiDiagnostics = false" in app_build
 assert 'project.findProperty("mpvFlowFongmiDiagnosticCapture")?.toString() == "true"' not in app_build
 assert 'buildConfigField("boolean", "MPV_HAS_FONGMI_DIAGNOSTICS", "false")' in app_build
+assert 'buildConfigField("boolean", "MPV_JELLY_MASK_PREVIEW", "false")' in app_build
+assert 'create("jellyPreview")' in app_build
+jelly_preview_type = app_build.split('create("jellyPreview")', 1)[1].split("\n    }", 1)[0]
+assert 'applicationIdSuffix = ".debug"' in jelly_preview_type
+assert 'matchingFallbacks += listOf("debug")' in jelly_preview_type
+assert 'buildConfigField("boolean", "MPV_JELLY_MASK_PREVIEW", "true")' in jelly_preview_type
+assert 'resValue("string", "app_name", "Mpv∞-Jelly Blend Test")' in jelly_preview_type
 
-old_dependency = "vulkan = dependency('vulkan', version: '>= 1.3.238', required: vulkan_opt)"
+old_dependency = "vulkan = dependency('vulkan', version: '>= 1.4.309', required: vulkan_opt)"
 new_dependency = "vulkan = dependency('vulkan', required: vulkan_opt)"
 header_check = "cc.has_header_symbol('vulkan/vulkan_core.h', 'VK_VERSION_1_3', dependencies: vulkan)"
 meson = f"before\n{old_dependency}\n{header_check}\nafter\n"
@@ -329,9 +336,13 @@ qcom_vulkan_context = """\
     VkPhysicalDeviceZeroInitializeWorkgroupMemoryFeaturesKHR zero_init_feature = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ZERO_INITIALIZE_WORKGROUP_MEMORY_FEATURES_KHR,
     };
+    VkPhysicalDeviceWorkgroupMemoryExplicitLayoutFeaturesKHR explicit_mem_layout_feature = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_WORKGROUP_MEMORY_EXPLICIT_LAYOUT_FEATURES_KHR,
+        .pNext = &zero_init_feature,
+    };
     VkPhysicalDeviceOpticalFlowFeaturesNV optical_flow_feature = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPTICAL_FLOW_FEATURES_NV,
-        .pNext = &zero_init_feature,
+        .pNext = &explicit_mem_layout_feature,
         .opticalFlow = true,
     };
 """
@@ -343,10 +354,15 @@ for marker in (
     "VkPhysicalDeviceImageProcessing2FeaturesQCOM",
     "textureBlockMatch = true",
     "textureBlockMatch2 = true",
+    ".pNext = &explicit_mem_layout_feature,",
     "&image_processing_feature",
     "MPVFLOW_QCOM_IMAGE_PROCESSING_FEATURES",
 ):
     assert marker in patched_qcom_context, f"MPV QCOM enablement patch is missing {marker!r}"
+assert patched_qcom_context.count("&explicit_mem_layout_feature") >= 3, (
+    "QCOM feature-chain fallbacks must preserve MPV645's explicit-memory-layout node"
+)
+assert "#ifdef VK_QCOM_image_processing2\n        .pNext = &image_processing2_feature,\n#else\n        .pNext = &explicit_mem_layout_feature,\n#endif\n" in patched_qcom_context
 assert prepare.enable_qcom_image_processing(patched_qcom_context) == patched_qcom_context
 for bad_qcom_context in (
     "no optional extension list or feature chain\n",
@@ -853,16 +869,28 @@ assert 'FONGMI_PATCH = VENDOR / "fongmi/mpv-fongmi-android.patch"' not in prepar
 assert '"--input", str(FONGMI_PATCH)' not in prepare_source
 assert '"mpvflow-vo-gpu-next.patch"' in prepare_source
 assert '"mpvflow-aimagereader-vulkan.patch"' in prepare_source
+assert 'retry_marker = "if (map_result == RA_HWDEC_MAP_RETRY) {"' in prepare_source
+assert 'if retry_marker not in gpu_video_source:' in prepare_source
+assert "mapper_meson_sources = (" in prepare_source
+assert '"#define RA_HWDEC_MAP_RETRY (-2)" not in hwdec_header_path.read_text' in prepare_source
+assert 'not all(source in meson for source in mapper_meson_sources)' in prepare_source
+assert '"# MPVFLOW_AIMAGE_VULKAN_MAPPER"' not in prepare_source
+retry_patch = VULKAN_MAPPER_PATCH.read_text(encoding="utf-8")
+assert "video/out/gpu/video.c" in retry_patch and "unref_current_image(p);" in retry_patch
+assert "video/out/gpu/hwdec.c" not in retry_patch and "video/out/vo_gpu_next.c" not in retry_patch
 assert '"video/out/gpu_next/motion.c"' in prepare_source
 assert 'scripts/patch_fongmi_motion_diagnostics.py' not in prepare_source
 assert 'scripts/patch_fongmi_vo_diagnostics.py' not in prepare_source
 assert 'subprocess.run([sys.executable, str(patcher), str(mpv_dir)], cwd=ROOT, check=True)' not in prepare_source
-assert "MPVFLOW_DEBUG_CAPTURE is unsupported with the MPVRx-pinned FongMi 95ec motion core" in prepare_source
+assert "MPVFLOW_DEBUG_CAPTURE is unsupported with the pinned FongMi 645 motion core" in prepare_source
 assert '"motion-interpolation", OPT_INT(motion_fps)' in prepare_source
 assert '"video/out/hwdec/hwdec_aimagereader_vk_direct.c"' in prepare_source
 assert '"motion-interpolation-info", mp_property_motion_info' in prepare_source
 assert 'mp.get_property_native("motion-interpolation-info")' in prepare_source
 assert "validate_fongmi_frame_priv_members(vo)" in prepare_source
+assert '"struct ra_hwdec *hwdec;"' in prepare_source
+assert '"struct ra_hwdec *el_hwdec;"' in prepare_source
+assert '"bool hwdec_preloaded;"' not in prepare_source
 assert '"bool retry = result == RA_HWDEC_MAP_RETRY;"' in prepare_source
 assert '"fp->source->failed = ret != RA_HWDEC_MAP_RETRY;"' in prepare_source
 assert "Pinned FongMi VO is missing the transient hwdec-map retry/ownership contract" in prepare_source
@@ -1753,7 +1781,7 @@ with tempfile.TemporaryDirectory(prefix="mpvflow-builder-patch-test-") as tempor
     assert result.returncode == 0, f"builder patcher fixture failed:\n{result.stdout}{result.stderr}"
     patched_downloads = downloads.read_text(encoding="utf-8")
     assert "https://github.com/FongMi/libplacebo.git" in patched_downloads, "FongMi libplacebo source was lost"
-    assert "63659d96d1bff7d7a5a1368e9538056a193fc6fb" in patched_downloads, "MPVRx-provenance FongMi libplacebo pin was lost"
+    assert "63659d96d1bff7d7a5a1368e9538056a193fc6fb" in patched_downloads, "Mpv-infinity FongMi libplacebo pin was lost"
     assert "git -C libplacebo fetch --depth=1 origin 63659d96d1bff7d7a5a1368e9538056a193fc6fb" in patched_downloads
     assert "git -C libplacebo checkout --detach FETCH_HEAD" in patched_downloads
     assert 'libplacebo_actual" != "63659d96d1bff7d7a5a1368e9538056a193fc6fb"' in patched_downloads

@@ -20,6 +20,7 @@ import app.infinity.mpvz.preferences.FoldersPreferences
 import app.infinity.mpvz.repository.MediaFileRepository
 import app.infinity.mpvz.ui.browser.base.BaseBrowserViewModel
 import app.infinity.mpvz.ui.player.PlaybackIdentity
+import app.infinity.mpvz.ui.player.isPlaybackStateWatched
 import app.infinity.mpvz.utils.media.MediaLibraryEvents
 import app.infinity.mpvz.utils.media.MetadataRetrieval
 import app.infinity.mpvz.utils.media.PlaybackStateEvents
@@ -167,6 +168,16 @@ class FolderListViewModel(
       }
     }
 
+    viewModelScope.launch(Dispatchers.IO) {
+      combine(
+        browserPreferences.watchedThreshold.changes(),
+        appearancePreferences.showUnplayedOldVideoLabel.changes(),
+        appearancePreferences.unplayedOldVideoDays.changes(),
+      ) { _, _, _ -> Unit }
+        .drop(1)
+        .collectLatest { calculateNewVideoCounts(_videoFolders.value) }
+    }
+
     // Filter folders based on blacklist (video vs audio scope)
     val blacklistFlow = if (audioOnly) {
       foldersPreferences.blacklistedAudioFolders.changes()
@@ -299,6 +310,12 @@ class FolderListViewModel(
           val watchedThreshold = browserPreferences.watchedThreshold.get()
           val currentTime = System.currentTimeMillis()
 
+          val explicitVideoOverrides =
+            getApplication<Application>()
+              .getSharedPreferences("video_watched_overrides", android.content.Context.MODE_PRIVATE)
+              .getStringSet("values", emptySet())
+              ?: emptySet()
+
           val foldersWithCounts =
             folders.map { folder ->
               try {
@@ -307,71 +324,38 @@ class FolderListViewModel(
                   app.infinity.mpvz.repository.MediaFileRepository
                     .getVideosInFolder(getApplication(), folder.bucketId)
 
-                // Count new unplayed videos. A watched folder is the default state, but an
-                // explicit child swipe-to-unwatched must override that default for the folder
-                // badge as well.
                 val watchedOverride = folderWatchedOverrides.value[folder.bucketId]
                 val newCount =
-                  if (watchedOverride == true) {
-                    videos.count { video ->
-                      val durationSeconds = video.duration / 1000L
-                      val explicitOverride =
-                        getApplication<Application>()
-                          .getSharedPreferences("video_watched_overrides", android.content.Context.MODE_PRIVATE)
-                          .getStringSet("values", emptySet())
-                          ?.contains("${video.path}\u001f0") == true
-                      val playbackState = playbackStateRepository.getVideoDataByTitle(PlaybackIdentity.forLocalPath(video.path))
-                        ?: playbackStateRepository.getVideoDataByTitle(PlaybackIdentity.forUri(video.uri.toString()))
-                        ?: playbackStateRepository.getVideoDataByTitle(PlaybackIdentity.forUri(video.path))
-                        ?: playbackStateRepository.getVideoDataByTitle(PlaybackIdentity.forUri("file://${video.path}"))
-                      explicitOverride || (
-                        playbackState != null &&
-                          !playbackState.hasBeenWatched &&
-                          playbackState.lastPosition <= 0 &&
-                          playbackState.timeRemaining >= durationSeconds - 1
-                      )
-                    }
-                  } else if (watchedOverride == false) {
-                    videos.count { video ->
-                      // An unwatched folder makes children NEW by default, but an explicit
-                      // child swipe-to-watched must remove that child from the folder badge.
-                      getApplication<Application>()
-                        .getSharedPreferences("video_watched_overrides", android.content.Context.MODE_PRIVATE)
-                        .getStringSet("values", emptySet())
-                        ?.contains("${video.path}\u001f1") != true
-                    }
-                  } else {
                   videos.count { video ->
-                    // Check if video was modified within threshold days unless the user
-                    // explicitly marked the whole folder as unwatched.
-                    val videoAge = currentTime - (video.dateModified * 1000)
-                    val isRecent = videoAge <= thresholdMillis
-
-                    // A video counts as "unplayed" until it has been watched to the
-                    // configured threshold. Threshold 0 ("Infinitely") keeps it unplayed.
-                    val playbackState = playbackStateRepository.getVideoDataByTitle(PlaybackIdentity.forLocalPath(video.path))
-                      ?: playbackStateRepository.getVideoDataByTitle(PlaybackIdentity.forUri(video.uri.toString()))
-                      ?: playbackStateRepository.getVideoDataByTitle(PlaybackIdentity.forUri(video.path))
-                      ?: playbackStateRepository.getVideoDataByTitle(PlaybackIdentity.forUri("file://${video.path}"))
-                    val explicitlyUnwatched =
-                      getApplication<Application>()
-                        .getSharedPreferences("video_watched_overrides", android.content.Context.MODE_PRIVATE)
-                        .getStringSet("values", emptySet())
-                        ?.contains("${video.path}\u001f0") == true
-                    val isUnplayed =
-                      explicitlyUnwatched || if (playbackState != null && video.duration > 0) {
-                        val durationSeconds = video.duration / 1000
-                        val watched = durationSeconds - playbackState.timeRemaining.toLong()
-                        val progressValue =
-                          (watched.toFloat() / durationSeconds.toFloat()).coerceIn(0f, 1f)
-                        watchedThreshold <= 0 || progressValue < (watchedThreshold / 100f)
-                      } else {
-                        playbackState == null
+                    val playbackIdentifiers =
+                      PlaybackIdentity.localPathAliases(video.path) +
+                        PlaybackIdentity.forUri(video.uri.toString()) +
+                        video.path +
+                        video.displayName
+                    val playbackState =
+                      playbackIdentifiers.firstNotNullOfOrNull { identifier ->
+                        playbackStateRepository.getVideoDataByTitle(identifier)
                       }
+                    val durationSeconds = video.duration / 1000L
+                    val explicitlyWatched = "${video.path}\u001f1" in explicitVideoOverrides
+                    val isWatched = explicitlyWatched || isPlaybackStateWatched(playbackState, durationSeconds, watchedThreshold)
+                    val explicitlyUnwatched = "${video.path}\u001f0" in explicitVideoOverrides
+                    val persistedUnwatched =
+                      playbackState != null &&
+                        !playbackState.hasBeenWatched &&
+                        playbackState.lastPosition <= 0 &&
+                        playbackState.timeRemaining >= durationSeconds - 1
+                    val markedNew = explicitlyUnwatched || persistedUnwatched
+                    val isRecent = currentTime - (video.dateModified * 1000) <= thresholdMillis
 
-                    if (watchedOverride == false) true else explicitlyUnwatched || (isRecent && isUnplayed)
+                    // A saved watched flag or reached threshold always removes NEW, including
+                    // when an older manual-unwatched override or folder default is still present.
+                    when (watchedOverride) {
+                      true -> markedNew && !isWatched
+                      false -> !explicitlyWatched && !isWatched
+                      null -> !isWatched && (markedNew || isRecent)
+                    }
                   }
-                }
 
                 FolderWithNewCount(folder, newCount)
               } catch (e: CancellationException) {

@@ -111,6 +111,7 @@ import app.infinity.mpvz.preferences.MpvConfigOverridePolicy
 import app.infinity.mpvz.preferences.PlayerPreferences
 import app.infinity.mpvz.preferences.SubtitlesPreferences
 import app.infinity.mpvz.preferences.VideoSortType
+import app.infinity.mpvz.repository.MediaFileRepository
 import app.infinity.mpvz.ui.browser.playlist.ALL_VIDEOS_PLAYLIST_ID
 import app.infinity.mpvz.ui.browser.playlist.buildAllVideosPlaylistEntity
 import app.infinity.mpvz.ui.browser.playlist.isAllVideosPlaylist
@@ -133,6 +134,7 @@ import app.infinity.mpvz.utils.media.M3UParseResult
 import app.infinity.mpvz.utils.media.M3URoute
 import app.infinity.mpvz.utils.media.M3URoutingPolicy
 import app.infinity.mpvz.utils.media.M3UParser
+import app.infinity.mpvz.utils.media.MediaLibraryEvents
 import app.infinity.mpvz.utils.media.PlaybackStateEvents
 import app.infinity.mpvz.utils.media.SharedUrlExtractor
 import app.infinity.mpvz.utils.media.SubtitleOps
@@ -609,6 +611,8 @@ class PlayerActivity :
       )
       nativeEngine.setSubtitleScale(subtitlesPreferences.subScale.get())
       nativeEngine.setSubtitlePosition(subtitlesPreferences.subPos.get())
+      nativeEngine.setHorizontalFlip(viewModel.transformState.value.isMirrored)
+      nativeEngine.setVerticalFlip(viewModel.transformState.value.isVerticalFlipped)
     }
   }
 
@@ -1123,6 +1127,8 @@ class PlayerActivity :
   }
   private fun handleNativePlaybackEnded() {
     if (!isNativeEngineActive()) return
+    // Commit the ended item's final position/watched state before repeat or queue advancement.
+    saveVideoPlaybackState(fileName, immediate = true)
     val autoplay = playerPreferences.autoplayNextVideo.get()
     when {
       viewModel.shouldRepeatCurrentFile() -> {
@@ -1151,7 +1157,10 @@ class PlayerActivity :
       causeClassNames = causeClassNames,
       rendererName = rendererFailure?.rendererName,
       rendererMimeType = rendererFailure?.rendererFormat?.sampleMimeType,
-    ) ?: return
+    ) ?: run {
+      viewModel.onVideoLoadFailed()
+      return
+    }
 
     Log.w(
       "Mpv∞-PlayerActivity",
@@ -1170,6 +1179,14 @@ class PlayerActivity :
 
   override fun nativeSetPan(x: Float, y: Float) {
     nativeEngineOrNull()?.setPan(x, y)
+  }
+
+  override fun nativeSetHorizontalFlip(enabled: Boolean) {
+    nativeEngineOrNull()?.setHorizontalFlip(enabled)
+  }
+
+  override fun nativeSetVerticalFlip(enabled: Boolean) {
+    nativeEngineOrNull()?.setVerticalFlip(enabled)
   }
 
   override fun nativeSetSubtitleScale(scale: Float) {
@@ -1978,6 +1995,8 @@ class PlayerActivity :
               binding.player.visibility = View.GONE
               viewModel.clearNativeExternalSubtitles()
               configureNativeEngineIfNeeded(force = true)
+              nativeEngine.setHorizontalFlip(viewModel.transformState.value.isMirrored)
+              nativeEngine.setVerticalFlip(viewModel.transformState.value.isVerticalFlipped)
               nativeEngine.play(
                 nativeUri,
                 outgoingPositionMs,
@@ -2957,10 +2976,13 @@ class PlayerActivity :
           viewModel.videoZoom,
           viewModel.videoPanX,
           viewModel.videoPanY,
-        ) { zoom, panX, panY ->
-          Triple(zoom, panX, panY)
-        }.collect { (zoom, panX, panY) ->
+          viewModel.transformState,
+        ) { zoom, panX, panY, flips ->
+          Triple(zoom, panX, panY) to flips
+        }.collect { (position, flips) ->
+          val (zoom, panX, panY) = position
           val scale = 2f.pow(zoom)
+          // MPV applies flips with its hflip/vflip filters; a second negative view scale cancels them.
           binding.player.scaleX = scale
           binding.player.scaleY = scale
           binding.player.translationX = panX
@@ -2969,8 +2991,8 @@ class PlayerActivity :
           // keeps native subtitle overlays and controls out of the video pan/zoom transform while
           // giving both engines the same pan/zoom state.
           binding.media3Player.videoSurfaceView?.apply {
-            scaleX = scale
-            scaleY = scale
+            this.scaleX = if (flips.isMirrored) -scale else scale
+            this.scaleY = if (flips.isVerticalFlipped) -scale else scale
             translationX = panX
             translationY = panY
           }
@@ -7423,6 +7445,13 @@ class PlayerActivity :
               watchedThreshold = watchedThreshold,
             )
           saveRepository.upsert(playbackState)
+          if (shouldRemoveRecentlyPlayedEntry(snapshot, playbackState)) {
+            RecentlyPlayedOps.onVideoFinished(appContext, snapshot.recentlyPlayedUri.orEmpty())
+          }
+          if (playbackState.hasBeenWatched && oldState?.hasBeenWatched != true) {
+            MediaFileRepository.invalidateTreeCache()
+            MediaLibraryEvents.notifyChanged()
+          }
           PlaybackStateEvents.notifyChanged(snapshot.mediaIdentifier)
           directAudiobook?.let { DirectAudiobookResumeStore.recordPlaying(appContext, it) }
           persistStreamHistoryProgress(appContext, snapshot, streamHistoryKey)
@@ -7477,6 +7506,11 @@ class PlayerActivity :
     // is written under the correct video's record.
     val saveIdentifier = activeSaveMediaIdentifier.ifBlank { mediaIdentifier }
     if (saveIdentifier.isBlank()) return null
+    val recentlyPlayedUri =
+      PlaybackSession.queue.value.currentItem
+        ?.takeIf { it.stableId == saveIdentifier }
+        ?.originalUri
+        ?.takeIf { it.isNotBlank() }
 
     val nativeSnapshot = nativeEngineOrNull()?.snapshot?.value
     val nativeEngineActive = activeEngineMode == PlaybackEngineMode.NATIVE
@@ -7510,6 +7544,7 @@ class PlayerActivity :
     return PlaybackStateSnapshot(
       mediaIdentifier = saveIdentifier,
       mediaTitle = mediaTitle,
+      recentlyPlayedUri = recentlyPlayedUri,
       currentPosition =
         // The live value wins after backward/zero seeks; max(snapshot, live) resurrects
         // the old position until the next 250ms snapshot tick.
@@ -7901,34 +7936,7 @@ class PlayerActivity :
         return@runCatching
       }
 
-      val filePath =
-        when (uri.scheme) {
-          "file" -> {
-            uri.path ?: uri.toString()
-          }
-
-          "content" -> {
-            contentResolver
-              .query(
-                uri,
-                arrayOf(MediaStore.MediaColumns.DATA),
-                null,
-                null,
-                null,
-              )?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                  val columnIndex = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
-                  if (columnIndex != -1) cursor.getString(columnIndex) else null
-                } else {
-                  null
-                }
-              } ?: uri.toString()
-          }
-
-          else -> {
-            uri.toString()
-          }
-        }
+      val filePath = RecentlyPlayedOps.resolveRecentlyPlayedFilePath(applicationContext, uri)
 
       val launchSource =
         when {
@@ -10771,34 +10779,7 @@ class PlayerActivity :
     name: String,
   ) {
     runCatching {
-      val filePath =
-        when (uri.scheme) {
-          "file" -> {
-            uri.path ?: uri.toString()
-          }
-
-          "content" -> {
-            contentResolver
-              .query(
-                uri,
-                arrayOf(MediaStore.MediaColumns.DATA),
-                null,
-                null,
-                null,
-              )?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                  val columnIndex = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
-                  if (columnIndex != -1) cursor.getString(columnIndex) else null
-                } else {
-                  null
-                }
-              } ?: uri.toString()
-          }
-
-          else -> {
-            uri.toString()
-          }
-        }
+      val filePath = RecentlyPlayedOps.resolveRecentlyPlayedFilePath(applicationContext, uri)
 
       val isGenericStream =
         name.isBlank() ||

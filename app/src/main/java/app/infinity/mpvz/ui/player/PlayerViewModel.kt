@@ -2404,6 +2404,13 @@ class PlayerViewModel(
     scheduleAutoCropAnalysis()
   }
 
+  fun onVideoLoadFailed() {
+    showControls()
+    _videoOpenAnimationState.update { current ->
+      if (current.isWaitingForVideo) current.copy(isWaitingForVideo = false) else current
+    }
+  }
+
   fun updateTorrentState(state: TorrentStreamingState) {
     _torrentState.value = state
   }
@@ -6771,15 +6778,31 @@ class PlayerViewModel(
 
   // ==================== Mirroring ====================
 
+  private fun blockFlipForHwPlus(): Boolean {
+    val activeEngine = if (host.isNativeEngineActive()) PlaybackEngineMode.NATIVE else PlaybackEngineMode.MPV
+    val activeDecoder =
+      if (activeEngine == PlaybackEngineMode.MPV) {
+        runCatching { PlaybackSession.getPropertyString("hwdec-current") }.getOrNull()
+      } else {
+        null
+      }
+    if (!VideoFlipDecoderPolicy.requiresHwOrSwDecoder(activeEngine, activeDecoder)) return false
+
+    playerUpdate.value = PlayerUpdates.ShowText(appContext.getString(R.string.player_flip_requires_hw_or_sw))
+    return true
+  }
+
   fun toggleMirroring() {
+    if (blockFlipForHwPlus()) return
     val newMirrorState = !_transformState.value.isMirrored
     _transformState.update { it.copy(isMirrored = newMirrorState) }
 
-    // Use labeled video filter for mirroring to avoid state desync
-    if (newMirrorState) {
-      PlaybackSession.command("vf", "add", "@Mpv∞_hflip:hflip")
+    if (host.isNativeEngineActive()) {
+      host.nativeSetHorizontalFlip(newMirrorState)
+    } else if (newMirrorState) {
+      PlaybackSession.command("vf", "add", "@mpvinfinity_hflip:hflip")
     } else {
-      PlaybackSession.command("vf", "remove", "@Mpv∞_hflip")
+      PlaybackSession.command("vf", "remove", "@mpvinfinity_hflip")
     }
     playerUpdate.value =
       PlayerUpdates.ShowText(
@@ -6790,14 +6813,16 @@ class PlayerViewModel(
   }
 
   fun toggleVerticalFlip() {
+    if (blockFlipForHwPlus()) return
     val newState = !_transformState.value.isVerticalFlipped
     _transformState.update { it.copy(isVerticalFlipped = newState) }
 
-    // Use labeled video filter for vflip to avoid state desync
-    if (newState) {
-      PlaybackSession.command("vf", "add", "@Mpv∞_vflip:vflip")
+    if (host.isNativeEngineActive()) {
+      host.nativeSetVerticalFlip(newState)
+    } else if (newState) {
+      PlaybackSession.command("vf", "add", "@mpvinfinity_vflip:vflip")
     } else {
-      PlaybackSession.command("vf", "remove", "@Mpv∞_vflip")
+      PlaybackSession.command("vf", "remove", "@mpvinfinity_vflip")
     }
 
     playerUpdate.value =

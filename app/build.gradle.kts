@@ -63,6 +63,7 @@ android {
     buildConfigField("boolean", "MPV_HAS_MPVFLOW", "false")
     buildConfigField("boolean", "MPV_HAS_FONGMI_MEMC", includeMpvFlowMpvRuntime.toString())
     buildConfigField("boolean", "MPV_HAS_FONGMI_DIAGNOSTICS", includeMpvFlowFongmiDiagnostics.toString())
+    buildConfigField("boolean", "MPV_JELLY_MASK_PREVIEW", "false")
 
     externalNativeBuild {
       cmake {
@@ -153,6 +154,19 @@ android {
       applicationIdSuffix = ".debug"
       versionNameSuffix = "-${getCommitCount()}"
       resValue("string", "app_name", "Mpv∞-Debug")
+      ndk {
+        debugSymbolLevel = "none"
+      }
+    }
+
+    create("jellyPreview") {
+      initWith(getByName("debug"))
+      matchingFallbacks += listOf("debug")
+      isDebuggable = true
+      applicationIdSuffix = ".debug"
+      versionNameSuffix = "-jelly-blend-test-${getCommitCount()}"
+      resValue("string", "app_name", "Mpv∞-Jelly Blend Test")
+      buildConfigField("boolean", "MPV_JELLY_MASK_PREVIEW", "true")
       ndk {
         debugSymbolLevel = "none"
       }

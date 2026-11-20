@@ -1,6 +1,7 @@
 package androidx.media3.subtitle.libass;
 
 import android.util.Log;
+import android.util.Size;
 import androidx.annotation.Nullable;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -17,15 +18,27 @@ public final class LibassSubtitleRenderer implements AutoCloseable {
   private static final String TAG = "Media3Libass";
   private final Map<String, Integer> tracks = new LinkedHashMap<>();
   private final Map<String, byte[]> trackData = new LinkedHashMap<>();
-  private int width;
-  private int height;
+  private volatile Size size;
   private volatile long nativeHandle;
   private byte[] frame;
 
+  /** Dimensions and reusable RGBA buffer captured together by one renderer-locked operation. */
+  public static final class RenderedFrameSnapshot {
+    @Nullable private final byte[] rgba;
+    private final Size size;
+
+    private RenderedFrameSnapshot(@Nullable byte[] rgba, Size size) {
+      this.rgba = rgba;
+      this.size = size;
+    }
+
+    @Nullable public byte[] getRgba() { return rgba; }
+    public Size getSize() { return size; }
+  }
+
   public LibassSubtitleRenderer(int width, int height, @Nullable String fontsDirectory) {
     if (width <= 0 || height <= 0) throw new IllegalArgumentException("Invalid renderer dimensions");
-    this.width = width;
-    this.height = height;
+    size = new Size(width, height);
     nativeHandle = LibassNative.nativeCreate(width, height, fontsDirectory);
     if (nativeHandle == 0) throw new IllegalStateException("Unable to initialize native libass");
     frame = new byte[width * height * 4];
@@ -35,12 +48,12 @@ public final class LibassSubtitleRenderer implements AutoCloseable {
   public synchronized void setSize(int width, int height) {
     checkOpen();
     if (width <= 0 || height <= 0) throw new IllegalArgumentException("Invalid renderer dimensions");
-    if (this.width == width && this.height == height) return;
+    Size currentSize = size;
+    if (currentSize.getWidth() == width && currentSize.getHeight() == height) return;
     if (!LibassNative.nativeSetSize(nativeHandle, width, height)) {
       throw new IllegalStateException("Unable to resize native libass renderer");
     }
-    this.width = width;
-    this.height = height;
+    size = new Size(width, height);
     frame = new byte[width * height * 4];
     Log.i(TAG, "resized size=" + width + "x" + height);
   }
@@ -167,6 +180,11 @@ public final class LibassSubtitleRenderer implements AutoCloseable {
     return rendered ? frame : null;
   }
 
+  /** Returns a frame and its dimensions from the same renderer-locked instant. */
+  public synchronized RenderedFrameSnapshot renderFrame(long positionUs) {
+    return new RenderedFrameSnapshot(render(positionUs), size);
+  }
+
   public synchronized void setSurface(@Nullable android.view.Surface surface) {
     checkOpen();
     LibassNative.nativeSetSurface(nativeHandle, surface);
@@ -178,8 +196,10 @@ public final class LibassSubtitleRenderer implements AutoCloseable {
     return LibassNative.nativeRenderSurface(handle, positionUs);
   }
 
-  public synchronized int getWidth() { return width; }
-  public synchronized int getHeight() { return height; }
+  /** Lock-free dimension snapshot; renderSurface holds this object's monitor during native work. */
+  public Size getSize() { return size; }
+  public int getWidth() { return size.getWidth(); }
+  public int getHeight() { return size.getHeight(); }
   public synchronized int getTrackCount() { return tracks.size(); }
   public synchronized Map<String, Integer> getTrackIds() { return Collections.unmodifiableMap(new LinkedHashMap<>(tracks)); }
 

@@ -242,7 +242,8 @@ class Media3FlowVideoSink(
   private val renderTaskPending = AtomicBoolean(false)
   private val renderRequestVersion = AtomicLong(0L)
   private val renderFrameTimeNanos = AtomicLong(NO_FRAME_TIME_NANOS)
-  private val mainHandler = Handler(Looper.getMainLooper())
+  private val vsyncThread = HandlerThread("Media3Flow-Vsync").apply { start() }
+  private val vsyncHandler = Handler(vsyncThread.looper)
   @Volatile private var choreographer: Choreographer? = null
   private val frameCallbackScheduled = AtomicBoolean(false)
   private val displayFrameCallback = Choreographer.FrameCallback { frameTimeNanos ->
@@ -251,6 +252,25 @@ class Media3FlowVideoSink(
       requestRenderAtDisplayFrame(frameTimeNanos)
       scheduleDisplayFrame()
     }
+  }
+  private val registerDisplayFrameRunnable = Runnable {
+    if (!running || disposed || !outputAvailable || storedFrameCount <= 0) {
+      frameCallbackScheduled.set(false)
+    } else {
+      val currentChoreographer = choreographer ?: runCatching { Choreographer.getInstance() }
+        .onFailure { Log.w(logTag, "Choreographer unavailable; using bounded timer pacing", it) }
+        .getOrNull()
+        ?.also { choreographer = it }
+      if (currentChoreographer != null) {
+        currentChoreographer.postFrameCallback(displayFrameCallback)
+      } else {
+        val delayMs = (1_000f / targetFps).roundToLong().coerceAtLeast(1L)
+        if (!glHandler.postDelayed(fallbackFrameRunnable, delayMs)) frameCallbackScheduled.set(false)
+      }
+    }
+  }
+  private val removeDisplayFrameRunnable = Runnable {
+    choreographer?.removeFrameCallback(displayFrameCallback)
   }
   private val fallbackFrameRunnable = Runnable {
     frameCallbackScheduled.set(false)
@@ -1287,38 +1307,20 @@ class Media3FlowVideoSink(
     if (!accepted) renderTaskPending.set(false)
   }
 
-  /** Schedule vsync on the main looper so the GL thread can keep its next deadline visible while swap blocks. */
+  /** Keep vsync callbacks independent of UI-thread stalls while the GL thread is busy. */
   private fun scheduleDisplayFrame() {
     if (!running || disposed || !outputAvailable || storedFrameCount <= 0 ||
       !frameCallbackScheduled.compareAndSet(false, true)
     ) return
-    val registerCallback = Runnable {
-      if (!running || disposed || !outputAvailable || storedFrameCount <= 0) {
-        frameCallbackScheduled.set(false)
-      } else {
-        val currentChoreographer = choreographer ?: runCatching { Choreographer.getInstance() }
-          .onFailure { Log.w(logTag, "Choreographer unavailable; using bounded timer pacing", it) }
-          .getOrNull()
-          ?.also { choreographer = it }
-        if (currentChoreographer != null) {
-          currentChoreographer.postFrameCallback(displayFrameCallback)
-        } else {
-          val delayMs = (1_000f / targetFps).roundToLong().coerceAtLeast(1L)
-          if (!glHandler.postDelayed(fallbackFrameRunnable, delayMs)) frameCallbackScheduled.set(false)
-        }
-      }
-    }
-    if (Looper.myLooper() == Looper.getMainLooper()) {
-      registerCallback.run()
-    } else if (!mainHandler.post(registerCallback)) {
+    if (!vsyncHandler.post(registerDisplayFrameRunnable)) {
       frameCallbackScheduled.set(false)
     }
   }
 
   private fun cancelDisplayFrame() {
-    if (frameCallbackScheduled.getAndSet(false)) {
-      mainHandler.post { choreographer?.removeFrameCallback(displayFrameCallback) }
-    }
+    frameCallbackScheduled.set(false)
+    vsyncHandler.removeCallbacks(registerDisplayFrameRunnable)
+    vsyncHandler.post(removeDisplayFrameRunnable)
     glHandler.removeCallbacks(fallbackFrameRunnable)
   }
 
@@ -1431,6 +1433,14 @@ class Media3FlowVideoSink(
     eglDisplay = EGL14.EGL_NO_DISPLAY
     eglContext = EGL14.EGL_NO_CONTEXT
     pbufferSurface = EGL14.EGL_NO_SURFACE
+    if (!vsyncHandler.post {
+        choreographer?.removeFrameCallback(displayFrameCallback)
+        choreographer = null
+        vsyncThread.quitSafely()
+      }
+    ) {
+      vsyncThread.quitSafely()
+    }
     glThread.quitSafely()
   }
 
@@ -3088,6 +3098,16 @@ class Media3FlowVideoSink(
   }
 
   private fun destroyPresentationContextOnThread() {
+    if (presentationQueue.hasPresenting()) {
+      if (!presentationHandler.postDelayed(
+          { destroyPresentationContextOnThread() },
+          PRESENTATION_FENCE_POLL_DELAY_MS,
+        )
+      ) {
+        Log.e(logTag, "event=presentation_context_release state=presentation_fence_unavailable")
+      }
+      return
+    }
     destroyWindowSurfaceOnPresentationThread()
     if (presentationBlitProgram != 0) GLES20.glDeleteProgram(presentationBlitProgram)
     presentationBlitProgram = 0

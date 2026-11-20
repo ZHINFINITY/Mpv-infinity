@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Static checks for the MPVRx-pinned MPV runtime and its source safeguards."""
+"""Static checks for the Mpv-infinity FongMi 645 runtime and its source safeguards."""
 from __future__ import annotations
 
 import hashlib
@@ -11,6 +11,11 @@ BUILD = (ROOT / "scripts/build-mpvflow-mpv-runtime.sh").read_text(encoding="utf-
 PREPARE = (ROOT / "scripts/prepare-mpvflow.py").read_text(encoding="utf-8")
 SOURCE_VERIFIER = (ROOT / "scripts/mpvrx_motion_source.py").read_text(encoding="utf-8")
 SOURCE_TEST = (ROOT / "scripts/tests/mpvrx_motion_source_test.py").read_text(encoding="utf-8")
+DOWNSAMPLE_PATCH = (ROOT / "scripts/patch_fongmi_motion_downsample.py").read_text(encoding="utf-8")
+DOWNSAMPLE_TEST = (ROOT / "scripts/tests/mpvrx_motion_downsample_test.py").read_text(encoding="utf-8")
+PAIRED_COLOR_PATCH = (ROOT / "scripts/patch_fongmi_paired_color_mask.py").read_text(encoding="utf-8")
+PAIRED_COLOR_TEST = (ROOT / "scripts/tests/fongmi_paired_color_mask_test.py").read_text(encoding="utf-8")
+CORE_TEST = (ROOT / "scripts/test-mpvflow-core.sh").read_text(encoding="utf-8")
 VULKAN_HEADERS = (ROOT / "scripts/prepare-mpvflow-vulkan-headers.py").read_text(encoding="utf-8")
 WORKFLOWS = [
     (ROOT / ".github/workflows/debug-apk.yml").read_text(encoding="utf-8"),
@@ -29,9 +34,11 @@ PATCHER = (PATCH_DIR / "patch-libbluray.sh").read_text(encoding="utf-8")
 PATCH_README = (PATCH_DIR / "README.md").read_text(encoding="utf-8")
 DIAGNOSTICS_GUIDE = (ROOT / "docs/mpvflow-diagnostics.md").read_text(encoding="utf-8")
 
-MPV_SHA = "95ec8e929f8ad2f97c8415c486971493a0b408df"
+MPV_SHA = "645f8ecdd3c94379048e9ee3e7014e174de0bd02"
 PLACEBO_SHA = "63659d96d1bff7d7a5a1368e9538056a193fc6fb"
-MOTION_SHA256 = "ca7870c21f7a499d03ab1f7d73f1b9bcbccee534398d8a6f01957556e7d61932"
+MOTION_SHA256 = "756c1da75d274d81c2e84f988bae1785aa6b6a9a813d16d3b47d9656b31016d0"
+MOTION_ANTIALIAS_SHA256 = "793ac79e8243727bb58286ca6bb6a6b6e539ba3e8abae34c4dae7b6503c5cb2e"
+MOTION_MASKED_SHA256 = "1c0931fd519176ef6280079fb95ded0a6b58d9384f2067166d9bc5e86f4a6c8a"
 MOTION_HEADER_SHA256 = "12fedd08063a540b69667a51e146d539ebae509b63c07964f573410a7d0ae427"
 BUILDER_SHA = "1efc82739f6f7034cd63e7ee8b3ec5431df27467"
 MPVLIB_ANDROID_SHA = "d04217abe8e72e4a099269f045855bf69b87d53b"
@@ -53,14 +60,46 @@ assert 'python3 "$MPVFLOW_ROOT/scripts/prepare-mpvflow.py" --mpv-dir deps/mpv --
 assert "patch_fongmi_motion_artifact.py" not in BUILD
 assert "motion_artifact_patch" not in BUILD
 assert "verify_mpv_source(mpv_dir)" in PREPARE
+assert "apply_motion_downsample_patch(" in PREPARE and "enabled=downsample_antialias_enabled" in PREPARE
+assert "from patch_fongmi_paired_color_mask import (" in PREPARE
+assert "apply_patch as apply_motion_paired_color_mask_patch" in PREPARE
+assert "strip_patch as strip_motion_paired_color_mask_patch" in PREPARE
+assert PREPARE.index("strip_motion_paired_color_mask_patch(motion_path)") < PREPARE.index("apply_motion_downsample_patch(")
+assert PREPARE.index("apply_motion_downsample_patch(") < PREPARE.index("apply_motion_paired_color_mask_patch(motion_path)")
+assert "apply_motion_paired_color_mask_patch(motion_path)" in PREPARE
+assert "MPVRX_PAIRED_COLOR_EVIDENCE_MASK_V1" in PAIRED_COLOR_PATCH
+assert "smoothstep(vec2(0.02), vec2(0.08), paired_error)" in PAIRED_COLOR_PATCH
+assert "MPV_INFINITY_SELECTIVE_CONTOUR_RESOLVER_V2" in PAIRED_COLOR_PATCH
+assert "if (!fixed_weights && path_disagreement > 1.5)" in PAIRED_COLOR_PATCH
+assert "source_change_weight = smoothstep(0.06, 0.16, source_change_error)" in PAIRED_COLOR_PATCH
+assert "resolver_weight = max(center_conflict_weight, source_change_weight)" in PAIRED_COLOR_PATCH
+assert "if (resolver_weight >= 0.50)" in PAIRED_COLOR_PATCH
+assert "reject_weight = resolver_weight * trajectory_weight" in PAIRED_COLOR_PATCH
+assert "best_support >= 0.85 && worst_support <= 0.15" in PAIRED_COLOR_PATCH
+assert "resolved_visibility.y *= 1.0 - reject_weight;" in PAIRED_COLOR_PATCH
+assert "resolved_visibility.x *= 1.0 - reject_weight;" in PAIRED_COLOR_PATCH
+assert "def verify_reprepare_cycle(source: str)" in PAIRED_COLOR_TEST
+assert "verify_reprepare_cycle(patched)" in PAIRED_COLOR_TEST
+assert "zero-conflict 0.03/0.035 stays on the old blend" in PAIRED_COLOR_TEST
+assert "balanced texture" in PAIRED_COLOR_TEST
+assert 'os.environ.get("MPVFLOW_ANALYSIS_DOWNSAMPLE_AA") == "1"' in PREPARE
+assert "Mpv-infinity FongMi 645 test does not enable Jelly variants" in PREPARE
+assert "apply_motion_jelly" not in PREPARE and "patch_fongmi_motion_jelly" not in PREPARE
 assert "MOTION_PASS_PREPARE" in PREPARE and "pl_dispatch_prepare_compute" in PREPARE
 assert "mp_motion_render_owned" in PREPARE and "mp_motion_capture_supported" in PREPARE
-assert "MPVFLOW_DEBUG_CAPTURE is unsupported with the MPVRx-pinned FongMi 95ec motion core" in PREPARE
+assert "MPVFLOW_DEBUG_CAPTURE is unsupported with the pinned FongMi 645 motion core" in PREPARE
 assert MPV_SHA in SOURCE_VERIFIER and MOTION_SHA256 in SOURCE_VERIFIER
+assert "MOTION_ANTIALIAS_SHA256" in SOURCE_VERIFIER
 assert MOTION_HEADER_SHA256 in SOURCE_VERIFIER
 assert '"mp_motion_create(p->gpu, 480);" in vo' in SOURCE_VERIFIER
 assert '"info->queue_display_time_only = true;" in android_context' in SOURCE_VERIFIER
 assert "verify_mpv_source(args.mpv_dir)" in SOURCE_TEST
+assert "--require-analysis-downsample-aa" in SOURCE_TEST
+assert "MPVFLOW_MPVRX_ANALYSIS_DOWNSAMPLE_AA_V1" in DOWNSAMPLE_PATCH
+assert "ceil(source_scale / 2.0)" in DOWNSAMPLE_PATCH
+assert "tap_count(2.0) == 1" in DOWNSAMPLE_TEST
+assert "PAIRED_COLOR_MASK_MARKER" in DOWNSAMPLE_TEST
+assert "unpatch_paired_color_mask(source)" in DOWNSAMPLE_TEST
 
 for marker in (
     "MPVFLOW_MPV_BUILD_CORES",
@@ -79,9 +118,10 @@ for workflow in WORKFLOWS:
         FFMPEG_SHA,
         VULKAN_HEADERS_SHA,
         "scripts/mpvrx_motion_source.py",
+        "scripts/patch_fongmi_paired_color_mask.py",
         "scripts/prepare-mpvflow.py",
         "scripts/patches/mpvlibandroid-fongmi/**",
-        "mpvflow-arm64-runtime-v7",
+        "mpvflow-arm64-runtime-v8",
     ):
         assert marker in workflow, marker
     assert "scripts/patch_fongmi_motion_artifact.py" not in workflow
@@ -90,8 +130,40 @@ for workflow in WORKFLOWS:
     assert "fongmi-diagnostic-capture-v1" not in workflow
     assert "runtime-legacy" not in workflow
     assert "c1529642089bfebfc928a1c1664638a7a5d219ba" not in workflow
+assert "name: Build Mpv-infinity debug APK" in WORKFLOWS[0]
+assert "run-name: Mpv-infinity ${{ inputs.flavor }} ${{ inputs.target_abi }} Debug" in WORKFLOWS[0]
+assert "mpv-infinity-${{ inputs.flavor }}-${{ inputs.target_abi }}-debug" in WORKFLOWS[0]
+assert "scripts/patch_fongmi_motion_downsample.py" in WORKFLOWS[1]
+assert "MPVFLOW_ANALYSIS_DOWNSAMPLE_AA: '1'" in WORKFLOWS[1]
+assert "--require-analysis-downsample-aa" in WORKFLOWS[1]
+assert "scripts/patch_fongmi_motion_jelly.py" not in WORKFLOWS[1]
+assert "scripts/tests/mpvrx_motion_jelly_test.py" not in WORKFLOWS[1]
+assert "jelly_test" not in WORKFLOWS[1] and "jelly_preview" not in WORKFLOWS[1]
+assert "MPVFLOW_JELLY" not in WORKFLOWS[1]
+assert "MPVFLOW_ANALYSIS_DOWNSAMPLE_AA: '1'" in WORKFLOWS[1]
+assert "mpv-infinity-fongmi-645f8ec-arm64-v8a-debug" in WORKFLOWS[1]
+assert "MPVRx" not in "\n".join(WORKFLOWS)
+for workflow in (WORKFLOWS[0], WORKFLOWS[2]):
+    assert "scripts/patch_fongmi_motion_downsample.py" not in workflow
+    assert "MPVFLOW_ANALYSIS_DOWNSAMPLE_AA" not in workflow
+    assert "patch_fongmi_motion_jelly.py" not in workflow
+    assert "MPVFLOW_JELLY_EXPERIMENTAL" not in workflow
+    assert "MPVFLOW_JELLY_PREVIEW" not in workflow
+    assert "jelly_test" not in workflow
+    assert "jelly_preview" not in workflow
+    assert "--require-analysis-downsample-aa" not in workflow
 assert "scripts/tests/mpvrx_motion_source_test.py" in WORKFLOWS[0]
 assert "scripts/tests/mpvrx_motion_source_test.py" in WORKFLOWS[1]
+assert "scripts/tests/fongmi_paired_color_mask_test.py" in WORKFLOWS[0]
+assert "fongmi_paired_color_mask_test.py --source" in WORKFLOWS[0]
+assert "--require-paired-color-mask" in WORKFLOWS[0]
+assert "--require-paired-color-mask" in WORKFLOWS[1]
+assert "--require-paired-color-mask" in WORKFLOWS[2]
+assert 'if [[ "${MPVFLOW_SKIP_CAPTURE_IO_TEST:-0}" == "1" ]]; then' in CORE_TEST
+assert "skip_unrelated_capture_test" in WORKFLOWS[0] and "default: false" in WORKFLOWS[0]
+assert "MPVFLOW_SKIP_CAPTURE_IO_TEST=1" in WORKFLOWS[0]
+assert "skip_unrelated_capture_test" not in WORKFLOWS[1]
+assert "skip_unrelated_capture_test" not in WORKFLOWS[2]
 
 assert MANIFEST == PACKAGED
 for text in (MANIFEST, LICENSES):
@@ -99,8 +171,9 @@ for text in (MANIFEST, LICENSES):
         assert marker in text, marker
     assert "FongMi/mpv" in text and "FongMi/libplacebo" in text
     assert "GPL-2.0" in text
-    assert "does not apply" in text or "No local" in text
-for marker in (MOTION_SHA256, MOTION_HEADER_SHA256):
+    assert "source-to-analysis" in text
+    assert "source change" in text or "source-change" in text
+for marker in (MOTION_SHA256, MOTION_ANTIALIAS_SHA256, MOTION_MASKED_SHA256, MOTION_HEADER_SHA256):
     assert marker in MANIFEST
 for patch_name, expected_hash in PATCH_HASHES.items():
     patch_path = PATCH_DIR / patch_name
@@ -124,4 +197,4 @@ assert not re.search(r'PlaybackSession\.setOptionString\(\s*"interpolation"', MP
 assert "mp_motion_" not in MEDIA3_NATIVE
 assert "mpvflow_gpu_synthesize_with_policy_to_texture(" in MEDIA3_NATIVE
 assert "mpvflow/fongmi/motion.c" not in CMAKE
-print("MPVRx MPV motion source, 480px cap, build pins, MPV-only boundary, and source/licensing guards passed")
+print("Mpv-infinity FongMi 645 motion source, 480px cap, build pins, MPV-only boundary, and source/licensing guards passed")

@@ -14,6 +14,11 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 from mpvrx_motion_source import verify_mpv_source
+from patch_fongmi_motion_downsample import apply_patch as apply_motion_downsample_patch
+from patch_fongmi_paired_color_mask import (
+    apply_patch as apply_motion_paired_color_mask_patch,
+    strip_patch as strip_motion_paired_color_mask_patch,
+)
 
 ROOT = SCRIPT_DIR.parent
 VENDOR = ROOT / "app/src/main/cpp/mpvflow"
@@ -28,7 +33,7 @@ MEDIACODEC_VULKAN_FILES = (
     "hwdec_aimagereader_vk.h", "hwdec_aimagereader_vk_convert.c",
     "hwdec_aimagereader_vk_private.h",
 )
-MPV_VULKAN_DEPENDENCY = "vulkan = dependency('vulkan', version: '>= 1.3.238', required: vulkan_opt)"
+MPV_VULKAN_DEPENDENCY = "vulkan = dependency('vulkan', version: '>= 1.4.309', required: vulkan_opt)"
 ANDROID_VULKAN_DEPENDENCY = "vulkan = dependency('vulkan', required: vulkan_opt)"
 PLACEBO_SPIRV_LIBRARY_LOOKUP = "spirv = cxx.find_library('SPIRV', required: required, static: static, dirs: vulkan_lib_dirs)"
 PLACEBO_GLSLANG_LIBRARY_LOOKUP = "cxx.find_library('glslang', required: required, static: static)"
@@ -165,15 +170,15 @@ def validate_hwdec_frame_priv_members(vo_source: str) -> None:
         raise SystemExit("Pinned MPV struct frame_priv is not closed")
     body = vo_source[start:end]
     required = (
-        "bool hwdec_preloaded;",
-        "bool el_hwdec_preloaded;",
+        "struct ra_hwdec *hwdec;",
+        "struct ra_hwdec *el_hwdec;",
         "bool mapped_coordinates;",
         "struct mp_image_params mapped_params;",
     )
     missing = [member for member in required if member not in body]
     if missing:
         raise SystemExit(
-            "Android Vulkan mapper fields must be members of struct frame_priv; "
+            "Pinned MPV hardware-decoder ownership fields must be members of struct frame_priv; "
             "missing: " + ", ".join(missing)
         )
 
@@ -967,6 +972,7 @@ def enable_qcom_image_processing(vulkan_context: str) -> str:
         "VkPhysicalDeviceImageProcessing2FeaturesQCOM",
         "textureBlockMatch = true",
         "textureBlockMatch2 = true",
+        ".pNext = &explicit_mem_layout_feature,",
         "MPVFLOW_QCOM_IMAGE_PROCESSING_FEATURES",
     )
     if marker in vulkan_context:
@@ -986,13 +992,13 @@ def enable_qcom_image_processing(vulkan_context: str) -> str:
     feature_anchor = (
         "    VkPhysicalDeviceOpticalFlowFeaturesNV optical_flow_feature = {\n"
         "        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPTICAL_FLOW_FEATURES_NV,\n"
-        "        .pNext = &zero_init_feature,\n"
+        "        .pNext = &explicit_mem_layout_feature,\n"
     )
     feature_insert = (
         "#if defined(VK_QCOM_image_processing) && defined(VK_QCOM_image_processing2)\n"
         "    VkPhysicalDeviceImageProcessing2FeaturesQCOM image_processing2_feature = {\n"
         "        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_PROCESSING_2_FEATURES_QCOM,\n"
-        "        .pNext = &zero_init_feature,\n"
+        "        .pNext = &explicit_mem_layout_feature,\n"
         "        .textureBlockMatch2 = true,\n"
         "    };\n"
         "#endif\n"
@@ -1002,7 +1008,7 @@ def enable_qcom_image_processing(vulkan_context: str) -> str:
         "#ifdef VK_QCOM_image_processing2\n"
         "        .pNext = &image_processing2_feature,\n"
         "#else\n"
-        "        .pNext = &zero_init_feature,\n"
+        "        .pNext = &explicit_mem_layout_feature,\n"
         "#endif\n"
         "        .textureBlockMatch = true,\n"
         "    };\n"
@@ -1014,7 +1020,7 @@ def enable_qcom_image_processing(vulkan_context: str) -> str:
         "#ifdef VK_QCOM_image_processing\n"
         "            &image_processing_feature,\n"
         "#else\n"
-        "            &zero_init_feature,\n"
+        "            &explicit_mem_layout_feature,\n"
         "#endif\n"
     )
 
@@ -1124,15 +1130,40 @@ def main() -> None:
     debug_capture_enabled = os.environ.get("MPVFLOW_DEBUG_CAPTURE") == "1"
     if debug_capture_enabled:
         raise SystemExit(
-            "MPVFLOW_DEBUG_CAPTURE is unsupported with the MPVRx-pinned FongMi 95ec motion core; "
+            "MPVFLOW_DEBUG_CAPTURE is unsupported with the pinned FongMi 645 motion core; "
             "the retained diagnostic patchers target the older 14b source"
         )
     print("FongMi one-shot diagnostics disabled; leaving motion/VO sources uninstrumented")
 
+    downsample_antialias_enabled = os.environ.get("MPVFLOW_ANALYSIS_DOWNSAMPLE_AA") == "1"
+    if os.environ.get("MPVFLOW_JELLY_EXPERIMENTAL") == "1" or os.environ.get("MPVFLOW_JELLY_PREVIEW") == "1":
+        raise SystemExit("Mpv-infinity FongMi 645 test does not enable Jelly variants")
     try:
         verify_mpv_source(mpv_dir)
+        strip_motion_paired_color_mask_patch(motion_path)
+        downsample_patch_applied = apply_motion_downsample_patch(
+            motion_path, enabled=downsample_antialias_enabled
+        )
     except (OSError, ValueError) as exc:
-        raise SystemExit(f"MPVRx FongMi motion source verification failed: {exc}") from exc
+        raise SystemExit(f"Mpv-infinity FongMi source/analysis verification failed: {exc}") from exc
+    if downsample_antialias_enabled:
+        print(
+            "Applied bounded Mpv-infinity motion-analysis downsample antialiasing"
+            if downsample_patch_applied
+            else "Bounded Mpv-infinity motion-analysis downsample antialiasing already present"
+        )
+    else:
+        print("Mpv-infinity analysis-downsample antialias patch disabled; preserving pinned motion shader")
+
+    try:
+        paired_color_mask_applied = apply_motion_paired_color_mask_patch(motion_path)
+    except (OSError, ValueError) as exc:
+        raise SystemExit(f"Mpv-infinity paired-color mask verification failed: {exc}") from exc
+    print(
+        "Applied selective paired-color mismatch mask"
+        if paired_color_mask_applied
+        else "Selective paired-color mismatch mask already present"
+    )
 
     native_fongmi_markers = (
         "version: '>=7.387.0'",
@@ -1284,18 +1315,16 @@ def main() -> None:
     if vo_marker not in vo:
         raise SystemExit("GPU Flow patch did not mark vo_gpu_next.c")
 
-    hwdec_header_path = mpv_dir / "video/out/gpu/hwdec.h"
-    mapper_marker = "#define RA_HWDEC_MAP_RETRY (-2)"
-    if mapper_marker not in hwdec_header_path.read_text():
+    gpu_video_path = mpv_dir / "video/out/gpu/video.c"
+    gpu_video_source = gpu_video_path.read_text(encoding="utf-8")
+    retry_marker = "if (map_result == RA_HWDEC_MAP_RETRY) {"
+    if retry_marker not in gpu_video_source:
         subprocess.run(
             ["patch", "-p1", "--forward", "--fuzz=0", "--input", str(AIMAGE_VULKAN_PATCH)],
             cwd=mpv_dir,
             check=True,
         )
-        vo = vo_path.read_text()
-    gpu_video_path = mpv_dir / "video/out/gpu/video.c"
-    gpu_video_source = gpu_video_path.read_text(encoding="utf-8")
-    retry_marker = "if (map_result == RA_HWDEC_MAP_RETRY) {"
+        gpu_video_source = gpu_video_path.read_text(encoding="utf-8")
     retry_start = gpu_video_source.find(retry_marker)
     retry_end = gpu_video_source.find("\n        }", retry_start) if retry_start >= 0 else -1
     retry_branch = gpu_video_source[retry_start:retry_end] if retry_end >= 0 else ""
@@ -1319,8 +1348,16 @@ def main() -> None:
     # Dependency setup reloads Meson from disk; preserve the capability-gated
     # renderer-hook probe on the final content we publish.
     meson = insert_project_arguments_before_first_target(meson, renderer_hook_probe)
-    if mapper_marker not in hwdec_header_path.read_text() or "# MPVFLOW_AIMAGE_VULKAN_MAPPER" not in meson:
-        raise SystemExit("Android MediaCodec/Vulkan mapper patch was not fully applied")
+    mapper_meson_sources = (
+        "video/out/hwdec/hwdec_aimagereader_vk.c",
+        "video/out/hwdec/hwdec_aimagereader_vk_convert.c",
+        "video/out/hwdec/hwdec_aimagereader_vk_direct.c",
+    )
+    if (
+        "#define RA_HWDEC_MAP_RETRY (-2)" not in hwdec_header_path.read_text(encoding="utf-8")
+        or not all(source in meson for source in mapper_meson_sources)
+    ):
+        raise SystemExit("Pinned MPV MediaCodec/Vulkan mapper source contract is incomplete")
 
     validate_hwdec_frame_priv_members(vo)
     gpu_source = "video/out/mpvflow_gpu.c"

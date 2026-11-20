@@ -9,7 +9,6 @@ package app.infinity.mpvz.ui.player.controls
 
 import app.infinity.mpvz.ui.player.StatsLuaOverlay
 import app.infinity.mpvz.ui.player.DeclaredPlaybackMediaKind
-import app.infinity.mpvz.ui.player.PlaybackPhase
 import app.infinity.mpvz.ui.player.PlaybackSession
 import app.infinity.mpvz.ui.player.declaredMediaKind
 import app.infinity.mpvz.domain.torrent.TorrentStreamingState
@@ -172,6 +171,7 @@ import app.infinity.mpvz.ui.player.controls.components.playerButtonBorderColor
 import app.infinity.mpvz.ui.player.controls.components.playerButtonContainerColor
 import app.infinity.mpvz.ui.player.controls.components.playerButtonContentColor
 import app.infinity.mpvz.ui.player.controls.components.playerGlassPane
+import app.infinity.mpvz.ui.player.controls.components.rememberDebouncedBufferingVisibility
 import app.infinity.mpvz.ui.player.controls.components.rememberBufferingState
 import app.infinity.mpvz.ui.player.controls.components.sheets.toFixed
 import app.infinity.mpvz.ui.theme.controlColor
@@ -469,14 +469,24 @@ fun PlayerControls(
   val nativeSnapshot by activity?.nativePlaybackSnapshot?.collectAsState()
     ?: remember { mutableStateOf(NativePlaybackSnapshot()) }
   val nativeEngineActive = activity?.isNativeEngineActive() == true
+  val nativeBufferingVisible =
+    rememberDebouncedBufferingVisibility(
+      enabled = showLoadingCircle && nativeEngineActive,
+      stalled =
+        PlayerControlVisibilityPolicy.isNativePlaybackStalled(
+          isEnded = nativeSnapshot.isEnded,
+          hasError = nativeSnapshot.hasError,
+          isBuffering = nativeSnapshot.isBuffering,
+        ),
+    )
   val bufferingState =
     rememberBufferingState(
       enabled = showLoadingCircle && !nativeEngineActive,
       // A torrent that has not produced a playable range yet never reaches mpv, so the engine's own
       // connecting phase has to drive the spinner directly.
-      forceVisible =
-        !nativeEngineActive &&
-          (isTorrentConnecting || playbackSessionState.phase == PlaybackPhase.LOADING),
+      // Local opens and saved-position restores are not proof of a cache stall; MPV core state
+      // below drives the indicator once playback is actually waiting for output.
+      forceVisible = !nativeEngineActive && isTorrentConnecting,
     )
   val isMpvBuffering = bufferingState.isCacheStall
   val safeAreaWindow by playerPreferences.safeAreaWindow.collectAsState()
@@ -499,13 +509,8 @@ fun PlayerControls(
   val showBufferingIndicator =
     PlayerControlVisibilityPolicy.shouldShowBufferingIndicator(
       nativeEngineActive = nativeEngineActive,
-      nativeReady = nativeSnapshot.isReady,
-      nativeBuffering = nativeSnapshot.isBuffering,
-      nativeEnded = nativeSnapshot.isEnded,
-      nativeFailed = nativeSnapshot.hasError,
-      mpvLoading = playbackSessionState.phase == PlaybackPhase.LOADING,
-      mpvBuffering = bufferingState.visible,
-      torrentConnecting = isTorrentConnecting,
+      nativeBufferingVisible = nativeBufferingVisible,
+      mpvBufferingVisible = bufferingState.visible,
       isSeeking = isPlayerSeeking,
     )
   var stableDemuxerCacheTime by remember { mutableFloatStateOf(0f) }
@@ -1263,6 +1268,10 @@ fun PlayerControls(
               slidersShown = areSlidersShown,
             )
           val seekBarControlsVisible = (controlsShown || (!isPortrait && seekBarShown)) && !areControlsLocked
+          // BelowSeekbar landscape transport shares the bottom action band and stays clear of
+          // the centered loading indicator, matching MPV-RX's sharedLandscapeRow behavior.
+          val sharedLandscapeRow =
+            !isPortrait && playbackControlsPosition == PlaybackControlsPosition.BelowSeekbar
           val controlVisibilityTransition =
             updateTransition(
               targetState = areButtonsVisible to seekBarControlsVisible,
@@ -1710,6 +1719,7 @@ fun PlayerControls(
               PlayerControlVisibilityPolicy.shouldShowPlaybackControls(
                 controlsVisible = visibility.first,
                 bufferingIndicatorVisible = showBufferingIndicator,
+                sharedLandscapeRow = sharedLandscapeRow,
               )
             },
             enter = buildControlsEnterV(controlsAnimStyle, reduceMotion, enterMs) { 0 },
