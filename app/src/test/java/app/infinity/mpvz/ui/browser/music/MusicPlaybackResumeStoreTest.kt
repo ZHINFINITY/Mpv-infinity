@@ -1,6 +1,8 @@
 package app.infinity.mpvz.ui.browser.music
 
+import android.app.Application
 import android.content.Context
+import android.content.SharedPreferences
 import android.net.Uri
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -13,14 +15,18 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35], application = Application::class)
 class MusicPlaybackResumeStoreTest {
-  private val context = RuntimeEnvironment.getApplication()
-  private val preferences = context.getSharedPreferences("music_resume_store_test", Context.MODE_PRIVATE)
+  private val application: Application
+    get() = RuntimeEnvironment.getApplication()
+  private lateinit var preferences: SharedPreferences
 
   @Before
   fun setUp() {
+    preferences = application.getSharedPreferences("music_resume_store_test", Context.MODE_PRIVATE)
     MusicPlaybackResumeStore.setPreferencesForTests(preferences)
     preferences.edit().clear().commit()
   }
@@ -47,8 +53,8 @@ class MusicPlaybackResumeStoreTest {
         positionMs = 17_500L,
       )
 
-    assertTrue(MusicPlaybackResumeStore.save(context, snapshot))
-    val loaded = requireNotNull(MusicPlaybackResumeStore.load(context))
+    assertTrue(MusicPlaybackResumeStore.save(application, snapshot))
+    val loaded = requireNotNull(MusicPlaybackResumeStore.load(application))
 
     assertEquals("launch-token", loaded.launchToken)
     assertEquals("recently_played", loaded.launchSource)
@@ -117,7 +123,7 @@ class MusicPlaybackResumeStoreTest {
   fun invalidSnapshotIsDiscardedAndQueueWindowKeepsSelectedTrack() {
     preferences.edit().putString(MusicPlaybackResumeStore.SNAPSHOT_KEY, "not-json").commit()
 
-    assertNull(MusicPlaybackResumeStore.load(context))
+    assertNull(MusicPlaybackResumeStore.load(application))
     assertFalse(preferences.contains(MusicPlaybackResumeStore.SNAPSHOT_KEY))
     assertEquals(375 to 875, MusicPlaybackResumeStore.queueWindow(1_000, 500, 500))
   }
