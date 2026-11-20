@@ -400,6 +400,7 @@ class Media3FlowVideoSink(
   @Volatile private var flowVulkanContext = 0L
   private var inputRequiredHardwareBufferUsage = 0L
   private var outputRequiredHardwareBufferUsage = 0L
+  private var outputNonStorageRequiredHardwareBufferUsage = 0L
   private var outputHardwareBuffer: HardwareBuffer? = null
   private var outputImageHandle = 0L
   private var flowAvailable = false
@@ -443,9 +444,13 @@ class Media3FlowVideoSink(
               "vulkan_context_or_compute_setup_failed"
             } else {
               inputRequiredHardwareBufferUsage =
-                Media3FlowVulkanNative.nativeGetRequiredHardwareBufferUsage(flowVulkanContext, output = false)
+                Media3FlowVulkanNative.nativeGetRequiredHardwareBufferUsage(flowVulkanContext, output = false, storage = true)
               outputRequiredHardwareBufferUsage =
-                Media3FlowVulkanNative.nativeGetRequiredHardwareBufferUsage(flowVulkanContext, output = true)
+                Media3FlowVulkanNative.nativeGetRequiredHardwareBufferUsage(flowVulkanContext, output = true, storage = true)
+              outputNonStorageRequiredHardwareBufferUsage =
+                Media3FlowVulkanNative.nativeGetRequiredHardwareBufferUsage(
+                  flowVulkanContext, output = true, storage = false,
+                )
               when {
                 inputRequiredHardwareBufferUsage == 0L -> "vulkan_hardwarebuffer_input_usage_query_failed"
                 outputRequiredHardwareBufferUsage == 0L -> "vulkan_hardwarebuffer_output_usage_query_failed"
@@ -611,22 +616,24 @@ class Media3FlowVideoSink(
         )
         throw error
       }
+      val fallbackRequiredUsage = outputNonStorageRequiredHardwareBufferUsage
+      check(fallbackRequiredUsage != 0L) { "Vulkan did not provide non-storage output usage for $role" }
       logFlowRecordOnce(
         "ahb-allocation-output-storage-fallback",
         Log.WARN,
         "event=ahb_import state=fallback stage=AHardwareBuffer.create image_role=$role " +
           "width=$width height=$height storage_usage=0x${driverRequiredUsage.toString(16)} " +
-          "fallback_usage=0x${(baseUsage or driverRequiredUsage).toString(16)}",
+          "fallback_usage=0x${(baseUsage or fallbackRequiredUsage).toString(16)}",
         error,
       )
       try {
-        HardwareBuffer.create(width, height, HardwareBuffer.RGBA_8888, 1, baseUsage or driverRequiredUsage)
+        HardwareBuffer.create(width, height, HardwareBuffer.RGBA_8888, 1, baseUsage or fallbackRequiredUsage)
       } catch (fallbackError: RuntimeException) {
         logFlowRecordOnce(
           "ahb-allocation-$role",
           Log.ERROR,
           "event=ahb_import state=failed stage=AHardwareBuffer.create image_role=$role " +
-            "width=$width height=$height format=rgba8 fallback_usage=0x${(baseUsage or driverRequiredUsage).toString(16)}",
+            "width=$width height=$height format=rgba8 fallback_usage=0x${(baseUsage or fallbackRequiredUsage).toString(16)}",
           fallbackError,
         )
         throw fallbackError

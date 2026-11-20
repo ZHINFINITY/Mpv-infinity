@@ -15,6 +15,7 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.ServiceConnection
@@ -172,6 +173,7 @@ import okhttp3.OkHttpClient
 import java.io.File
 import java.lang.ref.WeakReference
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.abs
 import kotlin.math.pow
 import kotlin.math.roundToInt
@@ -1348,6 +1350,7 @@ class PlayerActivity :
   private var backgroundHandoffJob: Job? = null
   private var deferredFontSyncJob: Job? = null
   private var deferredMpvAssetSyncJob: Job? = null
+  private val deferredUserMpvAssetRefreshStarted = AtomicBoolean(false)
   private var systemBarsAutoHideJob: Job? = null
   private var videoParamRefreshJob: Job? = null
   private var intentSubtitleJob: Job? = null
@@ -1571,6 +1574,17 @@ class PlayerActivity :
   private var m3uPreflightGeneration = 0L
   private var playerInitializationStarted = false
   private var playerInitializationComplete = false
+  private data class PendingMpvAssetPreferenceUpdates(
+    var mpvConf: String? = null,
+    var inputConf: String? = null,
+    var bundledAssetsVersion: Long? = null,
+    var userAssetSelection: String? = null,
+    var startDeferredUserMpvAssetRefresh: Boolean = false,
+  )
+
+  private val mpvAssetPreparationGeneration = AtomicLong(0L)
+  private val mpvScriptAssetGeneration = AtomicLong(0L)
+  private val subtitleFontAssetGeneration = AtomicLong(0L)
   private var mpvAssetPreparationJob: Job? = null
   private var mpvCorePreparationJob: Deferred<String?>? = null
 
@@ -3242,6 +3256,9 @@ class PlayerActivity :
 
   override fun onDestroy() {
     Log.d(TAG, "PlayerActivity onDestroy")
+    mpvAssetPreparationGeneration.incrementAndGet()
+    mpvScriptAssetGeneration.incrementAndGet()
+    subtitleFontAssetGeneration.incrementAndGet()
     mpvCorePreparationJob?.cancel()
     mpvAssetPreparationJob?.cancel()
     if (activeNativeCloseActivity?.get() === this) activeNativeCloseActivity = null
@@ -4538,7 +4555,7 @@ class PlayerActivity :
 
   /** Synchronous path retained for an already-running Native-to-MPV background handoff. */
   private fun setupMPV(): String? {
-    prepareMpvAssetsForStartup()
+    prepareMpvAssetsForStartup(mpvAssetPreparationGeneration.incrementAndGet())
     configureMpvSurfaceCallback()
     return finishMPVSetup(initializePlayerWithRendererFallback())
   }
@@ -4574,23 +4591,34 @@ class PlayerActivity :
     return null
   }
 
-  private fun prepareMpvAssetsForStartup() {
+  private fun prepareMpvAssetsForStartup(generation: Long) {
     val preparationStartedAt = android.os.SystemClock.elapsedRealtime()
     runCatching {
-      if (Thread.currentThread().isInterrupted) return
-      syncBundledAssetsIfNeeded()
-      if (Thread.currentThread().isInterrupted) return
-      prepareUserMpvAssetsForStartup()
-      if (Thread.currentThread().isInterrupted) return
-      sanitizeInternalFontsDirectory()
+      if (Thread.currentThread().isInterrupted ||
+        !isMpvAssetPreparationCurrent(playbackOwnerToken, generation)
+      ) return
+
+      runStagedMpvAssetUpdate(generation) { assetRoot, pending ->
+        syncBundledAssetsIfNeeded(assetRoot, pending)
+        if (Thread.currentThread().isInterrupted || !isMpvAssetGenerationCurrent(generation)) {
+          return@runStagedMpvAssetUpdate false
+        }
+        prepareUserMpvAssetsForStartup(assetRoot, pending)
+        if (Thread.currentThread().isInterrupted || !isMpvAssetGenerationCurrent(generation)) {
+          return@runStagedMpvAssetUpdate false
+        }
+        sanitizeInternalFontsDirectory(assetRoot)
+        true
+      }
     }.onFailure { error -> Log.e(TAG, "Error copying MPV config and assets", error) }
     Log.d(TAG, "MPV startup assets ready in ${android.os.SystemClock.elapsedRealtime() - preparationStartedAt} ms")
   }
 
   private fun startMpvAssetPreparation() {
+    val generation = mpvAssetPreparationGeneration.incrementAndGet()
     mpvAssetPreparationJob?.cancel()
     mpvAssetPreparationJob = lifecycleScope.launch(Dispatchers.IO) {
-      prepareMpvAssetsForStartup()
+      prepareMpvAssetsForStartup(generation)
     }
   }
 
@@ -4609,6 +4637,7 @@ class PlayerActivity :
       withTimeoutOrNull(MPV_ASSET_PREPARATION_WAIT_TIMEOUT_MS) {
         mpvAssetPreparationJob?.join()
       } ?: run {
+        mpvAssetPreparationGeneration.incrementAndGet()
         mpvAssetPreparationJob?.cancel()
         Log.w(TAG, "Timed out waiting for superseded MPV asset preparation")
       }
@@ -4640,32 +4669,39 @@ class PlayerActivity :
     }
   }
 
-  private fun prepareUserMpvAssetsForStartup() {
+  private fun prepareUserMpvAssetsForStartup(
+    assetRoot: File,
+    pending: PendingMpvAssetPreferenceUpdates,
+  ) {
     val syncPreferences = getSharedPreferences(MPV_ASSET_SYNC_PREFERENCES, MODE_PRIVATE)
     val currentSelection = currentUserMpvAssetSelection()
     val storedSelection = syncPreferences.getString(USER_MPV_ASSET_SELECTION, null)
-    val cacheReady = hasLaunchReadyUserMpvAssetCache()
+    val cacheReady = hasLaunchReadyUserMpvAssetCache(assetRoot)
     val canAdoptExistingCache =
       storedSelection == null &&
         cacheReady &&
-        cachedConfigsMatchPreferences() &&
-        cachedScriptsMatchSelection()
+        cachedConfigsMatchPreferences(assetRoot) &&
+        cachedScriptsMatchSelection(assetRoot)
 
     if (cacheReady && (storedSelection == currentSelection || canAdoptExistingCache)) {
-      if (canAdoptExistingCache) rememberUserMpvAssetSelection(syncPreferences)
+      if (canAdoptExistingCache) pending.userAssetSelection = currentSelection
       Log.d(TAG, "Using cached MPV user assets for startup")
       return
     }
 
-    syncFromUserMpvDirectory()
-    rememberUserMpvAssetSelection(syncPreferences)
-    deferredUserMpvAssetRefreshStarted.set(true)
+    syncFromUserMpvDirectory(assetRoot, pending)
+    pending.userAssetSelection = currentUserMpvAssetSelection(
+      mpvConfContent = pending.mpvConf ?: advancedPreferences.mpvConf.get(),
+      inputConfContent = pending.inputConf ?: advancedPreferences.inputConf.get(),
+    )
+    pending.startDeferredUserMpvAssetRefresh = true
   }
 
-  private fun currentUserMpvAssetSelection(): String {
+  private fun currentUserMpvAssetSelection(
+    mpvConfContent: String = advancedPreferences.mpvConf.get(),
+    inputConfContent: String = advancedPreferences.inputConf.get(),
+  ): String {
     val selectedScripts = advancedPreferences.selectedLuaScripts.get().sorted().joinToString("\u0000")
-    val mpvConfig = advancedPreferences.mpvConf.get()
-    val inputConfig = advancedPreferences.inputConf.get()
     return buildString {
       append("v1|uri=")
       append(advancedPreferences.mpvConfStorageUri.get())
@@ -4674,38 +4710,39 @@ class PlayerActivity :
       append("|scripts=")
       append(selectedScripts)
       append("|mpv=")
-      append(mpvConfig.length)
+      append(mpvConfContent.length)
       append(':')
-      append(mpvConfig.hashCode())
+      append(mpvConfContent.hashCode())
       append("|input=")
-      append(inputConfig.length)
+      append(inputConfContent.length)
       append(':')
-      append(inputConfig.hashCode())
+      append(inputConfContent.hashCode())
     }
   }
 
-  private fun hasLaunchReadyUserMpvAssetCache(): Boolean =
-    File(filesDir, "mpv.conf").isFile &&
-      File(filesDir, "input.conf").isFile &&
-      File(filesDir, "scripts").isDirectory &&
-      File(filesDir, "script-modules").isDirectory &&
-      File(filesDir, "shaders").isDirectory &&
-      File(filesDir, "fonts").isDirectory
+  private fun hasLaunchReadyUserMpvAssetCache(assetRoot: File): Boolean =
+    File(assetRoot, "mpv.conf").isFile &&
+      File(assetRoot, "input.conf").isFile &&
+      File(assetRoot, "scripts").isDirectory &&
+      File(assetRoot, "script-modules").isDirectory &&
+      File(assetRoot, "shaders").isDirectory &&
+      File(assetRoot, "fonts").isDirectory
 
-  private fun cachedConfigsMatchPreferences(): Boolean =
-    cachedConfigMatchesPreference("mpv.conf", advancedPreferences.mpvConf.get()) &&
-      cachedConfigMatchesPreference("input.conf", advancedPreferences.inputConf.get())
+  private fun cachedConfigsMatchPreferences(assetRoot: File): Boolean =
+    cachedConfigMatchesPreference(assetRoot, "mpv.conf", advancedPreferences.mpvConf.get()) &&
+      cachedConfigMatchesPreference(assetRoot, "input.conf", advancedPreferences.inputConf.get())
 
   private fun cachedConfigMatchesPreference(
+    assetRoot: File,
     fileName: String,
     preferenceContent: String,
   ): Boolean =
     preferenceContent.isBlank() ||
-      runCatching { File(filesDir, fileName).readText() == preferenceContent }.getOrDefault(false)
+      runCatching { File(assetRoot, fileName).readText() == preferenceContent }.getOrDefault(false)
 
-  private fun cachedScriptsMatchSelection(): Boolean {
+  private fun cachedScriptsMatchSelection(assetRoot: File): Boolean {
     val cachedScripts =
-      File(filesDir, "scripts")
+      File(assetRoot, "scripts")
         .listFiles()
         ?.asSequence()
         ?.filter { file -> file.isFile && file.extension.lowercase() in setOf("lua", "js") }
@@ -4717,10 +4754,6 @@ class PlayerActivity :
     } else {
       cachedScripts.isEmpty()
     }
-  }
-
-  private fun rememberUserMpvAssetSelection(syncPreferences: android.content.SharedPreferences) {
-    syncPreferences.edit().putString(USER_MPV_ASSET_SELECTION, currentUserMpvAssetSelection()).apply()
   }
 
   private fun initializePlayerWithRendererFallback(ownerIsActive: () -> Boolean = { true }): String? {
@@ -4754,10 +4787,11 @@ class PlayerActivity :
    * Handles: mpv.conf, input.conf, selected scripts/, script helper folders, script-opts/,
    * shaders/, and fonts/.
    */
-  private fun syncFromUserMpvDirectory() {
+  private fun syncFromUserMpvDirectory(
+    assetRoot: File,
+    pending: PendingMpvAssetPreferenceUpdates,
+  ) {
     val mpvConfStorageUri = advancedPreferences.mpvConfStorageUri.get()
-
-    // Try to open the user's MPV directory
     val tree =
       if (mpvConfStorageUri.isNotBlank()) {
         openPersistedTreeDocument(this, mpvConfStorageUri)
@@ -4768,16 +4802,15 @@ class PlayerActivity :
     if (tree != null) {
       Log.d(TAG, "Syncing from user MPV directory: ${tree.uri}")
       val rootChildren = listTreeFilesSafely(tree)
-      syncConfigFiles(tree, rootChildren)
-      syncScripts(tree, rootChildren)
-      syncScriptOpts(tree, rootChildren)
-      syncShaders(tree, rootChildren)
-      syncFonts(tree, rootChildren)
+      syncConfigFiles(tree, rootChildren, assetRoot, pending)
+      syncScripts(tree, rootChildren, assetRoot)
+      syncScriptOpts(tree, rootChildren, assetRoot)
+      syncShaders(tree, rootChildren, assetRoot)
+      syncFonts(tree, rootChildren, assetRoot)
       Log.d(TAG, "Full MPV directory sync completed")
     } else {
-      // Fallback: use preferences-based config (no user directory set)
       Log.d(TAG, "No MPV directory configured, using preferences fallback")
-      copyMPVConfigFromPreferences()
+      copyMPVConfigFromPreferences(assetRoot)
     }
   }
 
@@ -4790,6 +4823,8 @@ class PlayerActivity :
   private fun syncConfigFiles(
     tree: DocumentFile,
     rootChildren: Array<DocumentFile>,
+    assetRoot: File,
+    pending: PendingMpvAssetPreferenceUpdates,
   ) {
     for (configName in listOf("mpv.conf", "input.conf")) {
       runCatching {
@@ -4797,31 +4832,27 @@ class PlayerActivity :
         if (configFile != null && configFile.exists() && configFile.canRead()) {
           contentResolver.openInputStream(configFile.uri)?.use { input ->
             val content = input.bufferedReader().readText()
-            writeTextFileIfChanged(File(filesDir, configName), content)
-            // Cache in preferences for the config editor
+            writeTextFileIfChanged(File(assetRoot, configName), content)
             when (configName) {
-              "mpv.conf" -> advancedPreferences.mpvConf.set(content)
-              "input.conf" -> advancedPreferences.inputConf.set(content)
+              "mpv.conf" -> pending.mpvConf = content
+              "input.conf" -> pending.inputConf = content
             }
             Log.d(TAG, "Synced config: $configName (${content.length} chars)")
           }
         } else {
-          // Config not in directory, fall back to preferences
           val prefContent =
             when (configName) {
               "mpv.conf" -> advancedPreferences.mpvConf.get()
               "input.conf" -> advancedPreferences.inputConf.get()
               else -> ""
             }
-          File(filesDir, configName).apply {
+          File(assetRoot, configName).apply {
             if (!exists()) createNewFile()
             if (prefContent.isNotBlank()) writeTextFileIfChanged(this, prefContent)
           }
           Log.d(TAG, "Config not found in directory, used preferences: $configName")
         }
-      }.onFailure { e ->
-        Log.e(TAG, "Error syncing config: $configName", e)
-      }
+      }.onFailure { error -> Log.e(TAG, "Error syncing config: $configName", error) }
     }
   }
 
@@ -4834,8 +4865,9 @@ class PlayerActivity :
   private fun syncScripts(
     tree: DocumentFile,
     rootChildren: Array<DocumentFile>,
+    assetRoot: File,
   ) {
-    val internalScriptsDir = File(filesDir, "scripts")
+    val internalScriptsDir = File(assetRoot, "scripts")
     internalScriptsDir.mkdirs()
 
     if (!advancedPreferences.enableLuaScripts.get()) {
@@ -4856,7 +4888,7 @@ class PlayerActivity :
         allowedNames = selectedScripts,
         deleteMissing = true,
       )
-    val supportCount = syncScriptSupportDirectories(scriptsSubdir)
+    val supportCount = syncScriptSupportDirectories(scriptsSubdir, assetRoot)
 
     Log.d(
       TAG,
@@ -4868,9 +4900,12 @@ class PlayerActivity :
    * Syncs helper folders from scripts/ and mirrors Lua modules into mpv's internal
    * script-modules path so require() works without exposing a separate user folder.
    */
-  private fun syncScriptSupportDirectories(scriptsSubdir: DocumentFile?): Int {
-    val internalScriptsDir = File(filesDir, "scripts")
-    val internalModulesDir = File(filesDir, "script-modules")
+  private fun syncScriptSupportDirectories(
+    scriptsSubdir: DocumentFile?,
+    assetRoot: File,
+  ): Int {
+    val internalScriptsDir = File(assetRoot, "scripts")
+    val internalModulesDir = File(assetRoot, "script-modules")
     internalModulesDir.mkdirs()
 
     if (!advancedPreferences.enableLuaScripts.get()) {
@@ -4879,7 +4914,6 @@ class PlayerActivity :
     }
 
     clearDirectoryContents(internalModulesDir)
-
     var copiedCount = 0
 
     if (scriptsSubdir != null) {
@@ -4894,7 +4928,6 @@ class PlayerActivity :
             includeFile = { true },
             deleteMissing = true,
           )
-
         copiedCount +=
           syncRecursiveDocumentDirectory(
             sourceDir = document,
@@ -4904,7 +4937,6 @@ class PlayerActivity :
           )
       }
     }
-
     return copiedCount
   }
 
@@ -4916,8 +4948,9 @@ class PlayerActivity :
   private fun syncScriptOpts(
     tree: DocumentFile,
     rootChildren: Array<DocumentFile>,
+    assetRoot: File,
   ) {
-    val internalScriptOptsDir = File(filesDir, "script-opts")
+    val internalScriptOptsDir = File(assetRoot, "script-opts")
     internalScriptOptsDir.mkdirs()
 
     val scriptOptsSubdir = findSubdirCaseInsensitive(tree, "script-opts", rootChildren)
@@ -4933,7 +4966,6 @@ class PlayerActivity :
         includeFile = { true },
         deleteMissing = true,
       )
-
     Log.d(TAG, "Script-opts sync: $count file(s)")
   }
 
@@ -4946,8 +4978,9 @@ class PlayerActivity :
   private fun syncShaders(
     tree: DocumentFile,
     rootChildren: Array<DocumentFile>,
+    assetRoot: File,
   ) {
-    val shadersDir = File(filesDir, "shaders")
+    val shadersDir = File(assetRoot, "shaders")
     shadersDir.mkdirs()
 
     val shadersSubdir = findSubdirCaseInsensitive(tree, "shaders", rootChildren)
@@ -4961,7 +4994,6 @@ class PlayerActivity :
         protectedNames = Anime4KManager.BUILT_IN_SHADER_FILES,
         deleteMissing = true,
       )
-
     Log.d(TAG, "Shaders sync: $count file(s)")
   }
 
@@ -4974,8 +5006,9 @@ class PlayerActivity :
   private fun syncFonts(
     tree: DocumentFile,
     rootChildren: Array<DocumentFile>,
+    assetRoot: File,
   ) {
-    val internalFontsDir = File(filesDir, "fonts")
+    val internalFontsDir = File(assetRoot, "fonts")
     internalFontsDir.mkdirs()
     internalFontsDir.listFiles()?.filter { it.isDirectory }?.forEach { it.deleteRecursively() }
 
@@ -4989,37 +5022,146 @@ class PlayerActivity :
         includeFile = { name -> name.substringAfterLast('.', "").lowercase() in fontExtensions },
         deleteMissing = false,
       )
-
     Log.d(TAG, "Fonts sync: $count file(s) from MPV directory")
   }
 
-  private fun syncBundledAssetsIfNeeded() {
-    val syncPrefs = getSharedPreferences("mpv_asset_sync", MODE_PRIVATE)
+  private fun runStagedMpvAssetUpdate(
+    generation: Long,
+    generationState: AtomicLong = mpvAssetPreparationGeneration,
+    publishPaths: List<String> = MpvAssetSetPublisher.assetPaths,
+    prepare: (File, PendingMpvAssetPreferenceUpdates) -> Boolean,
+  ): Boolean {
+    val ownerToken = playbackOwnerToken
+    if (!isMpvAssetPreparationCurrent(ownerToken, generation, generationState)) return false
+
+    val publisher = MpvAssetSetPublisher(filesDir, File(filesDir, ".mpv-startup-staging"))
+    var stageRoot: File? = null
+    var retainStage = false
+    try {
+      val stage = publisher.newStage(ownerToken, generation)
+      stageRoot = stage
+      if (!isMpvAssetPreparationCurrent(ownerToken, generation, generationState)) return false
+      val pending = PendingMpvAssetPreferenceUpdates()
+      if (!prepare(stage, pending)) return false
+      if (!isMpvAssetPreparationCurrent(ownerToken, generation, generationState)) return false
+      return publishMpvAssetStage(publisher, stage, ownerToken, generation, generationState, pending, publishPaths)
+    } catch (error: MpvAssetSetPublishException) {
+      retainStage = error.retainStage
+      Log.e(
+        TAG,
+        "MPV asset-set publish failed${if (retainStage) "; recovery stage retained at ${stageRoot?.absolutePath}" else ""}",
+        error,
+      )
+      return false
+    } finally {
+      if (!retainStage) stageRoot?.deleteRecursively()
+    }
+  }
+
+  private fun publishMpvAssetStage(
+    publisher: MpvAssetSetPublisher,
+    stageRoot: File,
+    ownerToken: Long,
+    generation: Long,
+    generationState: AtomicLong,
+    pending: PendingMpvAssetPreferenceUpdates,
+    publishPaths: List<String>,
+  ): Boolean =
+    PlaybackActivityOwner.runIfOwner(ownerToken, false) {
+      if (!isMpvAssetGenerationCurrent(generation, generationState)) {
+        false
+      } else {
+        val published = publisher.publish(
+          stageRoot,
+          { isMpvAssetGenerationCurrent(generation, generationState) },
+          publishPaths,
+        )
+        if (published) commitPendingMpvAssetPreferenceUpdates(pending)
+        published
+      }
+    }
+
+  private fun isMpvAssetPreparationCurrent(
+    ownerToken: Long,
+    generation: Long,
+    generationState: AtomicLong = mpvAssetPreparationGeneration,
+  ): Boolean = PlaybackActivityOwner.owns(ownerToken) && isMpvAssetGenerationCurrent(generation, generationState)
+
+  private fun isMpvAssetGenerationCurrent(
+    generation: Long,
+    generationState: AtomicLong = mpvAssetPreparationGeneration,
+  ): Boolean =
+    generation == generationState.get() &&
+      !Thread.currentThread().isInterrupted &&
+      !isFinishing &&
+      !isDestroyed
+
+  private fun commitPendingMpvAssetPreferenceUpdates(pending: PendingMpvAssetPreferenceUpdates) {
+    pending.mpvConf?.let { content ->
+      runCatching { advancedPreferences.mpvConf.set(content) }
+        .onFailure { error -> Log.e(TAG, "Unable to cache synced mpv.conf", error) }
+    }
+    pending.inputConf?.let { content ->
+      runCatching { advancedPreferences.inputConf.set(content) }
+        .onFailure { error -> Log.e(TAG, "Unable to cache synced input.conf", error) }
+    }
+
+    if (pending.bundledAssetsVersion != null || pending.userAssetSelection != null) {
+      val preferences = getSharedPreferences(MPV_ASSET_SYNC_PREFERENCES, MODE_PRIVATE)
+      val editor = preferences.edit()
+      pending.bundledAssetsVersion?.let { editor.putLong("bundled_assets_version", it) }
+      pending.userAssetSelection?.let { editor.putString(USER_MPV_ASSET_SELECTION, it) }
+      runCatching { editor.apply() }
+        .onFailure { error -> Log.e(TAG, "Unable to save MPV asset sync state", error) }
+    }
+    if (pending.startDeferredUserMpvAssetRefresh) deferredUserMpvAssetRefreshStarted.set(true)
+  }
+
+  private fun syncBundledAssetsIfNeeded(
+    assetRoot: File,
+    pending: PendingMpvAssetPreferenceUpdates,
+  ) {
+    val syncPrefs = getSharedPreferences(MPV_ASSET_SYNC_PREFERENCES, MODE_PRIVATE)
     val currentVersion =
       runCatching {
         PackageInfoCompat.getLongVersionCode(packageManager.getPackageInfo(packageName, 0))
       }.getOrDefault(-1L)
 
     val assetsAlreadyPrepared =
-      File(filesDir, "mpv.conf").exists() &&
-        File(filesDir, "input.conf").exists() &&
-        File(filesDir, "scripts").exists()
+      File(assetRoot, "mpv.conf").exists() &&
+        File(assetRoot, "input.conf").exists() &&
+        File(assetRoot, "scripts").exists()
 
     if (assetsAlreadyPrepared && syncPrefs.getLong("bundled_assets_version", -1L) == currentVersion) {
       return
     }
 
-    Utils.copyAssets(this@PlayerActivity)
-    syncPrefs.edit().putLong("bundled_assets_version", currentVersion).apply()
+    val stagingContext = object : ContextWrapper(this@PlayerActivity) {
+      override fun getFilesDir(): File = assetRoot
+    }
+    Utils.copyAssets(stagingContext)
+    pending.bundledAssetsVersion = currentVersion
   }
 
   private fun scheduleDeferredSubtitleFontsSync() {
     deferredFontSyncJob?.cancel()
+    val generation = subtitleFontAssetGeneration.incrementAndGet()
     deferredFontSyncJob =
       lifecycleScope.launch(Dispatchers.IO) {
         delay(750)
-        runCatching { syncSubtitleFontsFromPreferenceFolder() }
-          .onFailure { e -> Log.e(TAG, "Deferred subtitle font sync failed", e) }
+        try {
+          runStagedMpvAssetUpdate(
+            generation,
+            generationState = subtitleFontAssetGeneration,
+            publishPaths = listOf("fonts"),
+          ) { assetRoot, _ ->
+            syncSubtitleFontsFromPreferenceFolder(assetRoot)
+          }
+        } catch (cancellation: CancellationException) {
+          throw cancellation
+        } catch (error: Exception) {
+          Log.e(TAG, "Deferred subtitle font sync failed", error)
+        }
       }
   }
 
@@ -5034,9 +5176,18 @@ class PlayerActivity :
           delay(DEFERRED_MPV_ASSET_SYNC_DELAY_MS)
           if (!ownsPlaybackSession() || isFinishing || isDestroyed) return@launch
           deferredFontSyncJob?.join()
-          syncFromUserMpvDirectory()
-          syncSubtitleFontsFromPreferenceFolder()
-          rememberUserMpvAssetSelection(getSharedPreferences(MPV_ASSET_SYNC_PREFERENCES, MODE_PRIVATE))
+          val generation = mpvAssetPreparationGeneration.incrementAndGet()
+          val published =
+            runStagedMpvAssetUpdate(generation) { assetRoot, pending ->
+              syncFromUserMpvDirectory(assetRoot, pending)
+              syncSubtitleFontsFromPreferenceFolder(assetRoot)
+              pending.userAssetSelection = currentUserMpvAssetSelection(
+                mpvConfContent = pending.mpvConf ?: advancedPreferences.mpvConf.get(),
+                inputConfContent = pending.inputConf ?: advancedPreferences.inputConf.get(),
+              )
+              true
+            }
+          if (!published) return@launch
           completed = true
           Log.d(TAG, "Refreshed cached MPV user assets after startup")
         } catch (cancellation: CancellationException) {
@@ -5049,13 +5200,14 @@ class PlayerActivity :
       }
   }
 
-  private fun syncSubtitleFontsFromPreferenceFolder() {
-    val sourceDir = resolveSubtitleFontSourceDirectory() ?: return
+  private fun syncSubtitleFontsFromPreferenceFolder(assetRoot: File): Boolean {
+    val sourceDir = resolveSubtitleFontSourceDirectory() ?: return false
 
-    val destinationDir = File(filesDir, "fonts")
+    val destinationDir = File(assetRoot, "fonts")
     destinationDir.mkdirs()
     destinationDir.listFiles()?.filter { it.isDirectory }?.forEach { it.deleteRecursively() }
     syncFontDirectory(sourceDir, destinationDir)
+    return true
   }
 
   private fun resolveSubtitleFontSourceDirectory(): DocumentFile? {
@@ -5269,50 +5421,60 @@ class PlayerActivity :
     val mpvConfStorageUri = advancedPreferences.mpvConfStorageUri.get()
     if (mpvConfStorageUri.isBlank()) return
 
+    val ownerToken = playbackOwnerToken
+    val generation = mpvScriptAssetGeneration.incrementAndGet()
     lifecycleScope.launch(Dispatchers.IO) {
       runCatching {
-        val tree = openPersistedTreeDocument(this@PlayerActivity, mpvConfStorageUri)
-        if (tree != null) {
-          val rootChildren = listTreeFilesSafely(tree)
-          // Look for scripts/ subfolder first (case-insensitive), fall back to root
-          val scriptsSubdir = findSubdirCaseInsensitive(tree, "scripts", rootChildren)
-          val scriptsDir = scriptsSubdir ?: tree
-          syncScriptSupportDirectories(scriptsSubdir)
-          syncScriptOpts(tree, rootChildren)
+        var scriptFound = false
+        val published =
+          runStagedMpvAssetUpdate(
+            generation,
+            generationState = mpvScriptAssetGeneration,
+            publishPaths = listOf("scripts", "script-modules", "script-opts"),
+          ) { assetRoot, _ ->
+            val tree = openPersistedTreeDocument(this@PlayerActivity, mpvConfStorageUri)
+              ?: return@runStagedMpvAssetUpdate false
+            val rootChildren = listTreeFilesSafely(tree)
+            val scriptsSubdir = findSubdirCaseInsensitive(tree, "scripts", rootChildren)
+            val scriptsDir = scriptsSubdir ?: tree
+            File(assetRoot, "scripts").mkdirs()
+            syncScriptSupportDirectories(scriptsSubdir, assetRoot)
+            syncScriptOpts(tree, rootChildren, assetRoot)
 
-          val scriptFile =
-            listTreeFilesSafely(scriptsDir).firstOrNull {
-              it.name == scriptName
+            val scriptFile =
+              listTreeFilesSafely(scriptsDir).firstOrNull { it.name == scriptName }
+            if (scriptFile != null) {
+              val targetFile = File(File(assetRoot, "scripts"), scriptName)
+              copyDocumentToFileIfNeeded(scriptFile, targetFile)
+              scriptFound = true
             }
+            true
+          }
+        if (!published || !scriptFound) return@launch
 
-          if (scriptFile != null) {
-            val internalScriptsDir = File(filesDir, "scripts")
-            if (!internalScriptsDir.exists()) internalScriptsDir.mkdirs()
-
-            val targetFile = File(internalScriptsDir, scriptName)
-
-            contentResolver.openInputStream(scriptFile.uri)?.use { input ->
-              targetFile.outputStream().use { output ->
-                input.copyTo(output)
-              }
-            }
-
-            withContext(Dispatchers.Main) {
-              if (!canIssueMpvCommands()) return@withContext
-              PlaybackSession.command("load-script", targetFile.absolutePath)
+        withContext(Dispatchers.Main) {
+          PlaybackActivityOwner.runIfOwner(ownerToken, false) {
+            if (!canIssueMpvCommands()) {
+              false
+            } else {
+              PlaybackSession.command("load-script", File(filesDir, "scripts/$scriptName").absolutePath)
               viewModel.showToast("Loaded script: $scriptName")
+              true
             }
           }
         }
-      }.onFailure { e ->
-        Log.e(TAG, "Error loading script at runtime: $scriptName", e)
+      }.onFailure { error ->
+        if (error is CancellationException) throw error
+        Log.e(TAG, "Error loading script at runtime: $scriptName", error)
         withContext(Dispatchers.Main) {
-          android.widget.Toast
-            .makeText(
+          PlaybackActivityOwner.runIfOwner(ownerToken, false) {
+            android.widget.Toast.makeText(
               this@PlayerActivity,
-              "Failed to load script: ${e.message}",
+              "Failed to load script: ${error.message}",
               android.widget.Toast.LENGTH_LONG,
             ).show()
+            true
+          }
         }
       }
     }
@@ -5323,37 +5485,29 @@ class PlayerActivity :
   /**
    * Fallback: copies config from preferences when no user MPV directory is set.
    */
-  private fun copyMPVConfigFromPreferences() {
+  private fun copyMPVConfigFromPreferences(assetRoot: File) {
     runCatching {
-      File(filesDir, "mpv.conf").apply {
+      File(assetRoot, "mpv.conf").apply {
         if (!exists()) createNewFile()
         val content = advancedPreferences.mpvConf.get()
         if (content.isNotBlank()) writeTextFileIfChanged(this, content)
       }
-      File(filesDir, "input.conf").apply {
+      File(assetRoot, "input.conf").apply {
         if (!exists()) createNewFile()
         val content = advancedPreferences.inputConf.get()
         if (content.isNotBlank()) writeTextFileIfChanged(this, content)
       }
-      // Ensure scripts directory exists even without user dir
-      File(filesDir, "scripts").mkdirs()
-      File(filesDir, "script-modules").mkdirs()
-      File(filesDir, "fonts").mkdirs()
-      File(filesDir, "shaders").mkdirs()
-    }.onFailure { e ->
-      Log.e(TAG, "Error creating fallback config files", e)
-    }
+      File(assetRoot, "scripts").mkdirs()
+      File(assetRoot, "script-modules").mkdirs()
+      File(assetRoot, "fonts").mkdirs()
+      File(assetRoot, "shaders").mkdirs()
+    }.onFailure { error -> Log.e(TAG, "Error creating fallback config files", error) }
   }
 
-  private fun sanitizeInternalFontsDirectory() {
-    val fontsDir = File(filesDir, "fonts")
-    if (!fontsDir.exists()) {
-      return
-    }
-
-    fontsDir.listFiles()?.filter { it.isDirectory }?.forEach { nestedDir ->
-      nestedDir.deleteRecursively()
-    }
+  private fun sanitizeInternalFontsDirectory(assetRoot: File) {
+    val fontsDir = File(assetRoot, "fonts")
+    if (!fontsDir.exists()) return
+    fontsDir.listFiles()?.filter { it.isDirectory }?.forEach { nestedDir -> nestedDir.deleteRecursively() }
   }
 
   private fun clearDirectoryContents(directory: File) {
@@ -11380,7 +11534,6 @@ class PlayerActivity :
     private const val DEFERRED_MPV_ASSET_SYNC_DELAY_MS = 5_000L
     private const val MPV_ASSET_SYNC_PREFERENCES = "mpv_asset_sync"
     private const val USER_MPV_ASSET_SELECTION = "user_mpv_asset_selection_v1"
-    private val deferredUserMpvAssetRefreshStarted = AtomicBoolean(false)
     private const val VIDEO_SESSION_INTENT_REQUEST_CODE = 1200
     private const val AUDIO_SESSION_INTENT_REQUEST_CODE = 1201
 

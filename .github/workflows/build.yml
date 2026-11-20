@@ -50,6 +50,11 @@ jobs:
           python3 scripts/tests/media3_decoder_ffmpeg_variant_test.py
           python3 scripts/tests/mpvflow_pair_ghost_runner_test.py
 
+      - name: Test Media3Flow Vulkan and staged asset contracts
+        run: |
+          python3 scripts/tests/media3flow_gpu_shader_test.py
+          python3 scripts/tests/mpv_asset_staging_contract_test.py
+
       - name: Generate build metadata
         shell: bash
         run: |
