@@ -43,4 +43,25 @@ class Media3FlowOutputSurfaceReleaseContractTest {
     assertTrue(eglDestroy >= 0)
     assertTrue(completed > eglDestroy)
   }
+
+  @Test fun presentationContextDestructionWaitsForPresentingSlotToDrain() {
+    val destroy = sinkSource()
+      .substringAfter("private fun destroyPresentationContextOnThread()")
+      .substringBefore("private fun createWindowSurface()")
+    val guard = destroy.indexOf("if (presentationQueue.hasPresenting())")
+    assertTrue(guard >= 0)
+
+    val retry = destroy.indexOf("presentationHandler.postDelayed", guard)
+    assertTrue(retry > guard)
+    assertTrue(destroy.contains("PRESENTATION_FENCE_POLL_DELAY_MS"))
+
+    val returnFromGuard = destroy.indexOf("return", retry)
+    val destroyWindow = destroy.indexOf("destroyWindowSurfaceOnPresentationThread()")
+    val deleteProgram = destroy.indexOf("GLES20.glDeleteProgram")
+    val destroyContext = destroy.indexOf("EGL14.eglDestroyContext")
+    assertTrue(returnFromGuard > retry)
+    assertTrue(destroyWindow > returnFromGuard)
+    assertTrue(deleteProgram > returnFromGuard)
+    assertTrue(destroyContext > returnFromGuard)
+  }
 }

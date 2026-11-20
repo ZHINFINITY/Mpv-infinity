@@ -8,6 +8,7 @@ package app.infinity.mpvz.ui.player
 
 import app.infinity.mpvz.database.entities.PlaybackStateEntity
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -220,6 +221,43 @@ class PlaybackStatePersistenceTest {
   }
 
   @Test
+  fun secondaryTimingIsSavedIndependentlyAndSurvivesUnknownRendererSnapshots() {
+    val mpvState = PlaybackStatePersistence.buildEntity(
+      oldState = null,
+      snapshot = snapshot(
+        currentPosition = 30,
+        duration = 600,
+        subDelayMs = 120,
+        secondarySubDelayMs = 850,
+        subSpeed = 0.9,
+        secondarySubSpeed = 1.15,
+      ),
+      savePositionOnQuit = true,
+      watchedThreshold = 80,
+    )
+    val nativeState = PlaybackStatePersistence.buildEntity(
+      oldState = mpvState,
+      snapshot = snapshot(currentPosition = 40, duration = 600, mpvSettingsAreKnown = false),
+      savePositionOnQuit = true,
+      watchedThreshold = 80,
+    )
+
+    assertEquals(120, nativeState.subDelay)
+    assertEquals(850, nativeState.secondarySubDelay)
+    assertEquals(0.9, nativeState.subSpeed, 0.0)
+    assertEquals(1.15, nativeState.secondarySubSpeed, 0.0)
+  }
+
+  @Test
+  fun legacySecondaryTimingFollowsPrimaryUntilASeparateValueExists() {
+    assertEquals(420, secondarySubtitleDelayForRestore(-1, 420))
+    assertEquals(-250, secondarySubtitleDelayForRestore(-250, 420))
+    assertEquals(850, secondarySubtitleDelayForRestore(850, 420))
+    assertEquals(1.25, secondarySubtitleSpeedForRestore(-1.0, 1.25), 0.0)
+    assertEquals(0.85, secondarySubtitleSpeedForRestore(0.85, 1.25), 0.0)
+  }
+
+  @Test
   fun positionSavePreferenceOffStillUpdatesKnownSettings() {
     val persisted = PlaybackStatePersistence.buildEntity(
       oldState = entity(lastPosition = 600),
@@ -238,6 +276,93 @@ class PlaybackStatePersistenceTest {
     assertEquals(1.4, persisted.playbackSpeed, 0.0)
     assertEquals(0.3f, persisted.videoZoom)
     assertEquals("Fill", persisted.videoAspect)
+  }
+
+  @Test
+  fun reachedWatchThresholdPersistsFinishedStateWhenResumeSavingIsOff() {
+    val persisted =
+      PlaybackStatePersistence.buildEntity(
+        oldState = entity(lastPosition = 100),
+        snapshot = snapshot(currentPosition = 570, duration = 600),
+        savePositionOnQuit = false,
+        watchedThreshold = 95,
+      )
+
+    assertEquals(0, persisted.lastPosition)
+    assertEquals(0, persisted.timeRemaining)
+    assertTrue(persisted.hasBeenWatched)
+  }
+
+  @Test
+  fun belowWatchedThresholdRetainsResumeProgress() {
+    val persisted =
+      PlaybackStatePersistence.buildEntity(
+        oldState = entity(lastPosition = 100),
+        snapshot = snapshot(currentPosition = 564, duration = 600),
+        savePositionOnQuit = true,
+        watchedThreshold = 95,
+      )
+
+    assertEquals(564, persisted.lastPosition)
+    assertEquals(36, persisted.timeRemaining)
+    assertTrue(!persisted.hasBeenWatched)
+  }
+
+  @Test
+  fun finishedThresholdClearsLastPlayedButAReplayDoesNot() {
+    val finishedSnapshot =
+      snapshot(currentPosition = 570, duration = 600)
+        .copy(recentlyPlayedUri = "file:///videos/movie.mp4")
+    val finishedState =
+      PlaybackStatePersistence.buildEntity(
+        oldState = entity(lastPosition = 564),
+        snapshot = finishedSnapshot,
+        savePositionOnQuit = true,
+        watchedThreshold = 95,
+      )
+
+    assertTrue(shouldRemoveRecentlyPlayedEntry(finishedSnapshot, finishedState))
+
+    val replaySnapshot = finishedSnapshot.copy(currentPosition = 10)
+    val replayState =
+      PlaybackStatePersistence.buildEntity(
+        oldState = finishedState,
+        snapshot = replaySnapshot,
+        savePositionOnQuit = true,
+        watchedThreshold = 95,
+      )
+
+    assertTrue(!shouldRemoveRecentlyPlayedEntry(replaySnapshot, replayState))
+  }
+
+  @Test
+  fun unknownOrPendingPositionCannotFinishFromOldSavedProgress() {
+    val oldState = entity(lastPosition = 570)
+    val unknownSnapshot = snapshot(currentPosition = 0, duration = 600, positionIsKnown = false)
+      .copy(recentlyPlayedUri = "file:///videos/movie.mp4")
+    val unknownPersisted = PlaybackStatePersistence.buildEntity(
+      oldState = oldState,
+      snapshot = unknownSnapshot,
+      savePositionOnQuit = true,
+      watchedThreshold = 95,
+    )
+
+    assertEquals(570, unknownPersisted.lastPosition)
+    assertEquals(30, unknownPersisted.timeRemaining)
+    assertFalse(unknownPersisted.hasBeenWatched)
+    assertFalse(shouldRemoveRecentlyPlayedEntry(unknownSnapshot, unknownPersisted))
+
+    val pendingSnapshot = snapshot(currentPosition = 0, duration = 600)
+      .copy(isPositionRestorePending = true)
+    val pendingPersisted = PlaybackStatePersistence.buildEntity(
+      oldState = oldState,
+      snapshot = pendingSnapshot,
+      savePositionOnQuit = true,
+      watchedThreshold = 95,
+    )
+
+    assertEquals(570, pendingPersisted.lastPosition)
+    assertFalse(pendingPersisted.hasBeenWatched)
   }
 
   @Test
@@ -260,7 +385,9 @@ class PlaybackStatePersistenceTest {
     sid: Int = -1,
     secondarySid: Int = -1,
     subDelayMs: Int = 0,
+    secondarySubDelayMs: Int? = null,
     subSpeed: Double = 1.0,
+    secondarySubSpeed: Double? = null,
     aid: Int = -1,
     audioDelayMs: Int = 0,
     positionIsKnown: Boolean = true,
@@ -280,7 +407,9 @@ class PlaybackStatePersistenceTest {
     sid = sid,
     secondarySid = secondarySid,
     subDelayMs = subDelayMs,
+    secondarySubDelayMs = secondarySubDelayMs,
     subSpeed = subSpeed,
+    secondarySubSpeed = secondarySubSpeed,
     aid = aid,
     audioDelayMs = audioDelayMs,
     externalSubtitles = externalSubtitles,

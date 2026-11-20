@@ -1,4 +1,4 @@
-name: MPVFlow MPVRx FongMi arm64 Debug APK
+name: Mpv-infinity FongMi 645 arm64 Debug APK
 
 on:
   push:
@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   build-arm64-debug:
-    name: Build MPVFlow MPVRx arm64-v8a debug APK
+    name: Build Mpv-infinity Standard arm64-v8a Debug APK
     runs-on: ubuntu-latest
     timeout-minutes: 240
     steps:
@@ -30,7 +30,7 @@ jobs:
           fetch-depth: 0
       - name: Test arm64 workflow cache and validation invariants
         run: python3 scripts/tests/mpvflow_arm64_workflow_test.py
-      - name: Test experimental region3 attenuation invariants
+      - name: Test Region3 transition invariants
         run: python3 scripts/tests/region3_transition_test.py
       - name: Test runtime AAR overlay accepts new shared libraries
         run: python3 scripts/tests/package_mpv_runtime_aar_test.py
@@ -44,14 +44,12 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: gradle
-      - name: Restore verified Flow-only MPVFlow arm64 runtime
+      - name: Restore verified Mpv-infinity FongMi 645 arm64 runtime
         id: mpvflow-runtime-cache
         uses: actions/cache/restore@v4
         with:
-          path: |
-            native-builder/app/build/outputs/apk
-            app/mpvflow-generated/libplacebo-api-391
-          key: mpvflow-arm64-runtime-v7-builder-1efc82739f6f7034-mpv-fongmi-95ec8e929f8ad2f97c8415c486971493a0b408df-libplacebo-fongmi-63659d96d1bff7d7a5a1368e9538056a193fc6fb-ffmpeg-fongmi-f2c5162b7c4b3e8835de270ff78cecc524decad1-vulkan-headers-khronos-a4f8ada9f4f97c45b8c89c57997be9cebaae65d2-cores2-${{ hashFiles('scripts/build-mpvflow-mpv-runtime.sh', 'scripts/mpvrx_motion_source.py', 'scripts/prepare-mpvflow.py', 'scripts/prepare-mpvflow-vulkan-headers.py', 'scripts/patch-ffmpeg-symver.py', 'scripts/patches/mpvlibandroid-fongmi/**', 'app/src/main/cpp/**', 'THIRD_PARTY_LICENSES/**', 'app/src/main/assets/mpv/licenses/**') }}
+          path: native-builder/app/build/outputs/apk
+          key: mpvflow-arm64-runtime-v8-builder-1efc82739f6f7034-mpv-fongmi-645f8ecdd3c94379048e9ee3e7014e174de0bd02-libplacebo-fongmi-63659d96d1bff7d7a5a1368e9538056a193fc6fb-ffmpeg-fongmi-f2c5162b7c4b3e8835de270ff78cecc524decad1-vulkan-headers-khronos-a4f8ada9f4f97c45b8c89c57997be9cebaae65d2-cores2-${{ hashFiles('scripts/build-mpvflow-mpv-runtime.sh', 'scripts/mpvrx_motion_source.py', 'scripts/patch_fongmi_motion_downsample.py', 'scripts/patch_fongmi_paired_color_mask.py', 'scripts/prepare-mpvflow.py', 'scripts/prepare-mpvflow-vulkan-headers.py', 'scripts/patch-ffmpeg-symver.py', 'scripts/patches/mpvlibandroid-fongmi/**', 'app/src/main/cpp/**', 'THIRD_PARTY_LICENSES/**', 'app/src/main/assets/mpv/licenses/**') }}
       - name: Checkout pinned Android MPV build tools
         if: ${{ steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' }}
         uses: actions/checkout@v6
@@ -59,15 +57,13 @@ jobs:
           repository: NihilDigit/mpv-android-anvil
           ref: 1efc82739f6f7034cd63e7ee8b3ec5431df27467
           path: native-builder
-      - name: Checkout pinned MPV source
-        if: ${{ steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' }}
+      - name: Checkout pinned FongMi MPV source
         uses: actions/checkout@v6
         with:
           repository: FongMi/mpv
-          ref: 95ec8e929f8ad2f97c8415c486971493a0b408df
+          ref: 645f8ecdd3c94379048e9ee3e7014e174de0bd02
           path: mpv-source
-      - name: Verify exact MPVRx FongMi motion source and 480px integration
-        if: ${{ steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' }}
+      - name: Verify exact FongMi motion source and 480px integration
         run: python3 scripts/tests/mpvrx_motion_source_test.py --mpv-dir mpv-source
       - name: Install Vulkan and shader validation dependencies
         run: |
@@ -90,7 +86,7 @@ jobs:
           "$PIPX_BIN_DIR/meson" --version
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
-      - name: Use cached Flow-only MPVFlow arm64 runtime
+      - name: Use cached Mpv-infinity FongMi 645 arm64 runtime
         if: ${{ steps.mpvflow-runtime-cache.outputs.cache-hit == 'true' }}
         run: |
           set -euo pipefail
@@ -99,55 +95,54 @@ jobs:
           apk="$(find "$runtime_dir" -type f -path '*/debug/*' -name '*arm64-v8a-debug*.apk' -print -quit)"
           [[ -n "$apk" ]] || { echo "Cached MPVFlow arm64 runtime APK is missing" >&2; exit 1; }
           echo "MPVFLOW_RUNTIME_APK=$apk" >> "$GITHUB_ENV"
-          echo "Using verified cached MPVFlow runtime APK: $apk"
-      - name: Build MPVFlow-only MPV native arm64 debug package
+          echo "Using verified cached FongMi 645 runtime APK: $apk"
+      - name: Build Mpv-infinity FongMi 645 MPV native arm64 Debug runtime
         if: ${{ steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' }}
         run: ./scripts/build-mpvflow-mpv-runtime.sh
         env:
           MPVFLOW_MPV_BUILD_CORES: '2'
-      - name: Verify MPVRx FongMi motion source after preparation
+          MPVFLOW_ANALYSIS_DOWNSAMPLE_AA: '1'
+      - name: Verify Mpv-infinity FongMi motion source after preparation
         if: ${{ steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' }}
-        run: python3 scripts/tests/mpvrx_motion_source_test.py --mpv-dir native-builder/buildscripts/deps/mpv
-      - name: Overlay MPVFlow MPV/FFmpeg arm64 runtime into MPV∞ AAR
+        run: python3 scripts/tests/mpvrx_motion_source_test.py --mpv-dir native-builder/buildscripts/deps/mpv --require-analysis-downsample-aa --require-paired-color-mask
+      - name: Overlay FongMi 645 MPV/FFmpeg arm64 runtime into MPV∞ AAR
         run: python3 scripts/package-mpv-runtime-aar.py --runtime-apk "$MPVFLOW_RUNTIME_APK" --mpv-aar app/libs/mpvlib.aar --abis arm64-v8a
-      - name: Verify generated FongMi API-391 libplacebo headers
-        run: python3 scripts/tests/mpvflow_placebo_api_headers_test.py --require-api391-snapshot
+      - name: Verify vendored libplacebo API headers
+        run: python3 scripts/tests/mpvflow_placebo_api_headers_test.py
       - name: Test Android NDK path resolver
         run: python3 scripts/tests/android_ndk_path_test.py
       - name: Test Media3 FFmpeg runtime verifier
         run: python3 scripts/tests/verify_media3_dca_runtime_test.py
-      - name: Verify GPL-free MPVFlow arm64 runtime
+      - name: Verify GPL-free Mpv-infinity arm64 runtime
         run: python3 scripts/verify-mpv-aar-lgpl.py app/libs/mpvlib.aar --abis arm64-v8a --require-vulkan
       - name: Verify LGPL-only DTS decoder runtime for Media3
         run: python3 scripts/verify-media3-dca-runtime.py app/libs/mpvlib.aar --abis arm64-v8a
-      - name: Save verified Flow-only MPVFlow arm64 runtime
+      - name: Save verified Mpv-infinity FongMi 645 arm64 runtime
         if: ${{ steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v4
         with:
-          path: |
-            native-builder/app/build/outputs/apk
-            app/mpvflow-generated/libplacebo-api-391
+          path: native-builder/app/build/outputs/apk
           key: ${{ steps.mpvflow-runtime-cache.outputs.cache-primary-key }}
-      - name: Run complete Kotlin compile and unit tests before APK packaging
-        run: ./gradlew testStandardDebugUnitTest :media3-decoder-ffmpeg:testDebugUnitTest :app:compileStandardDebugKotlin -PtargetAbi=arm64-v8a -PmpvFlowMpvBuild=true --stacktrace --no-daemon --max-workers=2
-      - name: Assemble arm64-v8a debug APK after Kotlin checks
+      - name: Run Standard arm64 Debug unit tests
+        run: ./gradlew testStandardDebugUnitTest :media3-decoder-ffmpeg:testDebugUnitTest -PtargetAbi=arm64-v8a -PmpvFlowMpvBuild=true --stacktrace --no-daemon --max-workers=2
+      - name: Assemble one Standard arm64-v8a Debug APK
         run: ./gradlew assembleStandardDebug -PtargetAbi=arm64-v8a -PmpvFlowMpvBuild=true --stacktrace --no-daemon --max-workers=2
-      - name: Verify arm64 DTS wrapper dynamically links the existing FFmpeg runtime
+      - name: Verify Standard arm64 Debug APK contents
         run: |
           set -euo pipefail
-          apk="$(find app/build/outputs/apk/standard/debug -maxdepth 1 -type f -name '*arm64-v8a-debug*.apk' -print -quit)"
-          [[ -n "$apk" ]] || { echo "Standard arm64 debug APK was not produced" >&2; exit 1; }
+          apk_dir="app/build/outputs/apk/standard/debug"
+          mapfile -t apks < <(find "$apk_dir" -maxdepth 1 -type f -name '*.apk' -print)
+          [[ "${#apks[@]}" -eq 1 ]] || { echo "Expected exactly one Standard Debug APK in $apk_dir; found ${#apks[@]}" >&2; exit 1; }
+          apk="${apks[0]}"
+          [[ "$apk" == *arm64-v8a* ]] || { echo "APK filename does not identify the arm64-v8a output: $apk" >&2; exit 1; }
           python3 scripts/verify-media3-dca-apk.py "$apk"
           python3 scripts/verify-region3-shader-apk.py "$apk"
           python3 scripts/verify-pair-ghost-apk.py "$apk"
-      - name: Upload arm64-v8a debug APK
+      - name: Upload single Standard arm64-v8a Debug APK
         uses: actions/upload-artifact@v7
         with:
-          name: mpv-infinity-mpvrx-fongmi-arm64-v8a-debug-${{ github.sha }}
-          path: |
-            app/build/outputs/apk/standard/debug/*arm64-v8a-debug*.apk
-            app/build/outputs/apk/standard/debug/region3-shader-verification.json
-            app/build/outputs/apk/standard/debug/pair-ghost-verification.json
+          name: mpv-infinity-fongmi-645f8ec-arm64-v8a-debug-${{ github.sha }}
+          path: app/build/outputs/apk/standard/debug/*arm64-v8a*.apk
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 3
           compression-level: 0

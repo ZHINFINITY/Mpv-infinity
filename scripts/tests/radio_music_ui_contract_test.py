@@ -84,19 +84,19 @@ class RadioMusicUiContracts(unittest.TestCase):
 
     def test_raw_m3u_preflight_precedes_player_ui_and_is_reused(self):
         source = (JAVA / "ui/player/PlayerActivity.kt").read_text()
-        on_create = source[source.index("override fun onCreate("):source.index("private fun shouldPreflightExternalM3u")]
+        on_create = source[source.index("override fun onCreate("):source.index("private fun shouldAttemptExternalM3uPreflight")]
         self.assertIn("preflightExternalM3u(launchIntent, preflightGeneration)", on_create)
         self.assertNotIn("setContentView", on_create)
         self.assertIn("withTimeoutOrNull(M3U_PREFLIGHT_TIMEOUT_MS)", source)
         self.assertIn('sourceIntent.putExtra("mime_type", "audio/x-mpegurl")', source)
-        self.assertIn("preflightM3uParse = ExternalM3uPreflight(generation, playableUri, result)", source)
-        self.assertIn("it.generation == m3uPreflightGeneration && it.sourceUri == uriString", source)
+        self.assertIn("preflightM3uParse = ExternalM3uPreflight(generation, M3UParser.sourceCacheKey(playableUri), result)", source)
+        self.assertIn("it.generation == m3uPreflightGeneration && it.sourceKey == M3UParser.sourceCacheKey(uriString)", source)
         self.assertIn("shouldRetryM3uPreflightFailure(cachedResult)", source)
         self.assertIn("startInitializedPlayer()", source)
         self.assertIn("resumeInitializedPlayer()", source)
         new_intent = source[source.index("override fun onNewIntent("):source.index("private fun handleNewIntent(")]
         self.assertIn("m3uPreflightJob?.cancel()", new_intent)
-        self.assertIn("shouldPreflightExternalM3u(intent)", new_intent)
+        self.assertIn("shouldAttemptExternalM3uPreflight(intent)", new_intent)
         self.assertNotIn('extras?.getStringArrayExtra(', source)
 
     def test_source_picker_is_bounded_and_accessible(self):
@@ -168,6 +168,51 @@ class RadioMusicUiContracts(unittest.TestCase):
         summary = (JAVA / "presentation/crash/DebugLogRepository.kt").read_text()
         self.assertIn("compact(sample.synthesizedSubmitFps)", summary)
         self.assertIn("sample.targetFps?.let", summary)
+
+    def test_recent_music_preserves_metadata_in_the_music_only_media_session(self):
+        launcher = (JAVA / "ui/browser/music/MusicPlaybackLauncher.kt").read_text()
+        session = (JAVA / "ui/browser/music/MusicPlaybackSession.kt").read_text()
+        service = (JAVA / "ui/browser/music/MusicPlaybackService.kt").read_text()
+        recent = (JAVA / "ui/browser/recentlyplayed/RecentlyPlayedScreen.kt").read_text()
+        self.assertIn("Intent(context, MusicPlayerActivity::class.java)", launcher)
+        self.assertIn("MusicQueueLaunchStore.stage(songs, selectedIndex, launchSource)", launcher)
+        self.assertIn("putExtra(MusicPlayerActivity.EXTRA_ARTIST, selectedSong.artist)", launcher)
+        self.assertIn("putExtra(MusicPlayerActivity.EXTRA_ARTWORK_URI, selectedSong.albumArtUri?.toString())", launcher)
+        self.assertIn(".setArtist(artist)", session)
+        self.assertIn(".setArtworkUri(albumArtUri)", session)
+        self.assertIn("MUSIC_METADATA_SOURCE_EXTENSION", session)
+        self.assertIn("sourceExtension = metadata?.extras?.getString(MUSIC_METADATA_SOURCE_EXTENSION)", service)
+        legacy_route = launcher[launcher.index("private fun playAudiobookSongsOnLegacyPlayer"):]
+        music_route = launcher[:launcher.index("private fun playAudiobookSongsOnLegacyPlayer")]
+        self.assertNotIn('putExtra("media_library_audio"', music_route)
+        self.assertIn('putExtra("media_library_audio", true)', legacy_route)
+        self.assertIn("playableVideo.isAudio &&", recent)
+        self.assertIn("isEligibleLocalMusicPath(recentPath)", recent)
+        self.assertIn("resolveRecentAudioSong(playableVideo)", recent)
+        self.assertIn("playRecentAudioPathIfPresent", recent)
+
+    def test_audio_never_loads_or_saves_video_playback_state(self):
+        activity = (JAVA / "ui/player/PlayerActivity.kt").read_text()
+        service = (JAVA / "ui/player/MediaPlaybackService.kt").read_text()
+        state = (JAVA / "ui/player/PlaybackStatePersistence.kt").read_text()
+        self.assertIn("if (isAudioPlaybackState(identifier)) return false", activity)
+        self.assertIn("if (!shouldPersistVideoPlaybackState(snapshot)) return null", activity)
+        self.assertIn("if (!shouldPersistVideoPlaybackState(capturedSnapshot)) return", service)
+        self.assertIn("val isAudioPlayback: Boolean = false", state)
+        self.assertIn("snapshot != null && !snapshot.isAudioPlayback", state)
+
+    def test_new_video_load_and_terminal_stop_clear_outgoing_title(self):
+        activity = (JAVA / "ui/player/PlayerActivity.kt").read_text()
+        view_model = (JAVA / "ui/player/PlayerViewModel.kt").read_text()
+        session = (JAVA / "ui/player/PlaybackSession.kt").read_text()
+        title = activity[activity.index("fun getTitleForControls()"):]
+        self.assertIn("isWaitingForVideo", title[:1200])
+        load_start = view_model[view_model.index("fun onVideoLoadStarted()"):]
+        self.assertIn('currentMediaTitle = ""', load_start[:1500])
+        self.assertIn("propString.clearMediaMetadata()", activity)
+        final_stop = session[session.index("private fun finalizeStopLocked()"):]
+        self.assertIn("propString.clearMediaMetadata()", final_stop[:900])
+        self.assertIn('MPVLib.setPropertyString("force-media-title", "")', final_stop[:900])
 
 
 if __name__ == "__main__":

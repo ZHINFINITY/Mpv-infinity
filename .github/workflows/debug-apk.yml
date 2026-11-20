@@ -1,4 +1,5 @@
-name: Build debug APK
+name: Build Mpv-infinity debug APK
+run-name: Mpv-infinity ${{ inputs.flavor }} ${{ inputs.target_abi }} Debug
 
 on:
   workflow_dispatch:
@@ -50,6 +51,8 @@ jobs:
         run: python3 scripts/tests/native_playback_control_contract_test.py
       - name: Test combined radio and music UI contracts
         run: python3 scripts/tests/radio_music_ui_contract_test.py
+      - name: Test Mark-as, delay, buffering and glass performance wiring
+        run: python3 scripts/tests/player_mark_as_delay_buffering_contract_test.py
       - name: Test independent liquid-glass rendering and coverage contracts
         run: python3 scripts/tests/liquid_glass_contract_test.py
       - name: Test player ambient glass fallback contract
@@ -117,6 +120,7 @@ jobs:
           path: |
             app/schemas/**/23.json
             app/schemas/**/24.json
+            app/schemas/**/26.json
             app/build/test-results/testStandardDebugUnitTest/*.xml
           if-no-files-found: warn
       - name: Cancel the parallel APK build after a test or compile failure
@@ -198,15 +202,16 @@ jobs:
           sudo install -d -m0755 -o _apt -g root "$RUNNER_TEMP/mpv-native-apt-archives/partial"
       - name: Install native subtitle build dependencies
         run: scripts/ci/apt-install-with-fallback.sh autoconf automake libtool gettext autopoint gperf pkg-config
+      - name: Verify vendored libplacebo API headers
+        if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}
+        run: python3 scripts/tests/mpvflow_placebo_api_headers_test.py
       - name: Restore verified Flow-only MPVFlow arm64 runtime
         id: mpvflow-runtime-cache
         if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}
         uses: actions/cache/restore@v4
         with:
-          path: |
-            native-builder/app/build/outputs/apk
-            app/mpvflow-generated/libplacebo-api-391
-          key: mpvflow-arm64-runtime-v7-builder-1efc82739f6f7034-mpv-fongmi-95ec8e929f8ad2f97c8415c486971493a0b408df-libplacebo-fongmi-63659d96d1bff7d7a5a1368e9538056a193fc6fb-ffmpeg-fongmi-f2c5162b7c4b3e8835de270ff78cecc524decad1-vulkan-headers-khronos-a4f8ada9f4f97c45b8c89c57997be9cebaae65d2-cores2-${{ hashFiles('scripts/build-mpvflow-mpv-runtime.sh', 'scripts/mpvrx_motion_source.py', 'scripts/prepare-mpvflow.py', 'scripts/prepare-mpvflow-vulkan-headers.py', 'scripts/patch-ffmpeg-symver.py', 'scripts/patches/mpvlibandroid-fongmi/**', 'app/src/main/cpp/**', 'THIRD_PARTY_LICENSES/**', 'app/src/main/assets/mpv/licenses/**') }}
+          path: native-builder/app/build/outputs/apk
+          key: mpvflow-arm64-runtime-v8-builder-1efc82739f6f7034-mpv-fongmi-645f8ecdd3c94379048e9ee3e7014e174de0bd02-libplacebo-fongmi-63659d96d1bff7d7a5a1368e9538056a193fc6fb-ffmpeg-fongmi-f2c5162b7c4b3e8835de270ff78cecc524decad1-vulkan-headers-khronos-a4f8ada9f4f97c45b8c89c57997be9cebaae65d2-cores2-${{ hashFiles('scripts/build-mpvflow-mpv-runtime.sh', 'scripts/mpvrx_motion_source.py', 'scripts/patch_fongmi_paired_color_mask.py', 'scripts/prepare-mpvflow.py', 'scripts/prepare-mpvflow-vulkan-headers.py', 'scripts/patch-ffmpeg-symver.py', 'scripts/patches/mpvlibandroid-fongmi/**', 'app/src/main/cpp/**', 'THIRD_PARTY_LICENSES/**', 'app/src/main/assets/mpv/licenses/**') }}
       - name: Checkout pinned Android MPV build tools
         if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' && steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' }}
         uses: actions/checkout@v6
@@ -219,7 +224,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: FongMi/mpv
-          ref: 95ec8e929f8ad2f97c8415c486971493a0b408df
+          ref: 645f8ecdd3c94379048e9ee3e7014e174de0bd02
           path: mpv-source
       - name: Install native interpolation build dependencies
         if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}
@@ -262,9 +267,9 @@ jobs:
         run: ./scripts/build-mpvflow-mpv-runtime.sh
         env:
           MPVFLOW_MPV_BUILD_CORES: '2'
-      - name: Verify MPVRx FongMi motion source after preparation
+      - name: Verify Mpv-infinity FongMi motion source after preparation
         if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' && steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' }}
-        run: python3 scripts/tests/mpvrx_motion_source_test.py --mpv-dir native-builder/buildscripts/deps/mpv
+        run: python3 scripts/tests/mpvrx_motion_source_test.py --mpv-dir native-builder/buildscripts/deps/mpv --require-paired-color-mask
       - name: Overlay Flow-only runtime into Standard MPV AAR
         if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}
         run: python3 scripts/package-mpv-runtime-aar.py --runtime-apk "$MPVFLOW_RUNTIME_APK" --mpv-aar app/libs/mpvlib.aar --abis arm64-v8a
@@ -275,9 +280,7 @@ jobs:
         if: ${{ success() && inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' && steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v4
         with:
-          path: |
-            native-builder/app/build/outputs/apk
-            app/mpvflow-generated/libplacebo-api-391
+          path: native-builder/app/build/outputs/apk
           key: ${{ steps.mpvflow-runtime-cache.outputs.cache-primary-key }}
       - name: Run focused interpolation regression tests
         if: ${{ inputs.flavor == 'standard' && inputs.target_abi == 'arm64-v8a' }}
@@ -285,9 +288,12 @@ jobs:
           python3 scripts/tests/package_mpv_runtime_aar_test.py
           python3 scripts/tests/mpvflow_flow_only_test.py
           python3 scripts/tests/mpvflow_native_build_test.py
-          python3 scripts/tests/mpvflow_placebo_api_headers_test.py --require-api391-snapshot
+          # API-391 headers are checked from the tracked vendor snapshot above.
           if [[ -f "$GITHUB_WORKSPACE/native-builder/buildscripts/deps/mpv/video/out/gpu_next/motion.c" ]]; then
             export MPVFLOW_MPV_SOURCE_DIR="$GITHUB_WORKSPACE/native-builder/buildscripts/deps/mpv"
+            python3 scripts/tests/fongmi_paired_color_mask_test.py --source "$MPVFLOW_MPV_SOURCE_DIR/video/out/gpu_next/motion.c"
+          else
+            python3 scripts/tests/fongmi_paired_color_mask_test.py
           fi
           MPVFLOW_REQUIRE_VULKAN_PIXEL_TEST=1 ./scripts/test-mpvflow-core.sh
       - name: Build debug APK
@@ -414,7 +420,7 @@ jobs:
       - name: Upload debug APKs
         uses: actions/upload-artifact@v4
         with:
-          name: mpv-infinity-${{ inputs.flavor }}-debug
+          name: mpv-infinity-${{ inputs.flavor }}-${{ inputs.target_abi }}-debug
           path: |
             app/build/outputs/apk/**/*.apk
             app/build/outputs/apk/**/*.verification.json

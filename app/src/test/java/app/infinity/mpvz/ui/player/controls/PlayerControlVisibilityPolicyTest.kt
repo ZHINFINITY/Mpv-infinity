@@ -1,5 +1,8 @@
 package app.infinity.mpvz.ui.player.controls
 
+import app.infinity.mpvz.ui.player.controls.components.BufferingVisibilityDebouncePolicy
+import app.infinity.mpvz.ui.player.controls.components.MpvBufferingVisibilityPolicy
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -28,6 +31,26 @@ class PlayerControlVisibilityPolicyTest {
       PlayerControlVisibilityPolicy.shouldShowPlaybackControls(
         controlsVisible = otherControlsVisible,
         bufferingIndicatorVisible = false,
+      ),
+    )
+  }
+
+  @Test
+  fun sharedLandscapeRowKeepsPlaybackControlsVisibleWhileBuffering() {
+    val controlsVisible = PlayerControlVisibilityPolicy.areButtonsVisible(true, false, false)
+
+    assertTrue(
+      PlayerControlVisibilityPolicy.shouldShowPlaybackControls(
+        controlsVisible = controlsVisible,
+        bufferingIndicatorVisible = true,
+        sharedLandscapeRow = true,
+      ),
+    )
+    assertFalse(
+      PlayerControlVisibilityPolicy.shouldShowPlaybackControls(
+        controlsVisible = false,
+        bufferingIndicatorVisible = true,
+        sharedLandscapeRow = true,
       ),
     )
   }
@@ -96,87 +119,249 @@ class PlayerControlVisibilityPolicyTest {
   }
 
   @Test
-  fun nativeReadinessDoesNotInheritStaleMpvLoading() {
-    assertTrue(
-      PlayerControlVisibilityPolicy.shouldShowBufferingIndicator(
-        nativeEngineActive = true,
-        nativeReady = false,
-        nativeBuffering = false,
-        nativeEnded = false,
-        mpvLoading = false,
-        mpvBuffering = false,
-        torrentConnecting = false,
-        isSeeking = false,
-      ),
-    )
+  fun nativeIndicatorUsesOnlyItsDebouncedStateAndIgnoresStaleMpvLoading() {
     assertFalse(
       PlayerControlVisibilityPolicy.shouldShowBufferingIndicator(
         nativeEngineActive = true,
-        nativeReady = true,
-        nativeBuffering = false,
-        nativeEnded = false,
-        mpvLoading = true,
-        mpvBuffering = true,
-        torrentConnecting = true,
+        nativeBufferingVisible = false,
+        mpvBufferingVisible = true,
+        isSeeking = false,
+      ),
+    )
+    assertTrue(
+      PlayerControlVisibilityPolicy.shouldShowBufferingIndicator(
+        nativeEngineActive = true,
+        nativeBufferingVisible = true,
+        mpvBufferingVisible = false,
         isSeeking = false,
       ),
     )
   }
 
   @Test
-  fun nativeBufferingAndMpvLoadingRemainVisibleButSeekingSuppressesSpinner() {
-    assertTrue(
-      PlayerControlVisibilityPolicy.shouldShowBufferingIndicator(
-        nativeEngineActive = true,
-        nativeReady = true,
-        nativeBuffering = true,
-        nativeEnded = false,
-        mpvLoading = false,
-        mpvBuffering = false,
-        torrentConnecting = false,
-        isSeeking = false,
+  fun nativeIndicatorRequiresActualBufferingAndIgnoresTerminalStates() {
+    assertFalse(
+      PlayerControlVisibilityPolicy.isNativePlaybackStalled(
+        isEnded = false,
+        hasError = false,
+        isBuffering = false,
       ),
     )
     assertTrue(
+      PlayerControlVisibilityPolicy.isNativePlaybackStalled(
+        isEnded = false,
+        hasError = false,
+        isBuffering = true,
+      ),
+    )
+    assertFalse(
+      PlayerControlVisibilityPolicy.isNativePlaybackStalled(
+        isEnded = true,
+        hasError = false,
+        isBuffering = true,
+      ),
+    )
+    assertFalse(
+      PlayerControlVisibilityPolicy.isNativePlaybackStalled(
+        isEnded = false,
+        hasError = true,
+        isBuffering = true,
+      ),
+    )
+  }
+
+  @Test
+  fun localNativeLoadingWaitsForFirstFrameButRemoteLoadingCanStall() {
+    assertFalse(
+      PlayerControlVisibilityPolicy.isNativePlaybackStalled(
+        isEnded = false,
+        hasError = false,
+        isReady = false,
+        isLoading = true,
+        isBuffering = false,
+        isLocalSource = true,
+        hasRenderedFirstFrame = false,
+      ),
+    )
+    assertTrue(
+      PlayerControlVisibilityPolicy.isNativePlaybackStalled(
+        isEnded = false,
+        hasError = false,
+        isReady = false,
+        isLoading = true,
+        isBuffering = false,
+        isLocalSource = false,
+        hasRenderedFirstFrame = false,
+      ),
+    )
+  }
+
+  @Test
+  fun mpvUsesItsDebouncedBufferingStateAndSeekingSuppressesEitherEngine() {
+    assertTrue(
       PlayerControlVisibilityPolicy.shouldShowBufferingIndicator(
         nativeEngineActive = false,
-        nativeReady = false,
-        nativeBuffering = false,
-        nativeEnded = false,
-        mpvLoading = true,
-        mpvBuffering = false,
-        torrentConnecting = false,
+        nativeBufferingVisible = false,
+        mpvBufferingVisible = true,
         isSeeking = false,
       ),
     )
     assertFalse(
       PlayerControlVisibilityPolicy.shouldShowBufferingIndicator(
-        nativeEngineActive = false,
-        nativeReady = false,
-        nativeBuffering = false,
-        nativeEnded = false,
-        mpvLoading = true,
-        mpvBuffering = false,
-        torrentConnecting = false,
+        nativeEngineActive = true,
+        nativeBufferingVisible = true,
+        mpvBufferingVisible = true,
         isSeeking = true,
       ),
     )
   }
 
   @Test
-  fun nativeFailureDoesNotLeaveAnIdleBufferingSpinnerVisible() {
+  fun nativeLocalStartupWaitIsNotBufferingButRemoteAndPostFirstFrameStallsAre() {
     assertFalse(
-      PlayerControlVisibilityPolicy.shouldShowBufferingIndicator(
-        nativeEngineActive = true,
-        nativeReady = false,
-        nativeBuffering = false,
-        nativeEnded = false,
-        mpvLoading = false,
-        mpvBuffering = false,
-        torrentConnecting = false,
-        isSeeking = false,
-        nativeFailed = true,
+      PlayerControlVisibilityPolicy.isNativePlaybackStalled(
+        isEnded = false,
+        isReady = false,
+        isBuffering = true,
+        isLocalSource = true,
+        hasRenderedFirstFrame = false,
       ),
     )
+    assertTrue(
+      PlayerControlVisibilityPolicy.isNativePlaybackStalled(
+        isEnded = false,
+        isReady = false,
+        isBuffering = false,
+        isLocalSource = false,
+        hasRenderedFirstFrame = false,
+      ),
+    )
+    assertTrue(
+      PlayerControlVisibilityPolicy.isNativePlaybackStalled(
+        isEnded = false,
+        isReady = true,
+        isBuffering = true,
+        isLocalSource = true,
+        hasRenderedFirstFrame = true,
+      ),
+    )
+    assertFalse(
+      PlayerControlVisibilityPolicy.isNativePlaybackStalled(
+        isEnded = true,
+        isReady = false,
+        isBuffering = true,
+        isLocalSource = false,
+        hasRenderedFirstFrame = true,
+      ),
+    )
+  }
+
+  @Test
+  fun nativeLoadingAheadDoesNotShowBufferingWhilePlaybackIsAdvancing() {
+    assertFalse(
+      PlayerControlVisibilityPolicy.isNativePlaybackStalled(
+        isEnded = false,
+        isReady = true,
+        isBuffering = false,
+        isLoading = true,
+        isLocalSource = false,
+        hasRenderedFirstFrame = true,
+        isPlaying = true,
+      ),
+    )
+    assertFalse(
+      PlayerControlVisibilityPolicy.isNativePlaybackStalled(
+        isEnded = false,
+        isReady = true,
+        isBuffering = true,
+        isLoading = true,
+        isLocalSource = false,
+        hasRenderedFirstFrame = true,
+        isPlaying = true,
+      ),
+    )
+    assertFalse(
+      PlayerControlVisibilityPolicy.isNativePlaybackStalled(
+        isEnded = false,
+        isReady = true,
+        isBuffering = false,
+        isLoading = true,
+        isLocalSource = false,
+        hasRenderedFirstFrame = true,
+        isPlaying = false,
+      ),
+    )
+    assertTrue(
+      PlayerControlVisibilityPolicy.isNativePlaybackStalled(
+        isEnded = false,
+        isReady = true,
+        isBuffering = false,
+        isLoading = true,
+        isLocalSource = false,
+        hasRenderedFirstFrame = false,
+        isPlaying = false,
+      ),
+    )
+  }
+
+  @Test
+  fun localMpvStartupCoreIdleIsSuppressedButNetworkAndTorrentStallsRemainVisible() {
+    val localStartupStall = MpvBufferingVisibilityPolicy.isStalled(
+      enabled = true,
+      forceVisible = false,
+      suppressStartupStalls = true,
+      paused = false,
+      eofReached = false,
+      idleActive = false,
+      isCacheStall = false,
+      coreIdle = true,
+    )
+    assertFalse(localStartupStall)
+
+    val networkCacheStall = MpvBufferingVisibilityPolicy.isStalled(
+      enabled = true,
+      forceVisible = false,
+      suppressStartupStalls = false,
+      paused = false,
+      eofReached = false,
+      idleActive = false,
+      isCacheStall = true,
+      coreIdle = false,
+    )
+    assertTrue(networkCacheStall)
+
+    assertTrue(
+      MpvBufferingVisibilityPolicy.isStalled(
+        enabled = true,
+        forceVisible = true,
+        suppressStartupStalls = true,
+        paused = true,
+        eofReached = true,
+        idleActive = true,
+        isCacheStall = false,
+        coreIdle = false,
+      ),
+    )
+    assertFalse(
+      PlayerControlVisibilityPolicy.shouldForceMpvBufferingIndicator(
+        nativeEngineActive = true,
+        torrentConnecting = true,
+      ),
+    )
+    assertTrue(
+      PlayerControlVisibilityPolicy.shouldForceMpvBufferingIndicator(
+        nativeEngineActive = false,
+        torrentConnecting = true,
+      ),
+    )
+  }
+
+  @Test
+  fun bufferingDebounceKeepsTheReleaseTimingAndPreferenceCanHideImmediately() {
+    assertEquals(350L, BufferingVisibilityDebouncePolicy.delayFor(shouldShow = true))
+    assertEquals(300L, BufferingVisibilityDebouncePolicy.delayFor(shouldShow = false))
+    assertFalse(BufferingVisibilityDebouncePolicy.isVisible(enabled = false, debouncedVisible = true))
+    assertFalse(BufferingVisibilityDebouncePolicy.isVisible(enabled = true, debouncedVisible = false))
+    assertTrue(BufferingVisibilityDebouncePolicy.isVisible(enabled = true, debouncedVisible = true))
   }
 }

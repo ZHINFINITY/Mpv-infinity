@@ -8,8 +8,6 @@ package app.infinity.mpvz.ui.player
 
 import android.content.Intent
 import android.net.Uri
-import app.infinity.mpvz.domain.network.NetworkPlaybackUri
-import java.io.File
 
 /**
  * Points a relaunch intent at a saved music item (process-death restore and the mini player's
@@ -25,12 +23,10 @@ object AudioResumeLaunch {
   private const val DEFAULT_AUDIO_MIME = "audio/*"
 
   /** The saved item's filesystem path when it was stored as a raw path, else null. */
-  fun localPath(originalUri: String): String? = originalUri.takeIf { it.startsWith("/") }
+  fun localPath(originalUri: String): String? = PlaybackUriPolicy.localPath(originalUri)
 
   /** A playable Uri: file:// for raw paths (reserved characters encoded), else the parsed URI. */
-  fun playableUri(originalUri: String): Uri =
-    localPath(originalUri)?.let { Uri.fromFile(File(it)) }
-      ?: Uri.parse(NetworkPlaybackUri.normalize(originalUri))
+  fun playableUri(originalUri: String): Uri = PlaybackUriPolicy.playableUri(originalUri)
 
   fun mimeType(saved: String?, fallback: String? = DEFAULT_AUDIO_MIME): String? =
     saved?.takeIf(String::isNotBlank) ?: fallback

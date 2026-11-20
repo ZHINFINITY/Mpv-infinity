@@ -199,6 +199,8 @@ fun FileSystemBrowserScreen(path: String? = null) {
   val videoFilesWithPlayback by viewModel.videoFilesWithPlayback.collectAsState()
   val newVideoIds by viewModel.newVideoIds.collectAsState()
   val watchedVideoIds by viewModel.watchedVideoIds.collectAsState()
+  val searchVideoFilesWithPlayback by viewModel.searchVideoFilesWithPlayback.collectAsState()
+  val searchNewVideoIds by viewModel.searchNewVideoIds.collectAsState()
   val isLoading by viewModel.isLoading.collectAsState()
   val error by viewModel.error.collectAsState()
   val isAtRoot by viewModel.isAtRoot.collectAsState()
@@ -245,6 +247,9 @@ fun FileSystemBrowserScreen(path: String? = null) {
   var isSearching by rememberSaveable { mutableStateOf(false) }
   var searchResults by remember { mutableStateOf<List<FileSystemItem>>(emptyList()) }
   var isSearchLoading by remember { mutableStateOf(false) }
+  LaunchedEffect(searchResults) {
+    viewModel.updateSearchPlaybackState(searchResults)
+  }
   val keyboardController = LocalSoftwareKeyboardController.current
   val focusRequester = remember { FocusRequester() }
 
@@ -813,8 +818,8 @@ fun FileSystemBrowserScreen(path: String? = null) {
                 searchQuery = searchQuery,
                 searchResults = searchResults,
                 isLoading = isSearchLoading,
-                videoFilesWithPlayback = videoFilesWithPlayback,
-                newVideoIds = newVideoIds,
+                videoFilesWithPlayback = searchVideoFilesWithPlayback,
+                newVideoIds = searchNewVideoIds,
                 showSubtitleIndicator = showSubtitleIndicator,
                 isAtRoot = isAtRoot,
                 navigationBarHeight = navigationBarHeight,

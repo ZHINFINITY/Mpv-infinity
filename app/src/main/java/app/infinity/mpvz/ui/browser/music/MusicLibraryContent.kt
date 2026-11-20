@@ -151,7 +151,6 @@ import app.infinity.mpvz.ui.player.controls.components.MiniAudioVisualizer
 import app.infinity.mpvz.ui.browser.folderlist.FolderListScreen
 import app.infinity.mpvz.ui.browser.playlist.PlaylistDetailScreen
 import app.infinity.mpvz.ui.browser.selection.rememberSelectionManager
-import app.infinity.mpvz.ui.player.PlaybackSession
 import app.infinity.mpvz.ui.components.InlineSearchBar
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
@@ -453,7 +452,7 @@ fun MusicLibraryContent(
   // Playlist detail overlay when a playlist is opened
   selectedPlaylistForDetail?.let { playlist ->
     BackHandler { selectedPlaylistForDetail = null }
-    PlaylistDetailScreen(playlistId = playlist.id).Content()
+    PlaylistDetailScreen(playlistId = playlist.id, useMusicPlayerForLocalAudio = true).Content()
     return
   }
 
@@ -1416,8 +1415,8 @@ private fun SongsTabContent(
 
   // The recently-played row is written once when a song is tapped and never advances with the
   // queue, so follow the live session item and keep it only as a fallback.
-  val sessionState by PlaybackSession.state.collectAsStateWithLifecycle()
-  val playingUri = sessionState.currentItem?.originalUri
+  val sessionState by MusicPlaybackSession.state.collectAsStateWithLifecycle()
+  val playingUri = sessionState.currentUri
 
   fun MusicSong.isNowPlaying(): Boolean =
     when {
@@ -1550,8 +1549,8 @@ private fun SongGridCard(
             )
           }
         } else if (isPlaying) {
-          val paused by PlaybackSession.propBoolean["pause"].collectAsState()
-          val isPlaybackActive = paused != true
+          val musicPlayback by MusicPlaybackSession.state.collectAsStateWithLifecycle()
+          val isPlaybackActive = musicPlayback.isPlaying
           Box(
             modifier = Modifier
               .fillMaxSize()
@@ -2554,8 +2553,8 @@ private fun AlbumDetailSheet(
 
       Spacer(modifier = Modifier.height(16.dp))
 
-      val sessionState by PlaybackSession.state.collectAsStateWithLifecycle()
-      val playingUri = sessionState.currentItem?.originalUri
+      val sessionState by MusicPlaybackSession.state.collectAsStateWithLifecycle()
+      val playingUri = sessionState.currentUri
 
       LazyColumn(
         modifier = Modifier
@@ -2640,8 +2639,8 @@ private fun ArtistDetailSheet(
 
       Spacer(modifier = Modifier.height(16.dp))
 
-      val sessionState by PlaybackSession.state.collectAsStateWithLifecycle()
-      val playingUri = sessionState.currentItem?.originalUri
+      val sessionState by MusicPlaybackSession.state.collectAsStateWithLifecycle()
+      val playingUri = sessionState.currentUri
 
       LazyColumn(
         modifier = Modifier

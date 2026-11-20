@@ -1228,6 +1228,7 @@
   <string name="player_horizontal_flip_off">Horizontal flip முடக்கம்</string>
   <string name="player_vertical_flip_on">Vertical flip இயக்கம்</string>
   <string name="player_vertical_flip_off">Vertical flip முடக்கம்</string>
+  <string name="player_flip_requires_hw_or_sw">Flip-க்கு HW அல்லது SW டிகோடிங் தேவை; HW+ ஆதரிக்கப்படாது.</string>
   <string name="btn_label_back">பின் Arrow</string>
   <string name="btn_label_title">வீடியோ தலைப்பு</string>
   <string name="btn_label_bookmarks">அத்தியாயங்கள் / புத்தகக்குறிகள்</string>
@@ -2252,4 +2253,14 @@
 <string name="pref_glass_rim_width_summary">ஒளிரும் விளிம்பின் தடிமன் (dp)</string>
 <string name="pref_glass_rim_softness">விளிம்பு மென்மை</string>
 <string name="pref_glass_rim_softness_summary">விளிம்பு ஒளி எவ்வளவு மென்மையாக மங்குகிறது</string>
+  <string name="player_sheets_sub_primary">முதன்மை</string>
+  <string name="player_sheets_sub_secondary">இரண்டாம் நிலை</string>
+  <string name="player_move_primary_subtitles_hint">முதன்மை வசனங்களை நகர்த்த மேலே/கீழே இழுக்கவும்</string>
+  <string name="player_move_secondary_subtitles_hint">இரண்டாம் நிலை வசனங்களை நகர்த்த மேலே/கீழே இழுக்கவும்</string>
+  <string name="video_mark_as_action">இவ்வாறு குறிக்கவும்</string>
+  <string name="video_mark_as_title">“%1$s” என்பதை இவ்வாறு குறிக்கவும்</string>
+  <string name="video_mark_as_new">புதியது</string>
+  <string name="video_mark_as_last_played">கடைசியாக இயக்கப்பட்டது</string>
+  <string name="video_mark_as_finished">முடிந்தது</string>
+  <string name="video_mark_as_none">எதுவுமில்லை</string>
 </resources>

@@ -58,7 +58,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import kotlin.reflect.KProperty
@@ -111,11 +110,7 @@ class MPVView(
   private var interpolationOutputFrameRate: Double? = null
   private val mpvFlowDiagnosticsScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
   private var mpvFlowDiagnosticsJob: Job? = null
-  private val mpvFlowCaptureControlFile = java.io.File(context.cacheDir, "fongmi-diagnostic-control.txt")
-  private var mpvFlowCaptureControlConfigured = false
-  private var mpvFlowCaptureSessionId: String? = null
   private var mpvFlowDiagnosticsEnabled = false
-  private var fongmiDiagnosticCaptureEnabled = false
   private var mpvFlowOsdStatsEnabled = false
   @Volatile private var latestMpvFlowRuntimeSample: MpvFlowRuntimeCadenceSample? = null
 
@@ -187,10 +182,6 @@ class MPVView(
       if (mpvFlowSoftBlendDebugActive) MpvFlowComputeApi.VULKAN else requestedMpvFlowComputeApi
     mpvFlowOsdStatsEnabled = false
     mpvFlowDiagnosticsEnabled = BuildConfig.DEBUG && BuildConfig.MPV_HAS_MPVFLOW && mpvFlowFrameInterpolationActive
-    fongmiDiagnosticCaptureEnabled =
-      BuildConfig.DEBUG &&
-        BuildConfig.MPV_HAS_FONGMI_DIAGNOSTICS &&
-        mpvFlowFrameInterpolationActive
     val coreConfigurationKey =
       "${requestedBackend.configurationKey}|conf=${MpvConfigOverridePolicy.configurationKey()}|" +
         "motion=${if (mpvFlowFrameInterpolationActive) requestedMpvFlowTargetFps else "off"}"
@@ -210,12 +201,6 @@ class MPVView(
     if (result.isFailure) {
       mpvFlowOsdStatsEnabled = false
       mpvFlowDiagnosticsEnabled = false
-      fongmiDiagnosticCaptureEnabled = false
-      mpvFlowCaptureControlConfigured = false
-    }
-    if (result.isSuccess && BuildConfig.DEBUG && BuildConfig.MPV_HAS_FONGMI_DIAGNOSTICS) {
-      // PlaybackSession may reuse a core and skip initOptions for this view.
-      configureMpvFlowCaptureControl("after_initialize")
     }
     // Diagnostics and SurfaceHolder binding are Main-only; bindSessionCallbacksOnMain() owns them.
     return result
@@ -231,7 +216,6 @@ class MPVView(
   }
 
   fun releaseSurface() {
-    stopFlowDiagnosticCapture()
     stopMpvFlowDiagnostics()
     holder.removeCallback(this)
     if (isSurfaceReady || PlaybackSession.state.value.surfaceAttached) {
@@ -302,119 +286,6 @@ class MPVView(
       )
     }
   }
-
-  /** Latest app-side counters; successful swap submits are not proof of displayed/scanout FPS. */
-  fun flowDiagnosticTimingSnapshot(): JSONObject {
-    val sample = latestMpvFlowRuntimeSample
-    fun nullable(value: Number?): Any = value ?: JSONObject.NULL
-    return JSONObject()
-      .put("schema_version", 1)
-      .put("engine", "mpv")
-      .put("sample_available", sample != null)
-      .put("sample_time_ms", nullable(sample?.timeMillis))
-      .put("sample_window_ms", nullable(sample?.windowMillis))
-      .put("target_fps", nullable(sample?.targetFps))
-      .put("synthesized_submit_fps", nullable(sample?.synthesizedSubmitFps))
-      .put("successful_swap_submit_fps", nullable(sample?.swapSubmitFps))
-      .put("render_callback_fps", nullable(sample?.renderCallbackFps))
-      .put("synthesized_submits", nullable(sample?.synthesizedSubmits))
-      .put("synthesized_render_callbacks", nullable(sample?.synthesizedRenderCallbacks))
-      .put("render_failures", nullable(sample?.renderFailures))
-      .put("swap_failures", nullable(sample?.swapFailures))
-      .put("synthesis_rate_limited_callbacks", nullable(sample?.synthesisRateLimitedCallbacks))
-      .put("frame_repeat_count", nullable(sample?.frameRepeatCount))
-      .put("render_cpu_average_ms", nullable(sample?.renderCpuAverageMs))
-      .put("render_cpu_maximum_ms", nullable(sample?.renderCpuMaximumMs))
-      .put("pair_analysis_attempts", nullable(sample?.pairAnalysisAttempts))
-      .put("pair_analysis_failures", nullable(sample?.pairAnalysisFailures))
-      .put("source_sync_percent", nullable(sample?.sourceSyncPercent))
-      .put("successful_swap_metric_semantics", "successful pl_swapchain submit; not SurfaceFlinger scanout")
-      .put("surface_frame_rate_hint_hz", nullable(interpolationOutputFrameRate))
-      .put("surface_frame_rate_hint_semantics", "requested Surface frame-rate hint; not observed presentation")
-      .put("actual_displayed_fps_available", false)
-      .put("actual_displayed_fps_source", "Perfetto FrameTimeline companion trace required for SurfaceView")
-  }
-
-  private fun configureMpvFlowCaptureControl(source: String): Int {
-    if (!BuildConfig.DEBUG || !BuildConfig.MPV_HAS_FONGMI_DIAGNOSTICS) {
-      mpvFlowCaptureControlConfigured = false
-      return -1
-    }
-    val optionValue = if (fongmiDiagnosticCaptureEnabled) mpvFlowCaptureControlFile.absolutePath else ""
-    val result =
-      PlaybackSession.setIntegrationOptionString("fongmi-diagnostic-control-file", optionValue)
-    mpvFlowCaptureControlConfigured = fongmiDiagnosticCaptureEnabled && result == 0
-    val state = when {
-      !fongmiDiagnosticCaptureEnabled -> "disabled"
-      mpvFlowCaptureControlConfigured -> "ready"
-      else -> "unavailable"
-    }
-    Log.i(
-      TAG,
-      "MPVFLOW_DIAGNOSTIC component=capture event=control_option source=$source state=$state option_rc=$result",
-    )
-    return result
-  }
-
-  /** Arms the MPV VO through a private, atomically replaced control file. */
-  fun startFlowDiagnosticCapture(
-    sessionId: String,
-    baseDirectory: String,
-    pairedOutput: Boolean = false,
-    singleOutput: Boolean = false,
-  ): String? {
-    if (singleOutput && (!BuildConfig.DEBUG || !BuildConfig.MPV_HAS_FONGMI_DIAGNOSTICS)) {
-      return "fongmi_single_output_unavailable"
-    }
-    if (!BuildConfig.DEBUG || !BuildConfig.MPV_HAS_FONGMI_DIAGNOSTICS) return "debug_fongmi_unavailable"
-    if (!fongmiDiagnosticCaptureEnabled || !isSurfaceReady) return "fongmi_interpolation_not_active"
-    if (!sessionId.matches(Regex("[A-Za-z0-9_-]{1,80}"))) return "invalid_session_id"
-    val allowedRoot = java.io.File(context.cacheDir, "flow-diagnostics").canonicalFile
-    val target = java.io.File(baseDirectory).canonicalFile
-    if (target != allowedRoot) {
-      return "capture_directory_outside_private_cache"
-    }
-    if (!target.isDirectory && !target.mkdirs()) return "capture_directory_create_failed"
-    if (!mpvFlowCaptureControlConfigured) {
-      val controlOptionResult = configureMpvFlowCaptureControl("capture_start")
-      if (controlOptionResult != 0 || !mpvFlowCaptureControlConfigured) {
-        return "mpvflow_capture_control_unavailable"
-      }
-    }
-    val command =
-      when {
-        singleOutput -> "START_ONE_SHOT"
-        pairedOutput -> "START_PAIRED"
-        else -> "START"
-      }
-    val error = writeFlowDiagnosticControl("$command\t$sessionId\t${target.path}\n")
-    if (error != null) return error
-    mpvFlowCaptureSessionId = sessionId
-    return null
-  }
-
-  fun stopFlowDiagnosticCapture(sessionId: String? = mpvFlowCaptureSessionId): String? {
-    val activeSession = mpvFlowCaptureSessionId ?: return null
-    if (sessionId == null || sessionId != activeSession) return "capture_session_id_mismatch"
-    val error = writeFlowDiagnosticControl("STOP\t$sessionId\n")
-    if (error == null) mpvFlowCaptureSessionId = null
-    else Log.e(TAG, "MPVFLOW_DIAGNOSTIC component=capture event=control_write state=failed reason=$error")
-    return error
-  }
-
-  private fun writeFlowDiagnosticControl(contents: String): String? =
-    runCatching {
-      val atomic = android.util.AtomicFile(mpvFlowCaptureControlFile)
-      val output = atomic.startWrite()
-      try {
-        output.write(contents.toByteArray(Charsets.UTF_8))
-        atomic.finishWrite(output)
-      } catch (error: Exception) {
-        atomic.failWrite(output)
-        throw error
-      }
-    }.exceptionOrNull()?.let { "control_file_${it.javaClass.simpleName.lowercase()}" }
-
 
   private fun mpvFlowPlayerHealthFields(
     sample: MpvFlowRuntimeCadenceSample?,
@@ -805,13 +676,6 @@ class MPVView(
       } else {
         null
       }
-    val captureControlOptionResult =
-      if (BuildConfig.DEBUG && BuildConfig.MPV_HAS_MPVFLOW) {
-        configureMpvFlowCaptureControl("init_options")
-      } else {
-        mpvFlowCaptureControlConfigured = false
-        null
-      }
     val mpvFlowVisibilityResolverDebugEnabled =
       Media3FlowDebugSettingsPolicy.mpvFlowFeatureEnabled(
         debugBuild = BuildConfig.DEBUG,
@@ -1067,20 +931,11 @@ class MPVView(
     width: Int,
     height: Int,
   ) {
-    if (BuildConfig.DEBUG) {
-      Log.d(
-        TAG,
-        "MPV_ASPECT_DIAGNOSTIC component=surface event=surface_changed format=$format width=$width height=$height",
-      )
-    }
     PlaybackSession.resizeSurface(width, height, owner = this)
     updateSurfaceFrameRateHint()
   }
 
   override fun surfaceCreated(holder: android.view.SurfaceHolder) {
-    if (BuildConfig.DEBUG) {
-      Log.d(TAG, "MPV_ASPECT_DIAGNOSTIC component=surface event=surface_created valid=${holder.surface.isValid}")
-    }
     isSurfaceReady = PlaybackSession.bindSurface(holder.surface, width, height, this)
     updateSurfaceFrameRateHint()
     updateMpvFlowDiagnostics()
@@ -1092,9 +947,6 @@ class MPVView(
   }
 
   override fun surfaceDestroyed(holder: android.view.SurfaceHolder) {
-    if (BuildConfig.DEBUG) {
-      Log.d(TAG, "MPV_ASPECT_DIAGNOSTIC component=surface event=surface_destroyed")
-    }
     stopMpvFlowDiagnostics()
     isSurfaceReady = false
     PlaybackSession.unbindSurface(this)
@@ -1171,7 +1023,15 @@ class MPVView(
       // Track console visibility state
       "user-data/mpv/console/open" to MPVLib.MpvFormat.MPV_FORMAT_FLAG,
       "sub-text" to MPVLib.MpvFormat.MPV_FORMAT_STRING,
+      "secondary-sub-text" to MPVLib.MpvFormat.MPV_FORMAT_STRING,
+      "sub-pos" to MPVLib.MpvFormat.MPV_FORMAT_INT64,
+      "secondary-sub-pos" to MPVLib.MpvFormat.MPV_FORMAT_INT64,
+      "sub-delay" to MPVLib.MpvFormat.MPV_FORMAT_DOUBLE,
+      "secondary-sub-delay" to MPVLib.MpvFormat.MPV_FORMAT_DOUBLE,
+      "sub-speed" to MPVLib.MpvFormat.MPV_FORMAT_DOUBLE,
+      "secondary-sub-speed" to MPVLib.MpvFormat.MPV_FORMAT_DOUBLE,
       "sub-scale" to MPVLib.MpvFormat.MPV_FORMAT_DOUBLE,
+      "secondary-sub-scale" to MPVLib.MpvFormat.MPV_FORMAT_DOUBLE,
     )
 
   private fun setupAudioOptions() {
@@ -1204,13 +1064,19 @@ class MPVView(
     // Auto-detect font provider (system fonts, embedded fonts, etc.)
     PlaybackSession.setOptionString("sub-font-provider", "auto")
 
-    // Delay and speed for both primary and secondary
-    val subDelay = (subtitlesPreferences.defaultSubDelay.get() / 1000.0).toString()
-    val subSpeed = subtitlesPreferences.defaultSubSpeed.get().toString()
+    // Secondary timing follows the primary default until the user sets a lane-specific default.
+    val primaryDelayMs = subtitlesPreferences.defaultSubDelay.get()
+    val secondaryDelayMs = subtitlesPreferences.defaultSecondarySubDelay.get()
+      .takeUnless { it == Int.MIN_VALUE } ?: primaryDelayMs
+    val subDelay = (primaryDelayMs / 1000.0).toString()
+    val secondarySubDelay = (secondaryDelayMs / 1000.0).toString()
+    val subSpeed = subtitlesPreferences.defaultSubSpeed.get()
+    val secondarySubSpeed = subtitlesPreferences.defaultSecondarySubSpeed.get()
+      .takeIf { it in 0.1f..10f } ?: subSpeed
     PlaybackSession.setOptionString("sub-delay", subDelay)
-    PlaybackSession.setOptionString("sub-speed", subSpeed)
-    PlaybackSession.setOptionString("secondary-sub-delay", subDelay)
-    PlaybackSession.setOptionString("secondary-sub-speed", subSpeed)
+    PlaybackSession.setOptionString("sub-speed", subSpeed.toString())
+    PlaybackSession.setOptionString("secondary-sub-delay", secondarySubDelay)
+    PlaybackSession.setOptionString("secondary-sub-speed", secondarySubSpeed.toString())
 
     val preferredFont = subtitlesPreferences.font.get().ifBlank { DEFAULT_SUBTITLE_FONT_FAMILY }
     PlaybackSession.setOptionString("sub-font", preferredFont)
@@ -1239,8 +1105,11 @@ class MPVView(
     val subPos = clampSubtitlePosition(subtitlesPreferences.subPos.get())
     val w = width.takeIf { it > 0 }?.toFloat() ?: context.resources.displayMetrics.widthPixels.toFloat()
     val h = height.takeIf { it > 0 }?.toFloat() ?: context.resources.displayMetrics.heightPixels.toFloat()
-    val secondarySubPos = calculateSecondarySubtitlePosition(subPos, w, h)
-    val subScale = subtitlesPreferences.subScale.get().toString()
+    val automaticSecondarySubPos = calculateSecondarySubtitlePosition(subPos, w, h)
+    val secondarySubPos =
+      resolveSecondarySubtitlePosition(automaticSecondarySubPos, subtitlesPreferences.secondarySubPos.get())
+    val subScale = subtitlesPreferences.subScale.get()
+    val secondarySubScale = subtitlesPreferences.secondarySubScale.get().takeIf { it > 0f } ?: subScale
 
     val scaleByWindow = if (subtitlesPreferences.scaleByWindow.get()) "yes" else "no"
     val blendMode =
@@ -1267,11 +1136,11 @@ class MPVView(
     PlaybackSession.setOptionString("sub-border-size", borderSize)
     PlaybackSession.setOptionString("sub-border-style", borderStyle)
     PlaybackSession.setOptionString("sub-shadow-offset", shadowOffset)
-    PlaybackSession.setOptionString("sub-scale", subScale)
+    PlaybackSession.setOptionString("sub-scale", subScale.toString())
     PlaybackSession.setOptionString("sub-pos", subPos.toString())
     PlaybackSession.setOptionString("sub-scale-by-window", scaleByWindow)
     PlaybackSession.setOptionString("sub-use-margins", scaleByWindow)
-    PlaybackSession.setOptionString("secondary-sub-scale", subScale)
+    PlaybackSession.setOptionString("secondary-sub-scale", secondarySubScale.toString())
     PlaybackSession.setOptionString("secondary-sub-pos", secondarySubPos.toString())
   }
 

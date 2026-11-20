@@ -19,6 +19,10 @@ import app.infinity.mpvz.domain.playbackstate.repository.PlaybackStateRepository
 import app.infinity.mpvz.preferences.BrowserPreferences
 import app.infinity.mpvz.repository.MediaFileRepository
 import app.infinity.mpvz.ui.browser.base.BaseBrowserViewModel
+import app.infinity.mpvz.ui.browser.videolist.buildVideoWithPlaybackInfo
+import app.infinity.mpvz.ui.browser.videolist.explicitVideoWatchedOverride
+import app.infinity.mpvz.ui.browser.videolist.setExplicitVideoWatchedOverride
+import app.infinity.mpvz.ui.browser.videolist.videoPlaybackIdentifiers
 import app.infinity.mpvz.ui.player.PlaybackIdentity
 import app.infinity.mpvz.utils.media.MediaLibraryEvents
 import app.infinity.mpvz.utils.media.MetadataRetrieval
@@ -29,16 +33,36 @@ import app.infinity.mpvz.utils.storage.FileTypeUtils
 import app.infinity.mpvz.utils.storage.FolderViewScanner
 import app.infinity.mpvz.utils.storage.TreeViewScanner
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import java.io.File
+
+internal class SearchPlaybackRefreshOwner {
+  private var generation = 0L
+
+  @Synchronized
+  fun begin(): Long = ++generation
+
+  @Synchronized
+  fun isCurrent(candidate: Long): Boolean = generation == candidate
+
+  @Synchronized
+  fun publishIfCurrent(candidate: Long, publish: () -> Unit): Boolean {
+    if (generation != candidate) return false
+    publish()
+    return true
+  }
+}
 
 /**
  * ViewModel for FileSystem Browser - based on Fossify's ItemsFragment logic
@@ -85,6 +109,25 @@ class FileSystemBrowserViewModel(
 
   private val _watchedVideoIds = MutableStateFlow<Set<Long>>(emptySet())
   val watchedVideoIds: StateFlow<Set<Long>> = _watchedVideoIds.asStateFlow()
+
+  private val _searchVideoFilesWithPlayback = MutableStateFlow<Map<Long, Float>>(emptyMap())
+  val searchVideoFilesWithPlayback: StateFlow<Map<Long, Float>> = _searchVideoFilesWithPlayback.asStateFlow()
+
+  private val _searchNewVideoIds = MutableStateFlow<Set<Long>>(emptySet())
+  val searchNewVideoIds: StateFlow<Set<Long>> = _searchNewVideoIds.asStateFlow()
+
+  private val _searchWatchedVideoIds = MutableStateFlow<Set<Long>>(emptySet())
+  val searchWatchedVideoIds: StateFlow<Set<Long>> = _searchWatchedVideoIds.asStateFlow()
+
+  private val _searchItems = MutableStateFlow<List<FileSystemItem>>(emptyList())
+  private val searchPlaybackRefreshOwner = SearchPlaybackRefreshOwner()
+  private var searchPlaybackJob: Job? = null
+
+  private data class PlaybackDisplayState(
+    val progressByVideoId: Map<Long, Float>,
+    val newVideoIds: Set<Long>,
+    val watchedVideoIds: Set<Long>,
+  )
 
   // Loading state - similar to Fossify's showProgressBar/hideProgressBar
   private val _isLoading = MutableStateFlow(false)
@@ -161,6 +204,7 @@ class FileSystemBrowserViewModel(
       MediaLibraryEvents.changes.collectLatest {
         MediaFileRepository.invalidateTreeCache()
         loadCurrentDirectory()
+        refreshSearchPlaybackState()
       }
     }
 
@@ -169,6 +213,7 @@ class FileSystemBrowserViewModel(
         if (_unsortedItems.value.isNotEmpty()) {
           applyPlaybackState(_unsortedItems.value)
         }
+        refreshSearchPlaybackState()
       }
     }
 
@@ -193,11 +238,13 @@ class FileSystemBrowserViewModel(
       combine(
         appearancePreferences.showUnplayedOldVideoLabel.changes(),
         appearancePreferences.unplayedOldVideoDays.changes(),
-      ) { showLabels, thresholdDays ->
-        showLabels to thresholdDays
+        browserPreferences.watchedThreshold.changes(),
+      ) { _, _, _ ->
+        Unit
       }.drop(1)
         .collectLatest {
           loadCurrentDirectory()
+          refreshSearchPlaybackState()
         }
     }
 
@@ -453,6 +500,7 @@ class FileSystemBrowserViewModel(
               getApplication(),
               path,
               showAllFileTypes = false,
+              useFastCount = true,
               forceFileSystemCheck = forceFileSystemCheck,
             ).onSuccess { items ->
               // Get previous count for this path
@@ -540,68 +588,107 @@ class FileSystemBrowserViewModel(
    * Based on playback state tracking (not directly in Fossify, but similar pattern)
    */
   private suspend fun applyPlaybackState(items: List<FileSystemItem>) {
+    val state = calculatePlaybackDisplayState(items)
+    _videoFilesWithPlayback.value = state.progressByVideoId
+    _newVideoIds.value = state.newVideoIds
+    _watchedVideoIds.value = state.watchedVideoIds
+    Log.d(TAG, "Loaded playback info for ${state.progressByVideoId.size} videos with progress")
+  }
+
+  fun updateSearchPlaybackState(items: List<FileSystemItem>) {
+    synchronized(searchPlaybackRefreshOwner) {
+      _searchItems.value = items
+    }
+    refreshSearchPlaybackState()
+  }
+
+  private fun refreshSearchPlaybackState() {
+    val request = synchronized(searchPlaybackRefreshOwner) {
+      val items = _searchItems.value
+      val generation = searchPlaybackRefreshOwner.begin()
+      searchPlaybackJob?.cancel()
+      searchPlaybackJob = null
+      if (items.isEmpty()) {
+        _searchVideoFilesWithPlayback.value = emptyMap()
+        _searchNewVideoIds.value = emptySet()
+        _searchWatchedVideoIds.value = emptySet()
+        null
+      } else {
+        items to generation
+      }
+    }
+
+    val (items, generation) = request ?: return
+    val job = viewModelScope.launch(Dispatchers.IO) {
+      val state = calculatePlaybackDisplayState(items)
+      val coroutineContext = currentCoroutineContext()
+      coroutineContext.ensureActive()
+      synchronized(searchPlaybackRefreshOwner) {
+        coroutineContext.ensureActive()
+        if (_searchItems.value != items) return@synchronized
+        searchPlaybackRefreshOwner.publishIfCurrent(generation) {
+          _searchVideoFilesWithPlayback.value = state.progressByVideoId
+          _searchNewVideoIds.value = state.newVideoIds
+          _searchWatchedVideoIds.value = state.watchedVideoIds
+        }
+      }
+    }
+    synchronized(searchPlaybackRefreshOwner) {
+      if (searchPlaybackRefreshOwner.isCurrent(generation)) searchPlaybackJob = job else job.cancel()
+    }
+  }
+
+  private suspend fun calculatePlaybackDisplayState(items: List<FileSystemItem>): PlaybackDisplayState {
     val videoFiles = items.filterIsInstance<FileSystemItem.VideoFile>()
+    if (videoFiles.isEmpty()) return PlaybackDisplayState(emptyMap(), emptySet(), emptySet())
+
     val playbackStates = playbackStateRepository.getAllPlaybackStates().associateBy { it.mediaTitle }
     val playbackMap = mutableMapOf<Long, Float>()
     val newIds = mutableSetOf<Long>()
     val watchedIds = mutableSetOf<Long>()
     val currentTime = System.currentTimeMillis()
     val showNewLabels = appearancePreferences.showUnplayedOldVideoLabel.get()
-    val thresholdMillis = appearancePreferences.unplayedOldVideoDays.get().toLong() * 24L * 60L * 60L * 1000L
+    val newLabelDays = appearancePreferences.unplayedOldVideoDays.get()
     val watchedThreshold = browserPreferences.watchedThreshold.get()
-
-    Log.d(TAG, "Loading playback info for ${videoFiles.size} videos")
 
     videoFiles.forEach { videoFile ->
       val video = videoFile.video
-      val playbackIdentifiers =
-        linkedSetOf(
-          PlaybackIdentity.forLocalPath(video.path),
-          PlaybackIdentity.forUri(video.uri.toString()),
-          PlaybackIdentity.forUri(video.path),
-          PlaybackIdentity.forUri("file://${video.path}"),
+      val manualOverride = explicitVideoWatchedOverride(getApplication(), video.path)
+      val videoState =
+        buildVideoWithPlaybackInfo(
+          video = video,
+          playbackState = videoPlaybackIdentifiers(video).firstNotNullOfOrNull(playbackStates::get),
+          currentTimeMillis = currentTime,
+          newLabelDays = newLabelDays,
+          watchedThreshold = watchedThreshold,
+          explicitlyMarkedUnwatched = manualOverride == false,
+          explicitlyMarkedWatched = manualOverride == true,
         )
-      val playbackState = playbackIdentifiers.firstNotNullOfOrNull { playbackStates[it] }
-      val progressValue =
-        if (playbackState != null && video.duration > 0) {
-          val durationSeconds = video.duration / 1000
-          val watched = durationSeconds - playbackState.timeRemaining.toLong()
-          (watched.toFloat() / durationSeconds.toFloat()).coerceIn(0f, 1f)
-        } else {
-          0f
-        }
-      val isWatched =
-        playbackState?.hasBeenWatched == true ||
-          (watchedThreshold > 0 && progressValue >= watchedThreshold / 100f)
-      if (isWatched) watchedIds += video.id
 
-      if (playbackState != null && progressValue in 0.01f..0.99f) {
-        playbackMap[video.id] = progressValue
-      }
-
-      val videoAge = currentTime - (video.dateModified * 1000L)
-      val isWithinNewWindow = thresholdMillis == 0L || videoAge <= thresholdMillis
-      if (showNewLabels && !isWatched && isWithinNewWindow) {
-        newIds += video.id
-      }
+      videoState.progressPercentage?.let { playbackMap[video.id] = it }
+      if (videoState.isWatched) watchedIds += video.id
+      if (showNewLabels && videoState.isOldAndUnplayed) newIds += video.id
     }
 
-    _videoFilesWithPlayback.value = playbackMap
-    _newVideoIds.value = newIds
-    _watchedVideoIds.value = watchedIds
-    Log.d(TAG, "Loaded playback info for ${playbackMap.size} videos with progress")
+    return PlaybackDisplayState(playbackMap, newIds, watchedIds)
   }
 
   fun setWatched(video: Video, watched: Boolean) {
+    _videoFilesWithPlayback.value = _videoFilesWithPlayback.value - video.id
+    _newVideoIds.value =
+      if (watched) _newVideoIds.value - video.id else _newVideoIds.value + video.id
+    _watchedVideoIds.value =
+      if (watched) _watchedVideoIds.value + video.id else _watchedVideoIds.value - video.id
     viewModelScope.launch(Dispatchers.IO) {
+      setExplicitVideoWatchedOverride(getApplication(), video.path, watched)
       val durationSeconds = (video.duration / 1000L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
       val identifiers =
-        linkedSetOf(
-          PlaybackIdentity.forLocalPath(video.path),
-          PlaybackIdentity.forUri(video.uri.toString()),
-          PlaybackIdentity.forUri(video.path),
-          PlaybackIdentity.forUri("file://${video.path}"),
-        )
+        linkedSetOf<String>().apply {
+          addAll(PlaybackIdentity.localPathAliases(video.path))
+          add(PlaybackIdentity.forUri(video.uri.toString()))
+          add(video.path)
+          add(video.displayName)
+        }
       val existing = playbackStateRepository.getAllPlaybackStates().firstNotNullOfOrNull { state ->
         if (state.mediaTitle in identifiers) state else null
       }
@@ -626,6 +713,7 @@ class FileSystemBrowserViewModel(
         ),
       )
       PlaybackStateEvents.notifyChanged(PlaybackIdentity.forLocalPath(video.path))
+      MediaLibraryEvents.notifyChanged()
     }
   }
 }

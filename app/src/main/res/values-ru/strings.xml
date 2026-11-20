@@ -1240,6 +1240,7 @@
   <string name="player_horizontal_flip_off">Отражение по горизонтали выключено</string>
   <string name="player_vertical_flip_on">Отражение по вертикали включено</string>
   <string name="player_vertical_flip_off">Отражение по вертикали выключено</string>
+  <string name="player_flip_requires_hw_or_sw">Для Flip требуется декодирование HW или SW; HW+ не поддерживается.</string>
   <string name="btn_label_back">Стрелка «Назад»</string>
   <string name="btn_label_title">Название видео</string>
   <string name="btn_label_bookmarks">Главы / Закладки</string>
@@ -2267,4 +2268,14 @@
 <string name="pref_glass_rim_width_summary">Толщина светящейся кромки в dp</string>
 <string name="pref_glass_rim_softness">Мягкость кромки</string>
 <string name="pref_glass_rim_softness_summary">Насколько плавно угасает свет кромки</string>
+  <string name="player_sheets_sub_primary">Основные</string>
+  <string name="player_sheets_sub_secondary">Дополнительные</string>
+  <string name="player_move_primary_subtitles_hint">Проведите вверх или вниз, чтобы переместить основные субтитры</string>
+  <string name="player_move_secondary_subtitles_hint">Проведите вверх или вниз, чтобы переместить дополнительные субтитры</string>
+  <string name="video_mark_as_action">Пометить как</string>
+  <string name="video_mark_as_title">Пометить «%1$s» как</string>
+  <string name="video_mark_as_new">Новое</string>
+  <string name="video_mark_as_last_played">Последнее воспроизведение</string>
+  <string name="video_mark_as_finished">Завершено</string>
+  <string name="video_mark_as_none">Нет</string>
 </resources>

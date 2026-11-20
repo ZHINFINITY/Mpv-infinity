@@ -93,6 +93,7 @@ import app.infinity.mpvz.ui.browser.cards.VideoCardUiConfig
 import app.infinity.mpvz.ui.browser.components.BrowserTopBar
 import app.infinity.mpvz.ui.browser.components.ExpressiveScrollBar
 import app.infinity.mpvz.ui.browser.components.fastScrollGlyph
+import app.infinity.mpvz.ui.browser.music.MusicPlaybackLauncher
 import app.infinity.mpvz.ui.browser.selection.rememberSelectionManager
 import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
 import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
@@ -136,6 +137,7 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
 @Serializable
 data class PlaylistDetailScreen(
   val playlistId: Int,
+  val useMusicPlayerForLocalAudio: Boolean = false,
 ) : Screen {
   @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterialApi::class)
   @Composable
@@ -408,6 +410,24 @@ data class PlaylistDetailScreen(
           // Audio mode is declared before Activity creation; opaque audio URLs can use the
           // bounded header probe, but video/unknown responses never force the Music UI.
           val musicRoute = settingEnabled && playlist?.isM3uPlaylist == true && radioMimeType != null
+          val localMusicPlaylist =
+            useMusicPlayerForLocalAudio &&
+              playlist?.isAudio == true &&
+              playlist?.isM3uPlaylist != true &&
+              videoItems.isNotEmpty() &&
+              videoItems.all { it.video.isAudio }
+          if (localMusicPlaylist) {
+            val queueIndex = videoItems.indexOf(item).takeIf { it >= 0 } ?: startIndex
+            val openedInMusicPlayer =
+              MusicPlaybackLauncher.playLocalAudioPathsIfPresent(
+                context = context,
+                paths = videoItems.map { it.video.path },
+                fallbackTitles = videoItems.map { it.playlistItem.fileName },
+                currentIndex = queueIndex,
+                launchSource = "music_library_playlist",
+              )
+            if (openedInMusicPlayer) return@launch
+          }
           val intent =
             Intent(context, PlayerActivity::class.java).apply {
               action = Intent.ACTION_VIEW

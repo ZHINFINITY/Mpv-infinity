@@ -29,7 +29,10 @@ class ReferenceUiRollbackContractTest {
       // Build 1910 smoothness: chapter index via derivedStateOf so position ticks do not recompose the whole overlay.
       // Auto-hide follow-up: loading does not pin controls; seekbar and button rows share one visibility transition.
       // Center transport hides during buffering, matching v2.2.2 and MPV-RX without hiding other control groups.
-      "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "b9046a21ef1a527c1cf566fcb3a337f8a74ce5f7e195cf9e6ce22c9cc8e3bf8c" /* Bounded landscape lanes scroll in both seekbar positions */,
+      // Mpv-infinity aspect-recovery follow-up: decoder changes can retry the remembered failed video track.
+      // Local playback follow-up: suppress local-startup false buffering until the first frame while retaining remote cache stalls.
+      // Native follow-up: loading-ahead does not show a buffering spinner while Media3 is playing.
+      "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "8b7f5a7bdde947a3dfd8d2cc0732203856ced79ba0d49072547e9aca97c98b05" /* Integrated landscape lanes and source-aware startup buffering */,
       // Owner follow-up: music uses its legacy visual rail while video retains the global-glass path.
       "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/Seekbar.kt" to "5e3cbc03be3aa7b35f464e0ee313615192d8d1cdcfbc7e8a819b7a6c2331843c",
       // Build 1910: shared rimLight/thick-surface routing is intentionally owned by this stream.
@@ -171,7 +174,8 @@ private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float): Bitmap? = 
   // Changes when a sheet/panel opens or closes: sampling pauses briefly so the open
   // animation does not compete with PixelCopy, frost and pane redraws.
   transitionKey: Any? = null,
-  // A sheet/panel covers the video: sample at display cadence. Controls only: half rate.
+  // Sampling refreshes only the backdrop image; sheet animation and input remain display-driven.
+  // Large sheets retain 15 fps video refresh; small controls use the existing 10 fps cadence.
   largeSurfaceVisible: Boolean = true,
 """ to
         """  sampleAspect: () -> Double? = { null },

@@ -17,20 +17,26 @@ cc -std=c11 -O2 -Wall -Wextra -Werror \
 "$OUT_OPENCL_VALIDATION"
 python3 "$ROOT/scripts/tests/mpvflow_gpu_shader_test.py"
 python3 "$ROOT/scripts/tests/mpvflow_pair_ghost_test.py"
+if [[ -n "${MPVFLOW_MPV_SOURCE_DIR:-}" && -d "$MPVFLOW_MPV_SOURCE_DIR" ]]; then
+  python3 "$ROOT/scripts/tests/mpvrx_motion_downsample_test.py" --mpv-dir "$MPVFLOW_MPV_SOURCE_DIR"
+else
+  python3 "$ROOT/scripts/tests/mpvrx_motion_downsample_test.py"
+fi
 if [[ "${MPVFLOW_REQUIRE_VULKAN_PIXEL_TEST:-0}" == "1" ]]; then
   python3 "$ROOT/scripts/tests/mpvflow_gpu_motion_test.py" --require-vulkan
-  python3 "$ROOT/scripts/tests/mpvflow_gpu_synthesis_test.py" --decision-mode --require-vulkan
+  python3 "$ROOT/scripts/tests/mpvflow_gpu_synthesis_test.py" --require-vulkan
 else
   python3 "$ROOT/scripts/tests/mpvflow_gpu_motion_test.py"
-  python3 "$ROOT/scripts/tests/mpvflow_gpu_synthesis_test.py" --decision-mode
+  python3 "$ROOT/scripts/tests/mpvflow_gpu_synthesis_test.py"
 fi
-python3 "$ROOT/scripts/tests/mpvflow_capture_io_test.py"
 python3 "$ROOT/scripts/tests/mpvflow_fongmi_native_source_test.py"
 if [[ -n "${MPVFLOW_MPV_SOURCE_DIR:-}" && -d "$MPVFLOW_MPV_SOURCE_DIR" ]]; then
   python3 "$ROOT/scripts/tests/mpvrx_motion_source_test.py" --mpv-dir "$MPVFLOW_MPV_SOURCE_DIR"
+  python3 "$ROOT/scripts/tests/fongmi_motion_phase_test.py" --mpv-dir "$MPVFLOW_MPV_SOURCE_DIR"
 else
-  echo "Skipping MPVRx source verification: no pinned MPV source checkout is available"
+  echo "Skipping Mpv-infinity FongMi source verification: no pinned MPV source checkout is available"
 fi
+python3 "$ROOT/scripts/tests/fongmi_paired_color_mask_test.py"
 python3 "$ROOT/scripts/tests/mpvflow_android_subprocess_test.py"
 python3 "$ROOT/scripts/tests/mpvflow_vulkan_headers_prepare_test.py"
 python3 "$ROOT/scripts/tests/mpvflow_placebo_api_headers_test.py"

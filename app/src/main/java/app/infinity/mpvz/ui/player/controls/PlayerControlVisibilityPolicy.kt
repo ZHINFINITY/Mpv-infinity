@@ -12,8 +12,11 @@ internal object PlayerControlVisibilityPolicy {
   fun areButtonsVisible(controlsShown: Boolean, controlsLocked: Boolean, slidersShown: Boolean): Boolean =
     controlsShown && !controlsLocked && !slidersShown
 
-  fun shouldShowPlaybackControls(controlsVisible: Boolean, bufferingIndicatorVisible: Boolean): Boolean =
-    controlsVisible && !bufferingIndicatorVisible
+  fun shouldShowPlaybackControls(
+    controlsVisible: Boolean,
+    bufferingIndicatorVisible: Boolean,
+    sharedLandscapeRow: Boolean = false,
+  ): Boolean = controlsVisible && (sharedLandscapeRow || !bufferingIndicatorVisible)
 
   fun shouldAutoHideControls(
     isAudioOnly: Boolean,
@@ -31,26 +34,37 @@ internal object PlayerControlVisibilityPolicy {
       !isUnlockSliderDragging &&
       !drawerBlocksAutoHide
 
-  /**
-   * Native playback owns its readiness/buffering state. Do not OR it with MPV's process-wide phase:
-   * that phase can remain LOADING after a native engine handoff.
-   */
+  /** Selects the active engine's debounced state; stale MPV phases never leak into Native playback. */
   fun shouldShowBufferingIndicator(
     nativeEngineActive: Boolean,
-    nativeReady: Boolean,
-    nativeBuffering: Boolean,
-    nativeEnded: Boolean,
-    mpvLoading: Boolean,
-    mpvBuffering: Boolean,
-    torrentConnecting: Boolean,
+    nativeBufferingVisible: Boolean,
+    mpvBufferingVisible: Boolean,
     isSeeking: Boolean,
-    nativeFailed: Boolean = false,
   ): Boolean {
     if (isSeeking) return false
-    return if (nativeEngineActive) {
-      !nativeFailed && !nativeEnded && (!nativeReady || nativeBuffering)
-    } else {
-      mpvLoading || mpvBuffering || torrentConnecting
-    }
+    return if (nativeEngineActive) nativeBufferingVisible else mpvBufferingVisible
   }
+
+  /** Suppress local prepare until its first frame; playback advancement wins and loading alone after it is not a stall. */
+  fun isNativePlaybackStalled(
+    isEnded: Boolean,
+    isBuffering: Boolean,
+    hasError: Boolean = false,
+    isReady: Boolean = true,
+    isLoading: Boolean = false,
+    isLocalSource: Boolean = false,
+    hasRenderedFirstFrame: Boolean = true,
+    isPlaying: Boolean = false,
+  ): Boolean =
+    !isEnded &&
+      !hasError &&
+      (!isLocalSource || hasRenderedFirstFrame) &&
+      !isPlaying &&
+      (!isReady || isBuffering || (isLoading && !hasRenderedFirstFrame))
+
+  /** A torrent can be waiting for data before MPV has a playable source to report as stalled. */
+  fun shouldForceMpvBufferingIndicator(
+    nativeEngineActive: Boolean,
+    torrentConnecting: Boolean,
+  ): Boolean = !nativeEngineActive && torrentConnecting
 }

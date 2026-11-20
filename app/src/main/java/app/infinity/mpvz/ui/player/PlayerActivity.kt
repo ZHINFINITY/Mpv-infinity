@@ -111,6 +111,7 @@ import app.infinity.mpvz.preferences.MpvConfigOverridePolicy
 import app.infinity.mpvz.preferences.PlayerPreferences
 import app.infinity.mpvz.preferences.SubtitlesPreferences
 import app.infinity.mpvz.preferences.VideoSortType
+import app.infinity.mpvz.repository.MediaFileRepository
 import app.infinity.mpvz.ui.browser.playlist.ALL_VIDEOS_PLAYLIST_ID
 import app.infinity.mpvz.ui.browser.playlist.buildAllVideosPlaylistEntity
 import app.infinity.mpvz.ui.browser.playlist.isAllVideosPlaylist
@@ -133,6 +134,7 @@ import app.infinity.mpvz.utils.media.M3UParseResult
 import app.infinity.mpvz.utils.media.M3URoute
 import app.infinity.mpvz.utils.media.M3URoutingPolicy
 import app.infinity.mpvz.utils.media.M3UParser
+import app.infinity.mpvz.utils.media.MediaLibraryEvents
 import app.infinity.mpvz.utils.media.PlaybackStateEvents
 import app.infinity.mpvz.utils.media.SharedUrlExtractor
 import app.infinity.mpvz.utils.media.SubtitleOps
@@ -284,45 +286,6 @@ class PlayerActivity :
       nativeEngineBuilt.value = true
     }
   }
-  private val flowDiagnosticsCaptureManager by lazy { FlowDiagnosticsCaptureManager(this) }
-  internal val flowDiagnosticsCaptureState get() = flowDiagnosticsCaptureManager.state
-
-  internal fun startFlowDiagnosticsCapture(pairedOutput: Boolean = false, singleOutput: Boolean = false): String? {
-    if (!BuildConfig.DEBUG) return "debug_build_required"
-    if (singleOutput && !BuildConfig.MPV_HAS_FONGMI_DIAGNOSTICS) return "fongmi_diagnostics_build_required"
-    return when (activeEngineMode) {
-      PlaybackEngineMode.AUTO -> "active_engine_unresolved"
-      PlaybackEngineMode.MPV ->
-        flowDiagnosticsCaptureManager.start(
-          engine = "mpv",
-          pairedOutput = pairedOutput,
-          singleOutput = singleOutput,
-          startRequest = { sessionId, baseDirectory ->
-            binding.player.startFlowDiagnosticCapture(
-              sessionId, baseDirectory.absolutePath, pairedOutput, singleOutput)
-          },
-          stopRequest = { sessionId ->
-            binding.player.stopFlowDiagnosticCapture(sessionId)
-          },
-          timingSnapshot = binding.player::flowDiagnosticTimingSnapshot,
-        )
-      PlaybackEngineMode.NATIVE -> if (singleOutput) "single_output_requires_fongmi_mpv" else
-        flowDiagnosticsCaptureManager.start(
-          engine = "native-media3",
-          pairedOutput = pairedOutput,
-          startRequest = { sessionId, baseDirectory ->
-            nativeEngineOrNull()?.startFlowDiagnosticCapture(
-              sessionId, baseDirectory.absolutePath, pairedOutput,
-            ) ?: "native_engine_unavailable"
-          },
-          stopRequest = { sessionId -> nativeEngineOrNull()?.stopFlowDiagnosticCapture(sessionId) },
-          timingSnapshot = { nativeEngineOrNull()?.flowDiagnosticTimingSnapshot() },
-        )
-    }
-  }
-
-  internal fun stopFlowDiagnosticsCapture(): String? = flowDiagnosticsCaptureManager.stop()
-
   private var nativeEngineConfigured = false
   /** Observable twin of [nativeEngineConfigured] for collectors that start before a video needs it. */
   private val nativeEngineBuilt = MutableStateFlow(false)
@@ -330,6 +293,8 @@ class PlayerActivity :
   private val idleNativeFirstFrame = MutableStateFlow(false)
   private var playerStoppedAtElapsedRealtime = 0L
   private var pendingRendererRebuildAfterBackground = false
+  private var nativeVideoSurfaceCallbackView: android.view.SurfaceView? = null
+  private var nativeVideoSurfaceCallback: android.view.SurfaceHolder.Callback? = null
   private var pendingVideoTrackRestoreAfterRebuild = false
   val nativePlaybackSnapshot get() = nativeEngineOrNull()?.snapshot ?: idleNativePlaybackSnapshot
   private val nativeFirstFrame get() = nativeEngineOrNull()?.hasRenderedFirstFrame ?: idleNativeFirstFrame
@@ -430,6 +395,24 @@ class PlayerActivity :
     }
     binding.player.alpha = alpha
     binding.player.visibility = View.VISIBLE
+  }
+
+  /** Keep the paused MPV frame visible while Native prepares a decoder and attaches its surface. */
+  private fun prepareNativeVideoSurfaceForHandoff() {
+    if (isCurrentPlaybackAudio()) {
+      setNativeVideoSurfaceVisible(true)
+      hideMpvSurfaceForMusic()
+      return
+    }
+    // SurfaceView must stay attached for Media3 to render; alpha keeps its empty buffer from
+    // covering MPV until the first Native frame is ready to take over.
+    binding.media3Player.videoSurfaceView?.apply {
+      alpha = 0f
+      visibility = View.VISIBLE
+    }
+    binding.media3Player.alpha = 0f
+    binding.media3Player.visibility = View.VISIBLE
+    showMpvSurfaceUnlessMusic()
   }
 
   private fun restoreMpvSurfaceForVideo() {
@@ -549,6 +532,27 @@ class PlayerActivity :
     return isKnownAudioLaunch(intent)
   }
 
+  private fun isAudioPlaybackState(identifier: String? = null): Boolean {
+    val queueState = PlaybackSession.queue.value
+    val item = if (identifier == null) {
+      queueState.currentItem
+    } else {
+      queueState.items.firstOrNull { it.stableId == identifier }
+    }
+    if (item != null) return item.usesDedicatedAudioState()
+    if (identifier != null && identifier != mediaIdentifier) return false
+    return intent.getBooleanExtra("media_library_audio", false) ||
+      intent.getBooleanExtra("is_audio", false) ||
+      isKnownAudioLaunch(intent) ||
+      viewModel.isAudioOnly.value ||
+      isCurrentMediaKnownAudio()
+  }
+
+  private fun clearStaleMediaMetadataForLoad() {
+    PlaybackSession.propString.clearMediaMetadata()
+    runCatching { PlaybackSession.setPropertyString("force-media-title", "") }
+  }
+
   // Renderer ownership is authoritative even while Native is preparing/seeking. Readiness
   // must not route controls or lifecycle saves back to the frozen MPV instance.
   override fun isNativeEngineActive(): Boolean = activeEngineMode == PlaybackEngineMode.NATIVE
@@ -597,6 +601,7 @@ class PlayerActivity :
     }
     if (!nativeEngineConfigured) {
       nativeEngine.attach(binding.media3Player)
+      configureNativeVideoSurfaceCallback()
       nativeEngine.setSubtitleStyle(
         textColor = subtitlesPreferences.textColor.get(),
         backgroundColor = subtitlesPreferences.backgroundColor.get(),
@@ -609,6 +614,8 @@ class PlayerActivity :
       )
       nativeEngine.setSubtitleScale(subtitlesPreferences.subScale.get())
       nativeEngine.setSubtitlePosition(subtitlesPreferences.subPos.get())
+      nativeEngine.setHorizontalFlip(viewModel.transformState.value.isMirrored)
+      nativeEngine.setVerticalFlip(viewModel.transformState.value.isVerticalFlipped)
     }
   }
 
@@ -678,22 +685,6 @@ class PlayerActivity :
 
   override fun onVideoAspectChanged() {
     noteUserAspectChange()
-    if (!BuildConfig.DEBUG || isNativeEngineActive()) return
-    val surface = binding.player
-    val valid = runCatching { surface.holder.surface.isValid }.getOrDefault(false)
-    Log.d(
-      TAG,
-      "MPV_ASPECT_DIAGNOSTIC event=aspect_change aspect=${viewModel.videoAspect.value} " +
-        "override=${PlaybackSession.getPropertyDouble("video-aspect-override") ?: "unavailable"} " +
-        "panscan=${PlaybackSession.getPropertyDouble("panscan") ?: "unavailable"} " +
-        "interpolation=${PlaybackSession.getPropertyString("interpolation") ?: "unavailable"} " +
-        "videoSync=${PlaybackSession.getPropertyString("video-sync") ?: "unavailable"} " +
-        "vo=${PlaybackSession.getPropertyString("vo") ?: "unavailable"} " +
-        "gpuApi=${PlaybackSession.getPropertyString("gpu-api") ?: "unavailable"} " +
-        "gpuContext=${PlaybackSession.getPropertyString("gpu-context") ?: "unavailable"} " +
-        "surface=${surface.width}x${surface.height} valid=$valid " +
-        "attached=${PlaybackSession.state.value.surfaceAttached} ambient=$composedVideoAmbientPresentationActive",
-    )
   }
 
   private var interpolationControlRequestGeneration = 0L
@@ -853,7 +844,8 @@ class PlayerActivity :
               captureMpvTrackSelection(type, property, null)?.let { property to it }
             }.toMap(),
           doubleProperties = listOf("speed", "audio-delay", "sub-delay", "sub-speed", "volume",
-            "video-zoom", "video-pan-x", "video-pan-y", "sub-scale", "sub-pos", "secondary-sub-pos", "secondary-sub-delay")
+            "video-zoom", "video-pan-x", "video-pan-y", "sub-scale", "sub-pos", "secondary-sub-pos",
+            "secondary-sub-delay", "secondary-sub-speed")
             .mapNotNull { key -> PlaybackSession.getPropertyDouble(key)?.takeIf { it.isFinite() }?.let { key to it } }.toMap(),
           stringProperties = listOf("video-aspect-override", "video-unscaled", "video-rotate", "keepaspect", "vf", "loop-file", "ab-loop-a", "ab-loop-b")
             .mapNotNull { key -> PlaybackSession.getPropertyString(key)?.let { key to it } }.toMap(),
@@ -1123,6 +1115,8 @@ class PlayerActivity :
   }
   private fun handleNativePlaybackEnded() {
     if (!isNativeEngineActive()) return
+    // Commit the ended item's final position/watched state before repeat or queue advancement.
+    saveVideoPlaybackState(fileName, immediate = true)
     val autoplay = playerPreferences.autoplayNextVideo.get()
     when {
       viewModel.shouldRepeatCurrentFile() -> {
@@ -1151,7 +1145,10 @@ class PlayerActivity :
       causeClassNames = causeClassNames,
       rendererName = rendererFailure?.rendererName,
       rendererMimeType = rendererFailure?.rendererFormat?.sampleMimeType,
-    ) ?: return
+    ) ?: run {
+      viewModel.onVideoLoadFailed()
+      return
+    }
 
     Log.w(
       "Mpv∞-PlayerActivity",
@@ -1170,6 +1167,14 @@ class PlayerActivity :
 
   override fun nativeSetPan(x: Float, y: Float) {
     nativeEngineOrNull()?.setPan(x, y)
+  }
+
+  override fun nativeSetHorizontalFlip(enabled: Boolean) {
+    nativeEngineOrNull()?.setHorizontalFlip(enabled)
+  }
+
+  override fun nativeSetVerticalFlip(enabled: Boolean) {
+    nativeEngineOrNull()?.setVerticalFlip(enabled)
   }
 
   override fun nativeSetSubtitleScale(scale: Float) {
@@ -1973,11 +1978,12 @@ class PlayerActivity :
               // not leave controls and engine state on MPV while Media3 is opening the source.
               activeEngineMode = PlaybackEngineMode.NATIVE
               viewModel.setNativeEngineActive(true)
-              setNativeVideoSurfaceVisible(true)
-              binding.player.alpha = 0f
-              binding.player.visibility = View.GONE
+              prepareNativeVideoSurfaceForHandoff()
               viewModel.clearNativeExternalSubtitles()
               configureNativeEngineIfNeeded(force = true)
+              nativeEngine.clearPreviousSubtitleTracks()
+              nativeEngine.setHorizontalFlip(viewModel.transformState.value.isMirrored)
+              nativeEngine.setVerticalFlip(viewModel.transformState.value.isVerticalFlipped)
               nativeEngine.play(
                 nativeUri,
                 outgoingPositionMs,
@@ -2957,10 +2963,13 @@ class PlayerActivity :
           viewModel.videoZoom,
           viewModel.videoPanX,
           viewModel.videoPanY,
-        ) { zoom, panX, panY ->
-          Triple(zoom, panX, panY)
-        }.collect { (zoom, panX, panY) ->
+          viewModel.transformState,
+        ) { zoom, panX, panY, flips ->
+          Triple(zoom, panX, panY) to flips
+        }.collect { (position, flips) ->
+          val (zoom, panX, panY) = position
           val scale = 2f.pow(zoom)
+          // MPV applies flips with its hflip/vflip filters; a second negative view scale cancels them.
           binding.player.scaleX = scale
           binding.player.scaleY = scale
           binding.player.translationX = panX
@@ -2969,8 +2978,8 @@ class PlayerActivity :
           // keeps native subtitle overlays and controls out of the video pan/zoom transform while
           // giving both engines the same pan/zoom state.
           binding.media3Player.videoSurfaceView?.apply {
-            scaleX = scale
-            scaleY = scale
+            this.scaleX = if (flips.isMirrored) -scale else scale
+            this.scaleY = if (flips.isVerticalFlipped) -scale else scale
             translationX = panX
             translationY = panY
           }
@@ -2978,19 +2987,28 @@ class PlayerActivity :
           if (canIssueMpvCommands()) {
             val scaleByWindow = subtitlesPreferences.scaleByWindow.get()
             val baseSubScale = subtitlesPreferences.subScale.get()
+            val baseSecondarySubScale = subtitlesPreferences.secondarySubScale.get().takeIf { it > 0f } ?: baseSubScale
             val baseSubPos = subtitlesPreferences.subPos.get()
             val w = player.width.takeIf { it > 0 }?.toFloat()
               ?: resources.displayMetrics.widthPixels.toFloat()
             val h = player.height.takeIf { it > 0 }?.toFloat()
               ?: resources.displayMetrics.heightPixels.toFloat()
+            val baseSecondarySubPos =
+              resolveSecondarySubtitlePosition(
+                calculateSecondarySubtitlePosition(baseSubPos, w, h),
+                subtitlesPreferences.secondarySubPos.get(),
+              )
 
             if (scaleByWindow && (scale != 1f || panX != 0f || panY != 0f)) {
               val compensatedSubScale = (baseSubScale / scale).coerceIn(0.05f, 10f)
+              val compensatedSecondarySubScale = (baseSecondarySubScale / scale).coerceIn(0.05f, 10f)
               PlaybackSession.setPropertyFloat("sub-scale", compensatedSubScale)
-              PlaybackSession.setPropertyFloat("secondary-sub-scale", compensatedSubScale)
+              PlaybackSession.setPropertyFloat("secondary-sub-scale", compensatedSecondarySubScale)
 
               val compensatedSubPos =
                 (50f + ((baseSubPos - 50f) - (panY / h) * 100f) / scale).roundToInt().coerceIn(0, 150)
+              val compensatedSecondarySubPos =
+                (50f + ((baseSecondarySubPos - 50f) - (panY / h) * 100f) / scale).roundToInt().coerceIn(0, 150)
 
               val baseMarginX = 25f
               val extraMarginX = if (scale > 1f) (w * (1f - 1f / scale) / 2f + abs(panX) / scale) else 0f
@@ -3000,15 +3018,15 @@ class PlayerActivity :
                 PlaybackSession.setPropertyInt("secondary-sub-margin-x", compensatedMarginX)
               }
 
-              applySubtitlePositions(compensatedSubPos, w, h)
+              applySubtitlePositions(compensatedSubPos, w, h, secondaryPositionOverride = compensatedSecondarySubPos)
             } else {
               PlaybackSession.setPropertyFloat("sub-scale", baseSubScale)
-              PlaybackSession.setPropertyFloat("secondary-sub-scale", baseSubScale)
+              PlaybackSession.setPropertyFloat("secondary-sub-scale", baseSecondarySubScale)
               PlaybackSession.setPropertyInt("sub-margin-x", 25)
               if (supportsSecondarySubMarginX()) {
                 PlaybackSession.setPropertyInt("secondary-sub-margin-x", 25)
               }
-              applySubtitlePositions(baseSubPos, w, h)
+              applySubtitlePositions(baseSubPos, w, h, secondaryPositionOverride = baseSecondarySubPos)
             }
           }
         }
@@ -3292,6 +3310,11 @@ class PlayerActivity :
 
   override fun onDestroy() {
     Log.d(TAG, "PlayerActivity onDestroy")
+    nativeVideoSurfaceCallback?.let { callback ->
+      nativeVideoSurfaceCallbackView?.holder?.removeCallback(callback)
+    }
+    nativeVideoSurfaceCallback = null
+    nativeVideoSurfaceCallbackView = null
     mpvAssetPreparationGeneration.incrementAndGet()
     mpvScriptAssetGeneration.incrementAndGet()
     subtitleFontAssetGeneration.incrementAndGet()
@@ -3447,7 +3470,9 @@ class PlayerActivity :
             val item = queueState.currentItem
             val queueChanged =
               playlist.size != queueState.items.size ||
-                playlist.indices.any { position -> playlist[position].toString() != queueState.items[position].originalUri }
+                playlist.indices.any { position ->
+                  playlist[position].toString() != PlaybackUriPolicy.playableUriString(queueState.items[position].originalUri)
+                }
             if (queueChanged) {
               syncPlaylistFromSession(queueState)
               viewModel.refreshPlaylistItems()
@@ -3456,13 +3481,13 @@ class PlayerActivity :
 
             playlistIndex = index
             networkPlaylistConnectionId = item.networkSource?.connectionId ?: -1L
-            fileName = item.title?.takeIf { it.isNotBlank() } ?: getFileNameFromUri(Uri.parse(NetworkPlaybackUri.normalize(item.originalUri)))
+            fileName = item.title?.takeIf { it.isNotBlank() } ?: getFileNameFromUri(PlaybackUriPolicy.playableUri(item.originalUri))
             legacyMediaIdentifier = PlaybackIdentity.forUri(item.originalUri)
             mediaIdentifier = item.stableId
             currentPlayableUri = item.playableUri
             isReady = false
             viewModel.onVideoLoadStarted()
-            viewModel.calculateVideoHash(Uri.parse(NetworkPlaybackUri.normalize(item.originalUri)))
+            viewModel.calculateVideoHash(PlaybackUriPolicy.playableUri(item.originalUri))
           }
       }
     }
@@ -3470,7 +3495,7 @@ class PlayerActivity :
 
   private fun syncPlaylistFromSession(queueState: PlaybackQueueState = PlaybackSession.queue.value) {
     val queueItems = queueState.items
-    playlist = queueItems.map { item -> Uri.parse(NetworkPlaybackUri.normalize(item.originalUri)) }
+    playlist = queueItems.map { item -> PlaybackUriPolicy.playableUri(item.originalUri) }
     playlistWindowOffset = 0
     playlistTotalCount = playlist.size
     networkPlaylistPaths = queueItems.map { item -> item.networkSource?.relativePath.orEmpty() }
@@ -4338,7 +4363,7 @@ class PlayerActivity :
     playlistId = null
     playlistItems = emptyList()
     playlistEntity = null
-    playlist = savedQueue.items.map { item -> Uri.parse(NetworkPlaybackUri.normalize(item.originalUri)) }
+    playlist = savedQueue.items.map { item -> PlaybackUriPolicy.playableUri(item.originalUri) }
     playlistIndex = savedQueue.currentIndex
     playlistWindowOffset = 0
     playlistTotalCount = playlist.size
@@ -4394,7 +4419,7 @@ class PlayerActivity :
     if (sessionState.phase !in setOf(PlaybackPhase.LOADING, PlaybackPhase.READY, PlaybackPhase.BACKGROUND)) return false
 
     val queueState = PlaybackSession.queue.value
-    playlist = queueState.items.map { item -> Uri.parse(NetworkPlaybackUri.normalize(item.originalUri)) }
+    playlist = queueState.items.map { item -> PlaybackUriPolicy.playableUri(item.originalUri) }
     playlistIndex = queueState.currentIndex.coerceAtLeast(0)
     playlistWindowOffset = 0
     playlistTotalCount = playlist.size
@@ -4403,7 +4428,7 @@ class PlayerActivity :
     networkPlaylistHeaders = queueState.items.map(PlaybackItem::headers)
     networkPlaylistConnectionId = currentItem.networkSource?.connectionId ?: -1L
 
-    fileName = currentItem.title?.takeIf { it.isNotBlank() } ?: getFileNameFromUri(Uri.parse(currentItem.originalUri))
+    fileName = currentItem.title?.takeIf { it.isNotBlank() } ?: getFileNameFromUri(PlaybackUriPolicy.playableUri(currentItem.originalUri))
     mediaIdentifier = currentItem.stableId
     currentPlayableUri = currentItem.playableUri
     isReady = sessionState.phase == PlaybackPhase.READY || sessionState.phase == PlaybackPhase.BACKGROUND
@@ -4491,7 +4516,7 @@ class PlayerActivity :
     playlistItems = emptyList()
     playlistEntity = null
     isM3uPlaylist = launch.isM3u
-    playlist = restoredItems.map { item -> Uri.parse(NetworkPlaybackUri.normalize(item.originalUri)) }
+    playlist = restoredItems.map { item -> PlaybackUriPolicy.playableUri(item.originalUri) }
     playlistIndex = requestedIndex
     playlistWindowOffset = 0
     playlistTotalCount = playlist.size
@@ -4607,6 +4632,55 @@ class PlayerActivity :
       restoreForegroundResumePositionIfNeeded()
       viewModel.restartAmbientIfActive()
       binding.root.post(::updateVideoAmbientPlayerBounds)
+    }
+  }
+
+  private fun configureNativeVideoSurfaceCallback() {
+    val surfaceView = binding.media3Player.videoSurfaceView as? android.view.SurfaceView ?: return
+    if (nativeVideoSurfaceCallbackView === surfaceView && nativeVideoSurfaceCallback != null) return
+    nativeVideoSurfaceCallback?.let { callback ->
+      nativeVideoSurfaceCallbackView?.holder?.removeCallback(callback)
+    }
+    val callback =
+      object : android.view.SurfaceHolder.Callback {
+        override fun surfaceCreated(holder: android.view.SurfaceHolder) {
+          onNativeVideoSurfaceAvailable()
+        }
+
+        override fun surfaceChanged(
+          holder: android.view.SurfaceHolder,
+          format: Int,
+          width: Int,
+          height: Int,
+        ) {
+          onNativeVideoSurfaceAvailable()
+        }
+
+        override fun surfaceDestroyed(holder: android.view.SurfaceHolder) = Unit
+      }
+    nativeVideoSurfaceCallbackView = surfaceView
+    nativeVideoSurfaceCallback = callback
+    surfaceView.holder.addCallback(callback)
+    if (surfaceView.holder.surface.isValid) onNativeVideoSurfaceAvailable()
+  }
+
+  private fun isNativeVideoSurfaceReady(): Boolean {
+    val surfaceView = binding.media3Player.videoSurfaceView as? android.view.SurfaceView ?: return false
+    return surfaceView.isAttachedToWindow &&
+      surfaceView.visibility == View.VISIBLE &&
+      binding.media3Player.visibility == View.VISIBLE &&
+      surfaceView.holder.surface.isValid
+  }
+
+  private fun onNativeVideoSurfaceAvailable() {
+    val surfaceView = nativeVideoSurfaceCallbackView ?: return
+    surfaceView.post {
+      if (!ownsPlaybackSession() || !isNativeEngineActive() || !isNativeVideoSurfaceReady()) return@post
+      nativeEngineOrNull()?.refreshAfterConfigurationChange()
+      if (!pendingRendererRebuildAfterBackground) return@post
+      pendingRendererRebuildAfterBackground = false
+      rebuildRendererAfterLongBackground()
+      restoreForegroundResumePositionIfNeeded()
     }
   }
 
@@ -5808,14 +5882,7 @@ class PlayerActivity :
     val audioMedia = viewModel.isAudioOnly.value || isCurrentMediaKnownAudio() || isKnownAudioLaunch(intent)
     if (PlayerLifecyclePolicy.shouldRebuildRendererAfterBackground(stoppedForMs, audioMedia)) {
       Log.w(TAG, "Rebuilding video renderer after ${stoppedForMs}ms in the background")
-      pendingRendererRebuildAfterBackground = true
-      val surfaceReady = isNativeEngineActive() || player.isSurfaceReady
-      if (!PlayerLifecyclePolicy.shouldWaitForSurfaceBeforeRebuild(surfaceReady)) {
-        pendingRendererRebuildAfterBackground = false
-        rebuildRendererAfterLongBackground()
-      } else {
-        Log.w(TAG, "Deferring renderer rebuild until the playback surface is ready")
-      }
+      requestRendererRebuildAfterBackground()
       viewModel.setAmbientLifecycleActive(true)
       return true
     }
@@ -5831,7 +5898,7 @@ class PlayerActivity :
       val hasPlayableSource = !currentPlayableUri.isNullOrBlank() || !intent?.dataString.isNullOrBlank()
       if (shouldRecoverNative && hasPlayableSource) {
         Log.w(TAG, "Recovering Native video after foreground return from a missing or idle player")
-        rebuildRendererAfterLongBackground()
+        requestRendererRebuildAfterBackground()
         viewModel.setAmbientLifecycleActive(true)
         return true
       }
@@ -5857,6 +5924,20 @@ class PlayerActivity :
     restoreForegroundResumePositionIfNeeded()
     viewModel.setAmbientLifecycleActive(true)
     return true
+  }
+
+  private fun requestRendererRebuildAfterBackground() {
+    pendingRendererRebuildAfterBackground = true
+    val nativeActive = isNativeEngineActive()
+    if (nativeActive) setNativeVideoSurfaceVisible(true)
+    val surfaceReady = if (nativeActive) isNativeVideoSurfaceReady() else player.isSurfaceReady
+    if (!PlayerLifecyclePolicy.shouldWaitForSurfaceBeforeRebuild(surfaceReady)) {
+      pendingRendererRebuildAfterBackground = false
+      rebuildRendererAfterLongBackground()
+      restoreForegroundResumePositionIfNeeded()
+    } else {
+      Log.w(TAG, "Deferring renderer rebuild until the playback surface is ready")
+    }
   }
 
   private fun currentForegroundRecoveryPositionSeconds(): Double? {
@@ -6931,6 +7012,7 @@ class PlayerActivity :
       // target it even while its database-backed resume position is still being restored.
       activeSaveMediaIdentifier = loadedMediaIdentifier
     }
+    val audioPlayback = isAudioPlaybackState(loadedMediaIdentifier)
     currentUri?.let { viewModel.calculateVideoHash(it) }
 
     reportJellyfinStop()
@@ -6953,13 +7035,17 @@ class PlayerActivity :
         if (mpvInterpolationReloadGeneration != loadGeneration) {
           // Load playback state (will skip track restoration if preferred language configured)
           val hasState =
-            loadVideoPlaybackState(
-              identifier = loadedMediaIdentifier,
-              legacyIdentifier = loadedLegacyIdentifier,
-              loadGeneration = loadGeneration,
-              positionRestoreOverride = positionRestoreOverride,
-              initialPositionApplied = initialPositionApplied,
-            )
+            if (audioPlayback) {
+              false
+            } else {
+              loadVideoPlaybackState(
+                identifier = loadedMediaIdentifier,
+                legacyIdentifier = loadedLegacyIdentifier,
+                loadGeneration = loadGeneration,
+                positionRestoreOverride = positionRestoreOverride,
+                initialPositionApplied = initialPositionApplied,
+              )
+            }
           if (!PlaybackSession.isCurrentGeneration(loadGeneration)) return@launch
 
           // Apply track selection logic (defaults only apply when no saved state)
@@ -6980,7 +7066,7 @@ class PlayerActivity :
           }
 
           // Apply default zoom only if there's no saved state
-          if (!hasState) {
+          if (!audioPlayback && !hasState) {
             withContext(Dispatchers.Main) {
               if (!PlaybackSession.isCurrentGeneration(loadGeneration)) return@withContext
               val zoomPreference = playerPreferences.defaultVideoZoom.get()
@@ -7382,6 +7468,7 @@ class PlayerActivity :
     immediate: Boolean = false,
   ): Job? {
     val snapshot = capturePlaybackStateSnapshot(mediaTitle) ?: return null
+    if (!shouldPersistVideoPlaybackState(snapshot)) return null
     val appContext = applicationContext
     val directAudiobook = PlaybackSession.queue.value.items
       .firstOrNull { item -> item.stableId == snapshot.mediaIdentifier }
@@ -7423,6 +7510,13 @@ class PlayerActivity :
               watchedThreshold = watchedThreshold,
             )
           saveRepository.upsert(playbackState)
+          if (shouldRemoveRecentlyPlayedEntry(snapshot, playbackState)) {
+            RecentlyPlayedOps.onVideoFinished(appContext, snapshot.recentlyPlayedUri.orEmpty())
+          }
+          if (playbackState.hasBeenWatched && oldState?.hasBeenWatched != true) {
+            MediaFileRepository.invalidateTreeCache()
+            MediaLibraryEvents.notifyChanged()
+          }
           PlaybackStateEvents.notifyChanged(snapshot.mediaIdentifier)
           directAudiobook?.let { DirectAudiobookResumeStore.recordPlaying(appContext, it) }
           persistStreamHistoryProgress(appContext, snapshot, streamHistoryKey)
@@ -7477,6 +7571,11 @@ class PlayerActivity :
     // is written under the correct video's record.
     val saveIdentifier = activeSaveMediaIdentifier.ifBlank { mediaIdentifier }
     if (saveIdentifier.isBlank()) return null
+    val recentlyPlayedUri =
+      PlaybackSession.queue.value.currentItem
+        ?.takeIf { it.stableId == saveIdentifier }
+        ?.originalUri
+        ?.takeIf { it.isNotBlank() }
 
     val nativeSnapshot = nativeEngineOrNull()?.snapshot?.value
     val nativeEngineActive = activeEngineMode == PlaybackEngineMode.NATIVE
@@ -7505,11 +7604,14 @@ class PlayerActivity :
     val secondarySid = mpvTrack("secondary-sid")
     val aid = mpvTrack("aid")
     val subDelay = mpvDouble("sub-delay")
+    val secondarySubDelay = mpvDouble("secondary-sub-delay")
     val subSpeed = mpvDouble("sub-speed")
+    val secondarySubSpeed = mpvDouble("secondary-sub-speed")
     val audioDelay = mpvDouble("audio-delay")
     return PlaybackStateSnapshot(
       mediaIdentifier = saveIdentifier,
       mediaTitle = mediaTitle,
+      recentlyPlayedUri = recentlyPlayedUri,
       currentPosition =
         // The live value wins after backward/zero seeks; max(snapshot, live) resurrects
         // the old position until the next 250ms snapshot tick.
@@ -7526,7 +7628,9 @@ class PlayerActivity :
         },
       positionIsKnown = if (nativeEngineActive) nativePositionIsKnown else mpvPosition != null,
       externalSubtitlesAreKnown = if (nativeEngineActive) nativePositionIsKnown else mpvPosition != null,
-      mpvSettingsAreKnown = listOf(sid, secondarySid, aid, subDelay, subSpeed, audioDelay).all { it != null },
+      mpvSettingsAreKnown =
+        listOf(sid, secondarySid, aid, subDelay, subSpeed, audioDelay)
+          .all { it != null },
       playbackSettingsAreKnown = if (nativeEngineActive) nativePositionIsKnown else speed != null && zoom != null,
       playbackSpeed = if (nativeEngineActive) nativePlaybackSpeed().toDouble() else speed ?: DEFAULT_PLAYBACK_SPEED,
       videoZoom = if (nativeEngineActive) viewModel.videoZoom.value else zoom?.toFloat() ?: viewModel.videoZoom.value,
@@ -7535,7 +7639,9 @@ class PlayerActivity :
       sid = sid ?: -1,
       secondarySid = secondarySid ?: -1,
       subDelayMs = ((subDelay ?: 0.0) * MILLISECONDS_TO_SECONDS).toInt(),
+      secondarySubDelayMs = secondarySubDelay?.let { (it * MILLISECONDS_TO_SECONDS).toInt() },
       subSpeed = subSpeed ?: DEFAULT_SUB_SPEED,
+      secondarySubSpeed = secondarySubSpeed,
       aid = aid ?: -1,
       audioDelayMs = ((audioDelay ?: 0.0) * MILLISECONDS_TO_SECONDS).toInt(),
       externalSubtitles = viewModel.externalSubtitles.joinToString("|"),
@@ -7545,6 +7651,7 @@ class PlayerActivity :
         else captureMpvTrackSelection("sub", "sid", pendingSharedSubtitleSelection),
       secondarySubtitleSelection = if (nativeEngineActive) null
         else captureMpvTrackSelection("sub", "secondary-sid", pendingSharedSecondarySubtitleSelection),
+      isAudioPlayback = isAudioPlaybackState(saveIdentifier),
     )
   }
 
@@ -7717,6 +7824,8 @@ class PlayerActivity :
       return false
     }
 
+    if (isAudioPlaybackState(identifier)) return false
+
     return runCatching {
       val state = resolvePlaybackState(identifier, legacyIdentifier)
 
@@ -7772,6 +7881,8 @@ class PlayerActivity :
     if (state == null) return
 
     val subDelay = state.subDelay / DELAY_DIVISOR
+    val secondarySubDelay = secondarySubtitleDelayForRestore(state.secondarySubDelay, state.subDelay) / DELAY_DIVISOR
+    val secondarySubSpeed = secondarySubtitleSpeedForRestore(state.secondarySubSpeed, state.subSpeed)
     val audioDelay = state.audioDelay / DELAY_DIVISOR
 
     // Restore external subtitles first
@@ -7809,11 +7920,13 @@ class PlayerActivity :
     }
 
     PlaybackSession.setPropertyDouble("sub-delay", subDelay)
+    PlaybackSession.setPropertyDouble("secondary-sub-delay", secondarySubDelay.toDouble())
     PlaybackSession.setPropertyDouble("speed", state.playbackSpeed)
     // Re-apply audio-pitch-correction after speed change, as mpv resets it to default
     PlaybackSession.setPropertyBoolean("audio-pitch-correction", audioPreferences.audioPitchCorrection.get())
     PlaybackSession.setPropertyDouble("audio-delay", audioDelay)
     PlaybackSession.setPropertyDouble("sub-speed", state.subSpeed)
+    PlaybackSession.setPropertyDouble("secondary-sub-speed", secondarySubSpeed)
 
     // Restore video zoom from saved state
     PlaybackSession.setPropertyDouble("video-zoom", state.videoZoom.toDouble())
@@ -7901,34 +8014,7 @@ class PlayerActivity :
         return@runCatching
       }
 
-      val filePath =
-        when (uri.scheme) {
-          "file" -> {
-            uri.path ?: uri.toString()
-          }
-
-          "content" -> {
-            contentResolver
-              .query(
-                uri,
-                arrayOf(MediaStore.MediaColumns.DATA),
-                null,
-                null,
-                null,
-              )?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                  val columnIndex = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
-                  if (columnIndex != -1) cursor.getString(columnIndex) else null
-                } else {
-                  null
-                }
-              } ?: uri.toString()
-          }
-
-          else -> {
-            uri.toString()
-          }
-        }
+      val filePath = RecentlyPlayedOps.resolveRecentlyPlayedFilePath(applicationContext, uri)
 
       val launchSource =
         when {
@@ -8325,6 +8411,7 @@ class PlayerActivity :
 
       currentPlayableUri = uri
       isReady = false
+      clearStaleMediaMetadataForLoad()
       viewModel.onVideoLoadStarted()
       val originalUri = extractUriFromIntent(intent)
       val shouldExpandM3u =
@@ -8874,6 +8961,7 @@ class PlayerActivity :
         setNativeVideoSurfaceVisible(true)
         viewModel.clearNativeExternalSubtitles()
         configureNativeEngineIfNeeded(force = true)
+        nativeEngine.clearPreviousSubtitleTracks()
         val nativePlayableUri = PlaybackSession.resolvePlayableUriForNative(nativeItem)
         nativeEngine.setRepeatMode(viewModel.repeatMode.value)
         Log.d(
@@ -10528,6 +10616,7 @@ class PlayerActivity :
     // Avoid blocking UI thread while mpv opens network streams (e.g., HLS).
     isAdvancingAtEof = true
     isReady = false
+    clearStaleMediaMetadataForLoad()
     viewModel.onVideoLoadStarted()
 
     // Stop the outgoing renderer before asynchronous URI preparation. Previously the old MPV
@@ -10716,6 +10805,11 @@ class PlayerActivity :
 
     getExplicitIntentTitle()?.let { return it }
 
+    // The shared MPV core may still expose the outgoing title while a new URI is opening.
+    if (viewModel.videoOpenAnimationState.value.isWaitingForVideo) {
+      return fileName.ifBlank { "Unknown Video" }
+    }
+
     if (HttpUtils.shouldPreferResolvedMediaTitle(extractUriFromIntent(intent), fileName)) {
       PlaybackSession
         .getPropertyString("media-title")
@@ -10771,34 +10865,7 @@ class PlayerActivity :
     name: String,
   ) {
     runCatching {
-      val filePath =
-        when (uri.scheme) {
-          "file" -> {
-            uri.path ?: uri.toString()
-          }
-
-          "content" -> {
-            contentResolver
-              .query(
-                uri,
-                arrayOf(MediaStore.MediaColumns.DATA),
-                null,
-                null,
-                null,
-              )?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                  val columnIndex = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
-                  if (columnIndex != -1) cursor.getString(columnIndex) else null
-                } else {
-                  null
-                }
-              } ?: uri.toString()
-          }
-
-          else -> {
-            uri.toString()
-          }
-        }
+      val filePath = RecentlyPlayedOps.resolveRecentlyPlayedFilePath(applicationContext, uri)
 
       val isGenericStream =
         name.isBlank() ||

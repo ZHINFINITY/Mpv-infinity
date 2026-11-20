@@ -242,7 +242,8 @@ class Media3FlowVideoSink(
   private val renderTaskPending = AtomicBoolean(false)
   private val renderRequestVersion = AtomicLong(0L)
   private val renderFrameTimeNanos = AtomicLong(NO_FRAME_TIME_NANOS)
-  private val mainHandler = Handler(Looper.getMainLooper())
+  private val vsyncThread = HandlerThread("Media3Flow-Vsync").apply { start() }
+  private val vsyncHandler = Handler(vsyncThread.looper)
   @Volatile private var choreographer: Choreographer? = null
   private val frameCallbackScheduled = AtomicBoolean(false)
   private val displayFrameCallback = Choreographer.FrameCallback { frameTimeNanos ->
@@ -251,6 +252,25 @@ class Media3FlowVideoSink(
       requestRenderAtDisplayFrame(frameTimeNanos)
       scheduleDisplayFrame()
     }
+  }
+  private val registerDisplayFrameRunnable = Runnable {
+    if (!running || disposed || !outputAvailable || storedFrameCount <= 0) {
+      frameCallbackScheduled.set(false)
+    } else {
+      val currentChoreographer = choreographer ?: runCatching { Choreographer.getInstance() }
+        .onFailure { Log.w(logTag, "Choreographer unavailable; using bounded timer pacing", it) }
+        .getOrNull()
+        ?.also { choreographer = it }
+      if (currentChoreographer != null) {
+        currentChoreographer.postFrameCallback(displayFrameCallback)
+      } else {
+        val delayMs = (1_000f / targetFps).roundToLong().coerceAtLeast(1L)
+        if (!glHandler.postDelayed(fallbackFrameRunnable, delayMs)) frameCallbackScheduled.set(false)
+      }
+    }
+  }
+  private val removeDisplayFrameRunnable = Runnable {
+    choreographer?.removeFrameCallback(displayFrameCallback)
   }
   private val fallbackFrameRunnable = Runnable {
     frameCallbackScheduled.set(false)
@@ -352,7 +372,6 @@ class Media3FlowVideoSink(
   private val outputDecisionCounters = FlowOutputDecisionCounters()
   private val motionPairAnalysisCounters = FlowMotionPairAnalysisCounters()
   private var lastOutputDiagnosticLogAtNs = 0L
-  @Volatile private var diagnosticCaptureSession: String? = null
 
   private var eglDisplay = EGL14.EGL_NO_DISPLAY
   private var eglContext = EGL14.EGL_NO_CONTEXT
@@ -534,57 +553,6 @@ class Media3FlowVideoSink(
 
   /** The effective flag used by the live output callback, not the startup preference snapshot. */
   fun isInterpolationEnabled(): Boolean = interpolationEnabled
-
-  fun startFlowDiagnosticCapture(
-    sessionId: String,
-    baseDirectory: String,
-    pairedOutput: Boolean = false,
-  ): String? = runCatching {
-    check(BuildConfig.DEBUG) { "Diagnostic capture is debug-only" }
-    require(sessionId.matches(Regex("[A-Za-z0-9_-]{1,80}"))) { "Invalid capture session ID" }
-    runOnGlThreadSync {
-      val context = flowVulkanContext
-      check(!disposed && preflightAvailable && flowAvailable && context != 0L) { "Flow/Vulkan resources unavailable" }
-      check(diagnosticCaptureSession == null) { "Diagnostic capture already active" }
-      val format = currentFormat ?: error("Video color metadata unavailable")
-      val color = format.colorInfo ?: error("Video color metadata unknown")
-      check(color.colorSpace != Format.NO_VALUE && color.colorTransfer != Format.NO_VALUE && color.colorRange != Format.NO_VALUE) { "Video color metadata unknown" }
-      check(!Media3FlowFormatPolicy.isDolbyVision(format.sampleMimeType.orEmpty(), format.codecs.orEmpty())) { "Dolby Vision capture unsupported" }
-      check(color.hdrStaticInfo == null && color.colorTransfer != C.COLOR_TRANSFER_ST2084 && color.colorTransfer != C.COLOR_TRANSFER_HLG) { "HDR/Dolby Vision capture unsupported" }
-      check(decoderSdrOutputConfirmed) { "Resolved decoder output color is not confirmed SDR" }
-      val backend = effectiveComputeApiName().replace(Regex("[^A-Za-z0-9_-]"), "")
-      val json =
-        buildString {
-          append("{\"backend\":\"$backend\",\"target_fps\":$targetFps,\"quality\":$quality,")
-          append("\"maximum_dimension\":$maxDimension,\"color_space\":${color.colorSpace},")
-          append("\"color_transfer\":${color.colorTransfer},\"color_range\":${color.colorRange},")
-          append("\"source_width\":$frameWidth,\"source_height\":$frameHeight,")
-          append("\"processing_width\":$processingWidth,\"processing_height\":$processingHeight,")
-          append("\"surface_width\":${outputResolution.width},\"surface_height\":${outputResolution.height},")
-          if (pairedOutput) {
-            append("\"visibility_resolver\":false,\"preserve_motion_blend_on_conflict\":$softBlendEnabled,")
-            append("\"comparison_visibility_resolver_override\":true}")
-          } else {
-            append("\"visibility_resolver\":$visibilityResolverEnabled,\"soft_blend\":$softBlendEnabled}")
-          }
-        }
-      val failure = Media3FlowVulkanNative.nativeStartDiagnosticCapture(
-        context, sessionId, baseDirectory, json, pairedOutput)
-      check(failure == null) { failure ?: "Native capture start failed" }
-      diagnosticCaptureSession = sessionId
-      null
-    }
-  }.getOrElse { it.message ?: "Diagnostic capture could not start" }
-
-  fun stopFlowDiagnosticCapture(sessionId: String): String? = runCatching {
-    runOnGlThreadSync {
-      val activeSession = diagnosticCaptureSession ?: return@runOnGlThreadSync null
-      check(activeSession == sessionId) { "Capture session ID mismatch" }
-      val result = Media3FlowVulkanNative.nativeStopDiagnosticCapture(flowVulkanContext, sessionId)
-      if (result == null) diagnosticCaptureSession = null
-      result
-    }
-  }.getOrElse { it.message ?: "Diagnostic capture could not stop" }
 
   private fun createSharedHardwareBuffer(width: Int, height: Int, role: String): HardwareBuffer {
     val baseUsage = HardwareBuffer.USAGE_GPU_SAMPLED_IMAGE or HardwareBuffer.USAGE_GPU_COLOR_OUTPUT
@@ -1287,38 +1255,20 @@ class Media3FlowVideoSink(
     if (!accepted) renderTaskPending.set(false)
   }
 
-  /** Schedule vsync on the main looper so the GL thread can keep its next deadline visible while swap blocks. */
+  /** Keep vsync callbacks independent of UI-thread stalls while the GL thread is busy. */
   private fun scheduleDisplayFrame() {
     if (!running || disposed || !outputAvailable || storedFrameCount <= 0 ||
       !frameCallbackScheduled.compareAndSet(false, true)
     ) return
-    val registerCallback = Runnable {
-      if (!running || disposed || !outputAvailable || storedFrameCount <= 0) {
-        frameCallbackScheduled.set(false)
-      } else {
-        val currentChoreographer = choreographer ?: runCatching { Choreographer.getInstance() }
-          .onFailure { Log.w(logTag, "Choreographer unavailable; using bounded timer pacing", it) }
-          .getOrNull()
-          ?.also { choreographer = it }
-        if (currentChoreographer != null) {
-          currentChoreographer.postFrameCallback(displayFrameCallback)
-        } else {
-          val delayMs = (1_000f / targetFps).roundToLong().coerceAtLeast(1L)
-          if (!glHandler.postDelayed(fallbackFrameRunnable, delayMs)) frameCallbackScheduled.set(false)
-        }
-      }
-    }
-    if (Looper.myLooper() == Looper.getMainLooper()) {
-      registerCallback.run()
-    } else if (!mainHandler.post(registerCallback)) {
+    if (!vsyncHandler.post(registerDisplayFrameRunnable)) {
       frameCallbackScheduled.set(false)
     }
   }
 
   private fun cancelDisplayFrame() {
-    if (frameCallbackScheduled.getAndSet(false)) {
-      mainHandler.post { choreographer?.removeFrameCallback(displayFrameCallback) }
-    }
+    frameCallbackScheduled.set(false)
+    vsyncHandler.removeCallbacks(registerDisplayFrameRunnable)
+    vsyncHandler.post(removeDisplayFrameRunnable)
     glHandler.removeCallbacks(fallbackFrameRunnable)
   }
 
@@ -1431,6 +1381,14 @@ class Media3FlowVideoSink(
     eglDisplay = EGL14.EGL_NO_DISPLAY
     eglContext = EGL14.EGL_NO_CONTEXT
     pbufferSurface = EGL14.EGL_NO_SURFACE
+    if (!vsyncHandler.post {
+        choreographer?.removeFrameCallback(displayFrameCallback)
+        choreographer = null
+        vsyncThread.quitSafely()
+      }
+    ) {
+      vsyncThread.quitSafely()
+    }
     glThread.quitSafely()
   }
 
@@ -3088,6 +3046,16 @@ class Media3FlowVideoSink(
   }
 
   private fun destroyPresentationContextOnThread() {
+    if (presentationQueue.hasPresenting()) {
+      if (!presentationHandler.postDelayed(
+          { destroyPresentationContextOnThread() },
+          PRESENTATION_FENCE_POLL_DELAY_MS,
+        )
+      ) {
+        Log.e(logTag, "event=presentation_context_release state=presentation_fence_unavailable")
+      }
+      return
+    }
     destroyWindowSurfaceOnPresentationThread()
     if (presentationBlitProgram != 0) GLES20.glDeleteProgram(presentationBlitProgram)
     presentationBlitProgram = 0
@@ -3865,8 +3833,6 @@ class Media3FlowVideoSink(
       slot.completionReported = false
     }
     if (flowVulkanContext != 0L) {
-      diagnosticCaptureSession?.let { id -> runCatching { Media3FlowVulkanNative.nativeStopDiagnosticCapture(flowVulkanContext, id) } }
-      diagnosticCaptureSession = null
       Media3FlowVulkanNative.nativeDestroyContext(flowVulkanContext)
       flowVulkanContext = 0L
     }

@@ -121,6 +121,10 @@ interface PlayerHost {
 
   fun nativeSetPan(x: Float, y: Float) {}
 
+  fun nativeSetHorizontalFlip(enabled: Boolean) {}
+
+  fun nativeSetVerticalFlip(enabled: Boolean) {}
+
   fun nativeSetSubtitleScale(scale: Float) {}
 
   fun nativeSetSubtitlePosition(position: Int) {}

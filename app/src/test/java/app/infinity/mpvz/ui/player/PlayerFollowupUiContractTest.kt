@@ -33,7 +33,18 @@ class PlayerFollowupUiContractTest {
     assertFalse(branch.contains("timeNetworkSlotWidth"))
     assertFalse(branch.contains("Modifier.width(slotWidth)"))
     assertTrue(branch.contains("onLongClick = toggleTimeAndNetwork"))
-    assertTrue(!branch.contains("resetFrameNavigationTimer"))
+    assertFalse(branch.contains("resetFrameNavigationTimer"))
+  }
+
+  @Test
+  fun targetFpsSheetKeepsItsPreferenceAndOptionsWithoutTheTimingParagraph() {
+    val sheet = read("app/src/main/java/app/infinity/mpvz/ui/player/controls/components/sheets/FrameInterpolationFpsSheet.kt")
+
+    assertFalse(sheet.contains("interpolationApplyTimingNote"))
+    assertTrue(sheet.contains("pref_decoder_mpvflow_target_fps_title"))
+    assertTrue(sheet.contains("interpolation_feedback_saved_state"))
+    assertTrue(sheet.contains("MPVFLOW_TARGET_FPS_OPTIONS.forEach"))
+    assertTrue(sheet.contains("applyInterpolationPreferencesFromControls()"))
   }
 
   @Test
@@ -332,6 +343,11 @@ class PlayerFollowupUiContractTest {
     assertFalse("The launch path must not open a one-shot content descriptor", playableUri.contains("openContentFd"))
     assertTrue("MPV must resolve provider URIs to a fresh path or fd off the Activity thread", contentUriResolver.contains(".openContentFd(context)"))
     assertTrue("A detached descriptor must be tracked until MPV consumes it", contentUriResolver.contains("ownedFd = ownedFd"))
+    assertTrue("Raw queue paths must become playable file URIs before MPV load", contentUriResolver.contains("PlaybackUriPolicy.playableUriString(item.playableUri)"))
+    assertTrue(activity.contains("playlist = queueItems.map { item -> PlaybackUriPolicy.playableUri(item.originalUri) }"))
+    assertTrue(activity.contains("PlaybackUriPolicy.playableUriString(queueState.items[position].originalUri)"))
+    val viewModel = read("app/src/main/java/app/infinity/mpvz/ui/player/PlayerViewModel.kt")
+    assertTrue(viewModel.contains("val uri = PlaybackUriPolicy.playableUri(item.originalUri)"))
     assertTrue(launchIdentity.contains("takeUnless { it.scheme.equals(\"content\", ignoreCase = true) }"))
     assertTrue(launchIdentity.indexOf("takeUnless") < launchIdentity.indexOf("resolveLocalPath(this)"))
     assertFalse("Content URI legacy identity must not query providers on the Activity thread", legacyIdentity.contains("resolveLocalPath(this)"))
@@ -640,6 +656,167 @@ class PlayerFollowupUiContractTest {
     assertTrue(qualityHandler.contains("selectAnime4KMode(currentMode)"))
     assertTrue(state.contains("selectedQuality: Anime4KManager.Quality"))
     assertTrue(decoder.contains("preferences.anime4kQuality.set(it)"))
+  }
+
+  @Test
+  fun nativeLoadingCompletionPublishesFreshBufferingState() {
+    val engine = read("app/src/main/java/app/infinity/mpvz/ui/player/NativeMedia3Engine.kt")
+    val loadingCallback = engine.substringAfter("override fun onIsLoadingChanged(isLoading: Boolean) {")
+      .substringBefore("override fun onMetadata(metadata: Metadata)")
+
+    assertTrue(loadingCallback.contains("publishSnapshot()"))
+  }
+
+  @Test
+  fun nativeSubtitleSizingDoesNotWaitOnRendererDimensionGetters() {
+    val engine = read("app/src/main/java/app/infinity/mpvz/ui/player/NativeMedia3Engine.kt")
+    val subtitleView = read("app/src/main/java/app/infinity/mpvz/ui/player/LibassSubtitleSurfaceView.java")
+    val renderer = read("subtitle-libass/src/main/java/androidx/media3/subtitle/libass/LibassSubtitleRenderer.java")
+    val overlay = read("subtitle-libass/src/main/java/androidx/media3/subtitle/libass/LibassSubtitleView.java")
+    val sizing = engine.substringAfter("private fun ensureLibassRenderer(): LibassSubtitleRenderer?")
+      .substringBefore("private fun configureSubtitleView()")
+
+    assertTrue(sizing.contains("libassRendererSize != (width to height)"))
+    assertTrue(sizing.contains("view.requestRendererSize(width, height)"))
+    assertFalse(sizing.contains("it.setSize(width, height)"))
+    assertTrue(subtitleView.contains("current.setSize(requestedSize.getWidth(), requestedSize.getHeight())"))
+    assertFalse(sizing.contains("it.getWidth()"))
+    assertFalse(sizing.contains("it.getHeight()"))
+    assertTrue(renderer.contains("public synchronized RenderedFrameSnapshot renderFrame(long positionUs)"))
+    assertTrue(overlay.contains("current.renderFrame(framePositionUs)"))
+    assertFalse(overlay.contains("current.getWidth()"))
+    assertFalse(overlay.contains("current.getHeight()"))
+  }
+
+  @Test
+  fun nativeFlipsReachTheVideoSurfaceAndTargetFpsUsesItsOwnIcon() {
+    val engine = read("app/src/main/java/app/infinity/mpvz/ui/player/NativeMedia3Engine.kt")
+    val activity = read("app/src/main/java/app/infinity/mpvz/ui/player/PlayerActivity.kt")
+    val button = read("app/src/main/java/app/infinity/mpvz/preferences/PlayerButton.kt")
+    val controls = read("app/src/main/java/app/infinity/mpvz/ui/player/controls/components/FrameInterpolationControls.kt")
+    val icons = read("app/src/main/java/app/infinity/mpvz/ui/icons/Icons.kt")
+
+    assertTrue(engine.contains("attachedView?.videoSurfaceView?.apply"))
+    assertTrue(engine.contains("scaleX = scale.x"))
+    assertTrue(engine.contains("scaleY = scale.y"))
+    assertTrue(activity.contains("viewModel.transformState"))
+    assertTrue(activity.contains("this.scaleX = if (flips.isMirrored) -scale else scale"))
+    assertTrue(activity.contains("this.scaleY = if (flips.isVerticalFlipped) -scale else scale"))
+    assertTrue(button.contains("FRAME_INTERPOLATION_FPS(Icons.RoundedFilled.TargetFps)"))
+    assertTrue(controls.contains("icon = Icons.RoundedFilled.TargetFps"))
+    assertTrue(icons.contains("private val TargetFpsVector: ImageVector"))
+  }
+
+  @Test
+  fun nativeFailureAndSearchPlaybackStateStayConnectedToTheirOwnUi() {
+    val engine = read("app/src/main/java/app/infinity/mpvz/ui/player/NativeMedia3Engine.kt")
+    val activity = read("app/src/main/java/app/infinity/mpvz/ui/player/PlayerActivity.kt")
+    val fileSystemViewModel = read("app/src/main/java/app/infinity/mpvz/ui/browser/filesystem/FileSystemBrowserViewModel.kt")
+    val fileSystemScreen = read("app/src/main/java/app/infinity/mpvz/ui/browser/filesystem/FileSystemBrowserScreen.kt")
+    val mediaLibraryViewModel = read("app/src/main/java/app/infinity/mpvz/ui/browser/medialibrary/MediaLibraryViewModel.kt")
+    val nativeErrorCallback = engine
+      .substringAfter("override fun onPlayerError(eventTime: AnalyticsListener.EventTime, error: PlaybackException)")
+      .substringBefore("override fun onVideoSizeChanged")
+
+    assertTrue(engine.contains("hasError = player.playerError != null"))
+    assertTrue(nativeErrorCallback.contains("publishPlaybackSnapshot()"))
+    assertTrue(activity.contains("viewModel.onVideoLoadFailed()"))
+    assertTrue(fileSystemViewModel.contains("updateSearchPlaybackState(items: List<FileSystemItem>)"))
+    assertTrue(fileSystemScreen.contains("viewModel.updateSearchPlaybackState(searchResults)"))
+    assertTrue(fileSystemScreen.contains("videoFilesWithPlayback = searchVideoFilesWithPlayback"))
+    assertTrue(fileSystemScreen.contains("newVideoIds = searchNewVideoIds"))
+    assertTrue(fileSystemViewModel.contains("setExplicitVideoWatchedOverride(getApplication(), video.path, watched)"))
+    assertTrue(fileSystemViewModel.contains("val manualOverride = explicitVideoWatchedOverride(getApplication(), video.path)"))
+    assertTrue(fileSystemViewModel.contains("explicitlyMarkedUnwatched = manualOverride == false"))
+    assertTrue(fileSystemViewModel.contains("explicitlyMarkedWatched = manualOverride == true"))
+    assertTrue(mediaLibraryViewModel.contains("setExplicitVideoWatchedOverride(getApplication(), video.path, watched)"))
+    assertTrue(mediaLibraryViewModel.contains("MediaLibraryEvents.notifyChanged()"))
+  }
+
+  @Test
+  fun completionClearsRecentHistoryAndPreferenceChangesRefreshBadges() {
+    val persistence = read("app/src/main/java/app/infinity/mpvz/ui/player/PlaybackStatePersistence.kt")
+    val activity = read("app/src/main/java/app/infinity/mpvz/ui/player/PlayerActivity.kt")
+    val service = read("app/src/main/java/app/infinity/mpvz/ui/player/MediaPlaybackService.kt")
+    val recentOps = read("app/src/main/java/app/infinity/mpvz/utils/history/RecentlyPlayedOps.kt")
+    val videoList = read("app/src/main/java/app/infinity/mpvz/ui/browser/videolist/VideoListViewModel.kt")
+    val fileSystem = read("app/src/main/java/app/infinity/mpvz/ui/browser/filesystem/FileSystemBrowserViewModel.kt")
+    val mediaLibrary = read("app/src/main/java/app/infinity/mpvz/ui/browser/medialibrary/MediaLibraryViewModel.kt")
+    val folders = read("app/src/main/java/app/infinity/mpvz/ui/browser/folderlist/FolderListViewModel.kt")
+
+    assertTrue(persistence.contains("hasReachedWatchedThreshold("))
+    assertTrue(persistence.contains("fun shouldRemoveRecentlyPlayedEntry("))
+    assertTrue(persistence.contains("snapshot.positionIsKnown &&"))
+    assertTrue(persistence.contains("!snapshot.isPositionRestorePending &&"))
+    assertTrue(persistence.contains("recentlyPlayedUri"))
+    assertTrue(activity.contains(".originalUri"))
+    assertTrue(service.contains(".originalUri"))
+    assertTrue(activity.contains("RecentlyPlayedOps.onVideoFinished(appContext, snapshot.recentlyPlayedUri.orEmpty())"))
+    assertTrue(service.contains("RecentlyPlayedOps.onVideoFinished(applicationContext, capturedSnapshot.recentlyPlayedUri.orEmpty())"))
+    assertTrue(recentOps.contains("fun resolveRecentlyPlayedFilePath(context: Context, uri: Uri)"))
+    assertTrue(recentOps.contains("resolveRecentlyPlayedFilePath(context, Uri.parse(originalUri))"))
+    assertTrue(videoList.contains("browserPreferences.watchedThreshold.changes()"))
+    assertTrue(fileSystem.contains("browserPreferences.watchedThreshold.changes()"))
+    assertTrue(mediaLibrary.contains("browserPreferences.watchedThreshold.changes()"))
+    assertTrue(folders.contains("browserPreferences.watchedThreshold.changes()"))
+    assertTrue(folders.contains("isVideoCountedAsNew("))
+    assertTrue(folders.contains("explicitlyMarkedWatched = explicitlyWatched"))
+  }
+
+  @Test
+  fun localLoadingIsNotForcedAsBufferingAndNativeFinishAndFlipsStayWired() {
+    val controls = read("app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt")
+    val activity = read("app/src/main/java/app/infinity/mpvz/ui/player/PlayerActivity.kt")
+    val viewModel = read("app/src/main/java/app/infinity/mpvz/ui/player/PlayerViewModel.kt")
+    val nativeStallInputs = controls
+      .substringAfter("PlayerControlVisibilityPolicy.isNativePlaybackStalled(")
+      .substringBefore("),")
+    val mpvForceInputs = controls.substringAfter("forceVisible =").substringBefore(")")
+    val nativeEndHandler = activity
+      .substringAfter("private fun handleNativePlaybackEnded()")
+      .substringBefore("private fun handleNativePlaybackError")
+    val transformObserver = activity
+      .substringAfter("val scale = 2f.pow(zoom)")
+      .substringBefore("if (canIssueMpvCommands())")
+
+    assertTrue(nativeStallInputs.contains("isBuffering = nativeSnapshot.isBuffering"))
+    assertTrue(nativeStallInputs.contains("isPlaying = nativeSnapshot.isPlaying"))
+    assertTrue(nativeStallInputs.contains("isLoading = nativeSnapshot.isLoading"))
+    assertTrue(nativeStallInputs.contains("isLocalSource = isLocalNativeSource"))
+    assertTrue(nativeStallInputs.contains("hasRenderedFirstFrame = nativeSnapshot.hasRenderedFirstFrame"))
+    assertTrue(mpvForceInputs.contains("isTorrentConnecting"))
+    assertFalse(mpvForceInputs.contains("PlaybackPhase.LOADING"))
+    assertTrue(nativeEndHandler.indexOf("saveVideoPlaybackState(fileName, immediate = true)") in 0 until nativeEndHandler.indexOf("when {"))
+    assertTrue(transformObserver.contains("binding.player.scaleX = scale"))
+    assertTrue(transformObserver.contains("binding.player.scaleY = scale"))
+    assertFalse(transformObserver.contains("binding.player.scaleX = if (flips.isMirrored)"))
+    assertTrue(transformObserver.contains("this.scaleX = if (flips.isMirrored) -scale else scale"))
+    assertTrue(viewModel.contains("@mpvinfinity_hflip:hflip"))
+    assertTrue(viewModel.contains("@mpvinfinity_vflip:vflip"))
+  }
+
+  @Test
+  fun hwPlusFlipRequestsShowWarningBeforeMutatingEitherTransform() {
+    val viewModel = read("app/src/main/java/app/infinity/mpvz/ui/player/PlayerViewModel.kt")
+    val horizontal = viewModel.substringAfter("fun toggleMirroring()").substringBefore("fun toggleVerticalFlip()")
+    val vertical = viewModel.substringAfter("fun toggleVerticalFlip()").substringBefore("fun toggleHdrScreenOutput()")
+
+    assertTrue(horizontal.indexOf("if (blockFlipForHwPlus()) return") in 0 until horizontal.indexOf("_transformState.update"))
+    assertTrue(vertical.indexOf("if (blockFlipForHwPlus()) return") in 0 until vertical.indexOf("_transformState.update"))
+    assertTrue(viewModel.contains("PlaybackSession.getPropertyString(\"hwdec-current\")"))
+    assertTrue(viewModel.contains("R.string.player_flip_requires_hw_or_sw"))
+  }
+
+  @Test
+  fun playbackSaveEventsRefreshTheFolderNewBadgeWithoutChangingItsThreshold() {
+    val videoList = read("app/src/main/java/app/infinity/mpvz/ui/browser/videolist/VideoListViewModel.kt")
+    val activity = read("app/src/main/java/app/infinity/mpvz/ui/player/PlayerActivity.kt")
+
+    assertTrue(videoList.contains("PlaybackStateEvents.changes.collectLatest"))
+    assertTrue(videoList.contains("updatePlaybackInfo(mediaIdentifier)"))
+    assertTrue(videoList.contains("isOldAndUnplayed = shouldShowNewBadge(isWatched, isWithinNewLabelWindow)"))
+    assertTrue(activity.contains("PlaybackStateEvents.notifyChanged(snapshot.mediaIdentifier)"))
+
   }
 
   @Test

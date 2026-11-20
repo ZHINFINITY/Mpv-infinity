@@ -10,9 +10,10 @@ class TrackSelectionUtilsTest {
     assertEquals(MpvSubtitleSelectionIds(4, 6), toggleMpvSubtitleSelection(primary.primaryId, primary.secondaryId, 6))
   }
 
-  @Test fun togglingEitherSelectedTrackOffPreservesTheOtherTrack() {
+  @Test fun togglingSecondaryOffPreservesPrimaryAndPrimaryOffPromotesSecondary() {
     assertEquals(MpvSubtitleSelectionIds(4, 0), toggleMpvSubtitleSelection(4, 6, 6))
-    assertEquals(MpvSubtitleSelectionIds(0, 6), toggleMpvSubtitleSelection(4, 6, 4))
+    assertEquals(MpvSubtitleSelectionIds(6, 0), toggleMpvSubtitleSelection(4, 6, 4))
+    assertEquals(MpvSubtitleSelectionIds(0, 0), toggleMpvSubtitleSelection(4, 0, 4))
   }
 
   @Test fun thirdTrackReplacesPrimaryAndInvalidIdsDoNothing() {

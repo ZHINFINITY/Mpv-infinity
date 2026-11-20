@@ -205,6 +205,11 @@ object PlaybackSession : MPVLib.EventObserver {
     val generation: Long,
   )
 
+  private data class RecoverableVideoTrack(
+    val id: Int,
+    val generation: Long,
+  )
+
   private val nativeLock = ReentrantLock(true)
   /** Serializes create/init/destroy, but is never held by native callbacks. */
   private val nativeLifecycleLock = ReentrantLock(true)
@@ -243,6 +248,7 @@ object PlaybackSession : MPVLib.EventObserver {
   private var activeNetworkStream: NetworkStreamRegistration? = null
   private val auxiliaryNetworkStreams = linkedMapOf<String, NetworkStreamRegistration>()
   private var suspendedVideoTrack: SuspendedVideoTrack? = null
+  @Volatile private var lastSelectedVideoTrackForRecovery: RecoverableVideoTrack? = null
   private var deferredVideoSelectionGeneration: Long? = null
   private var pendingStopClearQueue = false
   private var desiredPaused = true
@@ -303,6 +309,7 @@ object PlaybackSession : MPVLib.EventObserver {
       loadedAudiobookEnded = false
       loadedAudiobookDurationMs = 0L
       suspendedVideoTrack = null
+      lastSelectedVideoTrackForRecovery = null
       deferredVideoSelectionGeneration = null
       desiredPaused = true
       loadedGeneration = 0L
@@ -434,6 +441,7 @@ object PlaybackSession : MPVLib.EventObserver {
         activeSurfaceFrameRateHintHz = null
         observedProperties.clear()
         suspendedVideoTrack = null
+        lastSelectedVideoTrackForRecovery = null
         deferredVideoSelectionGeneration = null
         pendingStopClearQueue = false
         desiredPaused = true
@@ -698,6 +706,8 @@ object PlaybackSession : MPVLib.EventObserver {
     pendingStopClearQueue = false
     releaseActiveNetworkStreamLocked()
     releaseAuxiliaryNetworkStreamsLocked()
+    propString.clearMediaMetadata()
+    runCatching { MPVLib.setPropertyString("force-media-title", "") }
     updateState {
       it.copy(
         phase = PlaybackPhase.IDLE,
@@ -1095,6 +1105,7 @@ object PlaybackSession : MPVLib.EventObserver {
 
       // A saved video-track id belongs to the outgoing file only. Never carry it into a new load.
       suspendedVideoTrack = null
+      lastSelectedVideoTrackForRecovery = null
       desiredPaused = positionRestoreOverride?.paused ?: false
       clearSeekAudioGuardLocked(restoreMute = true)
       // Activity teardown mutes the process-wide MPV core synchronously. The core is intentionally
@@ -1159,6 +1170,12 @@ object PlaybackSession : MPVLib.EventObserver {
       MPVLib.setPropertyString("user-agent", userAgent ?: defaultUserAgent.orEmpty())
       MPVLib.setPropertyString("http-header-fields", headerFields)
       MPVLib.setPropertyString("force-media-title", "")
+      // Cache starvation pausing is for remote streams, not local files: keep the global streaming
+      // safeguard but avoid its brief wait on every local open. Respect an explicit mpv.conf value.
+      if (!MpvConfigOverridePolicy.isOwnedByMpvConf("cache-pause")) {
+        val cachePause = if (shouldPauseForCache(resolvedItem, playableUri)) "yes" else "no"
+        MPVLib.setPropertyString("cache-pause", cachePause)
+      }
       val stationHeaders = RadioStreamProbe.cachedMetadata(resolvedItem.playableUri, resolvedItem.headers)
         ?: RadioStreamProbe.cachedMetadata(resolvedItem.originalUri, resolvedItem.headers)
       _radioHeaders.value = stationHeaders?.let { resolvedItem.stableId to it }
@@ -1422,6 +1439,7 @@ object PlaybackSession : MPVLib.EventObserver {
       if (property == "vid" && value > 0) {
         suspendedVideoTrack = null
         deferredVideoSelectionGeneration = null
+        lastSelectedVideoTrackForRecovery = RecoverableVideoTrack(value, _state.value.generation)
       }
     }
   }
@@ -1574,6 +1592,38 @@ object PlaybackSession : MPVLib.EventObserver {
         activeAmbientShaderPaths.clear()
       }
       MPVLib.setPropertyString(property, value)
+    }
+  }
+
+  /** Cache the active MPV stream before a live aspect change can invalidate its video chain. */
+  fun rememberMpvVideoTrackForRecovery() {
+    withReadyCore(Unit) {
+      val current = _state.value
+      val trackId = MPVLib.getPropertyInt("vid")
+      if ((current.phase == PlaybackPhase.READY || current.phase == PlaybackPhase.BACKGROUND) &&
+        trackId != null && trackId > 0
+      ) {
+        lastSelectedVideoTrackForRecovery = RecoverableVideoTrack(trackId, current.generation)
+      }
+    }
+  }
+
+  /** Retry the last selected stream after a decoder policy change if MPV deselected its failed chain. */
+  fun setDecoderAndRecover(value: String) {
+    if (MpvConfigOverridePolicy.isOwnedByMpvConf("hwdec")) return
+    withReadyCore(Unit) {
+      // Keep decoder selection and video-track recovery in the same core transaction. A media
+      // replacement between these operations could otherwise restore an outgoing file's track.
+      MPVLib.setPropertyString("hwdec", value)
+      if (MPVLib.getPropertyInt("vid") == -2) {
+        val current = _state.value
+        val rememberedTrack = lastSelectedVideoTrackForRecovery?.takeIf { it.generation == current.generation }
+        if (rememberedTrack != null) {
+          MPVLib.setPropertyInt("vid", rememberedTrack.id)
+        } else {
+          MPVLib.setPropertyString("vid", "auto")
+        }
+      }
     }
   }
 
@@ -2269,7 +2319,9 @@ object PlaybackSession : MPVLib.EventObserver {
     }
     if (item.playableUri.startsWith("content://")) return ResolvedPlayable(item.playableUri)
     if (item.originalUri.startsWith("content://")) return ResolvedPlayable(item.originalUri)
-    return ResolvedPlayable(item.playableUri)
+    // Queue snapshots may retain raw local paths. Uri.parse(path) treats `#` as a fragment,
+    // so convert only at the load boundary and keep the durable queue identity unchanged.
+    return ResolvedPlayable(PlaybackUriPolicy.playableUriString(item.playableUri))
   }
 
   private suspend fun resolvePlayableUriBounded(item: PlaybackItem): ResolvedPlayable {

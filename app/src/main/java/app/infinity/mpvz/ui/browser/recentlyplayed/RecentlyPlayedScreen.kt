@@ -333,14 +333,19 @@ object RecentlyPlayedScreen : Screen {
                         app.infinity.mpvz.utils.history.RecentlyPlayedOps
                           .getLastPlayedEntity()
                       if (lastPlayed != null) {
-                        MediaUtils.playFile(
-                          source = lastPlayed.filePath,
-                          context = context,
-                          launchSource = "quick_play_fab",
-                          title =
-                            lastPlayed.videoTitle?.takeIf { it.isNotBlank() }
-                              ?: lastPlayed.fileName.takeIf { it.isNotBlank() },
-                        )
+                        val title = lastPlayed.videoTitle?.takeIf { it.isNotBlank() }
+                          ?: lastPlayed.fileName.takeIf { it.isNotBlank() }
+                        val launchedAsMusic =
+                          app.infinity.mpvz.ui.browser.music.MusicPlaybackLauncher
+                            .playRecentAudioPathIfPresent(context, lastPlayed.filePath, title, "quick_play_fab")
+                        if (!launchedAsMusic) {
+                          MediaUtils.playFile(
+                            source = lastPlayed.filePath,
+                            context = context,
+                            launchSource = "quick_play_fab",
+                            title = title,
+                          )
+                        }
                       }
                     }
                   } else {
@@ -386,14 +391,19 @@ object RecentlyPlayedScreen : Screen {
                     app.infinity.mpvz.utils.history.RecentlyPlayedOps
                       .getLastPlayedEntity()
                   if (lastPlayed != null) {
-                    MediaUtils.playFile(
-                      source = lastPlayed.filePath,
-                      context = context,
-                      launchSource = "recently_played_button",
-                      title =
-                        lastPlayed.videoTitle?.takeIf { it.isNotBlank() }
-                          ?: lastPlayed.fileName.takeIf { it.isNotBlank() },
-                    )
+                    val title = lastPlayed.videoTitle?.takeIf { it.isNotBlank() }
+                      ?: lastPlayed.fileName.takeIf { it.isNotBlank() }
+                    val launchedAsMusic =
+                      app.infinity.mpvz.ui.browser.music.MusicPlaybackLauncher
+                        .playRecentAudioPathIfPresent(context, lastPlayed.filePath, title, "recently_played_button")
+                    if (!launchedAsMusic) {
+                      MediaUtils.playFile(
+                        source = lastPlayed.filePath,
+                        context = context,
+                        launchSource = "recently_played_button",
+                        title = title,
+                      )
+                    }
                   }
                 }
               },
@@ -534,8 +544,19 @@ object RecentlyPlayedScreen : Screen {
                   coroutineScope.launch {
                     val playableVideo = viewModel.resolvePlayableRecentVideo(video)
                     if (playableVideo != null) {
-                      // Always play individual videos without creating a playlist.
-                      MediaUtils.playFile(playableVideo, context, "recently_played")
+                      val recentPath = playableVideo.path.ifBlank { playableVideo.uri.toString() }
+                      if (
+                        playableVideo.isAudio &&
+                          app.infinity.mpvz.ui.browser.music.MusicPlaybackLauncher
+                            .isEligibleLocalMusicPath(recentPath)
+                      ) {
+                        val song = viewModel.resolveRecentAudioSong(playableVideo)
+                        app.infinity.mpvz.ui.browser.music.MusicPlaybackLauncher
+                          .playSong(context, song, launchSource = "recently_played")
+                      } else {
+                        // Always play individual videos without creating a playlist.
+                        MediaUtils.playFile(playableVideo, context, "recently_played")
+                      }
                     } else {
                       Toast
                         .makeText(

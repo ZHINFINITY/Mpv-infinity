@@ -1240,6 +1240,7 @@
   <string name="player_horizontal_flip_off">الانعكاس الأفقي متوقف</string>
   <string name="player_vertical_flip_on">الانعكاس العمودي مفعّل</string>
   <string name="player_vertical_flip_off">الانعكاس العمودي متوقف</string>
+  <string name="player_flip_requires_hw_or_sw">يتطلب Flip فك ترميز HW أو SW؛ لا يدعم HW+.</string>
   <string name="btn_label_back">سهم الرجوع</string>
   <string name="btn_label_title">عنوان الفيديو</string>
   <string name="btn_label_bookmarks">الفصول / الإشارات المرجعية</string>
@@ -2267,4 +2268,14 @@
 <string name="pref_glass_rim_width_summary">سُمك الحافة المضيئة بوحدة dp</string>
 <string name="pref_glass_rim_softness">نعومة الحافة</string>
 <string name="pref_glass_rim_softness_summary">مدى نعومة تلاشي ضوء الحافة</string>
+  <string name="player_sheets_sub_primary">أساسي</string>
+  <string name="player_sheets_sub_secondary">ثانوي</string>
+  <string name="player_move_primary_subtitles_hint">اسحب لأعلى/لأسفل لتحريك الترجمة الأساسية</string>
+  <string name="player_move_secondary_subtitles_hint">اسحب لأعلى/لأسفل لتحريك الترجمة الثانوية</string>
+  <string name="video_mark_as_action">تحديد كـ</string>
+  <string name="video_mark_as_title">تحديد “%1$s” كـ</string>
+  <string name="video_mark_as_new">جديد</string>
+  <string name="video_mark_as_last_played">آخر تشغيل</string>
+  <string name="video_mark_as_finished">مكتمل</string>
+  <string name="video_mark_as_none">بلا علامة</string>
 </resources>

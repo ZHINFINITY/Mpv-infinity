@@ -4,10 +4,7 @@ package app.infinity.mpvz.ui.theme
 /** Pure policy: optical UI must never change decoder/output settings or sample HDR. */
 object GlassSamplingPolicy {
   const val MaxSampleEdge = 192
-  /**
-   * SurfaceView samples use PixelCopy and an off-thread frost pass, not the reference app's shared
-   * TextureView GPU layer. Keep sheet capture to 15 fps; controls-only samples run at 10 fps.
-   */
+  /** SurfaceView samples use PixelCopy plus CPU frosting; large sheets retain the 15 fps cadence. */
   const val PlayingIntervalMs = 66L
   const val WarmPlayingIntervalMs = 120L
   const val PausedIntervalMs = 1000L
@@ -27,7 +24,7 @@ object GlassSamplingPolicy {
       maxOf(1, (height.toLong() * MaxSampleEdge / longest).toInt())
   }
 
-  /** Controls-only cadence: small buttons over the video do not need display rate. */
+  /** Small controls retain their existing 10 fps backdrop cadence to reduce redundant copies. */
   const val ControlsPlayingIntervalMs = 100L
   /** Gaussian sigma equivalent of n separable box passes of radius r. */
   fun frostSigma(radius: Int = GlassFrostPolicy.Radius, passes: Int = GlassFrostPolicy.Passes): Float {

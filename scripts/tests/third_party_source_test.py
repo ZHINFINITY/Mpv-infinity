@@ -10,9 +10,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 DOCS = (ROOT / "THIRD_PARTY_SOURCE.md", ROOT / "app/src/main/assets/licenses/third-party-source.md")
 VULKAN_HEADERS_SHA = "a4f8ada9f4f97c45b8c89c57997be9cebaae65d2"
-MPV_SHA = "95ec8e929f8ad2f97c8415c486971493a0b408df"
+MPV_SHA = "645f8ecdd3c94379048e9ee3e7014e174de0bd02"
 PLACEBO_SHA = "63659d96d1bff7d7a5a1368e9538056a193fc6fb"
 PLACEBO_API_387_SHA = "b89c10e1bdd5d7742ca576ebad94a906ddca91e8"
+MOTION_RAW_SHA256 = "756c1da75d274d81c2e84f988bae1785aa6b6a9a813d16d3b47d9656b31016d0"
+MOTION_DOWNSAMPLE_SHA256 = "793ac79e8243727bb58286ca6bb6a6b6e539ba3e8abae34c4dae7b6503c5cb2e"
+MOTION_PREPARED_SHA256 = "1c0931fd519176ef6280079fb95ded0a6b58d9384f2067166d9bc5e86f4a6c8a"
 
 
 def test_manifests_match_and_cover_pins() -> None:
@@ -30,19 +33,30 @@ def test_manifests_match_and_cover_pins() -> None:
         MPV_SHA,
         PLACEBO_SHA,
         PLACEBO_API_387_SHA,
-        "ca7870c21f7a499d03ab1f7d73f1b9bcbccee534398d8a6f01957556e7d61932",
+        MOTION_RAW_SHA256,
+        MOTION_DOWNSAMPLE_SHA256,
+        MOTION_PREPARED_SHA256,
         "12fedd08063a540b69667a51e146d539ebae509b63c07964f573410a7d0ae427",
         "FongMi/libplacebo",
         "FongMi libplacebo API-387 header snapshot",
-        "MPVRx API-391 verifier-only marker",
+        "FongMi libplacebo API-391 verifier-only marker",
+        "FongMi libplacebo API-391 Native header snapshot",
+        "fc7190babf851b8744eac04efa29f733a1ad9c86",
+        "shader-mixer API required by MPV 645",
+        "paired-evidence contour resolver",
         "scripts/libplacebo-api-391-config.h",
         "not a complete header set",
+        "MPVRX_SDK_HEADERS.sha256",
+        "include-api-391",
+        "49bfdf107bb3690f7235102f5cfc5ccd3b574bd0bd5113879d99fd377fa0d48a",
+        "pl_render_params=312",
+        "frame_interp_params` offset 48",
+        "-Dglslang=enabled",
+        "shaderc and LCMS remain undefined",
         "pl_log_create_391",
         "include-api-387",
         "pl_desc=40",
         "pl_shader_desc=72",
-        "pl_vulkan_swapchain_set_diagnostics",
-        "pl_vulkan_swapchain_get_diagnostics",
         "FongMi/mpv",
         "FongMi/FFmpeg",
         "f2c5162b7c4b3e8835de270ff78cecc524decad1",
@@ -66,6 +80,7 @@ def test_manifests_match_and_cover_pins() -> None:
         "it does not impose LGPL-style corresponding-source or relinking obligations",
     ):
         assert needle in text, needle
+    assert "source change" in text or "source-change" in text
 
 
 def _manifest_bytes(path: Path) -> bytes:
@@ -108,7 +123,7 @@ def test_source_links_are_location_independent() -> None:
     targets = re.findall(r"\]\(([^)]+)\)", text)
     assert targets and all(target.startswith("https://") for target in targets)
     pin = "3c81ff6109d3f90f298d81805bbcc81824dbf735"
-    experimental_branch = "mpvrx-interpolation-improvements-20261114"
+    experimental_branch = "fix/Mpv-infinity-cadence-phase-artifacts-20261117"
     for name in ("build-mpv-lgpl-aar.sh", "build-mpvflow-mpv-runtime.sh",
                  "prepare-mpvflow.py", "verify-mpv-aar-lgpl.py"):
         pinned_link = any(f"/blob/{pin}/scripts/{name}" in target for target in targets)
@@ -122,13 +137,15 @@ def test_source_links_are_location_independent() -> None:
         f"github.com/FongMi/libplacebo/tree/{PLACEBO_API_387_SHA}/src/include/libplacebo" in target
         for target in targets
     )
+    assert any(f"github.com/FongMi/mpv/tree/{MPV_SHA}" in target for target in targets)
     assert any(f"github.com/FongMi/libplacebo/tree/{PLACEBO_SHA}" in target for target in targets)
     assert any(
         f"github.com/FongMi/libplacebo/blob/{PLACEBO_SHA}/src/include/libplacebo/config.h.in" in target
         for target in targets
     )
+    assert any("github.com/Riteshp2001/mpvlibAndroid/releases/tag/v1.1.8.2" in target for target in targets)
     assert any(f"github.com/FongMi/libplacebo/blob/{PLACEBO_SHA}/meson.build" in target for target in targets)
-    experimental_branch = "mpvrx-interpolation-improvements-20261114"
+    experimental_branch = "fix/Mpv-infinity-local-warp-trust-20261117"
     assert any(f"/blob/{experimental_branch}/scripts/libplacebo-api-391-config.h" in target for target in targets)
     assert any(f"/blob/{experimental_branch}/scripts/verify-mpv-aar-lgpl.py" in target for target in targets)
     assert any(f"github.com/KhronosGroup/Vulkan-Headers/tree/{VULKAN_HEADERS_SHA}" in target for target in targets)

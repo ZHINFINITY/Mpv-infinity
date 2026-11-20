@@ -33,13 +33,9 @@ assert "not a complete header set" in api391_marker
 verify_mocked("00000000 T pl_log_create_374\n")
 verify_mocked(
     "00000000 T pl_log_create_387@@LIBPLACEBO_7.387\n"
-    "00000000 T pl_vulkan_swapchain_set_diagnostics\n"
-    "00000000 T pl_vulkan_swapchain_get_diagnostics\n"
 )
 verify_mocked(
     "00000000 T pl_log_create_391@@LIBPLACEBO_7.391\n"
-    "00000000 T pl_vulkan_swapchain_set_diagnostics\n"
-    "00000000 T pl_vulkan_swapchain_get_diagnostics\n"
 )
 
 # Unknown, absent, or ambiguous APIs fail closed rather than guessing a header.
@@ -49,9 +45,7 @@ for exports in (
     "00000000 T pl_log_create_374.trailing\n",
     "00000000 T pl_log_create_374\n00000000 T pl_log_create_387\n",
     "00000000 T pl_log_create_387\n"
-    "00000000 T pl_vulkan_swapchain_set_diagnostics\n",
     "00000000 T pl_log_create_391\n"
-    "00000000 T pl_vulkan_swapchain_set_diagnostics\n",
 ):
     try:
         verify_mocked(exports)

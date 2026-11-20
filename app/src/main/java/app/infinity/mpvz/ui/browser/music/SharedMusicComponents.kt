@@ -66,7 +66,6 @@ import app.infinity.mpvz.presentation.components.RemoteImage
 import app.infinity.mpvz.ui.icons.AppIcon
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
-import app.infinity.mpvz.ui.player.PlaybackSession
 import app.infinity.mpvz.ui.player.controls.components.MiniAudioVisualizer
 import app.infinity.mpvz.ui.theme.AppShapeScale
 import org.koin.compose.koinInject
@@ -161,8 +160,8 @@ fun SharedMusicTrackListItem(
         }
 
         if (isPlaying && !isSelected) {
-          val paused by PlaybackSession.propBoolean["pause"].collectAsState()
-          val isPlaybackActive = paused != true
+          val musicPlayback by MusicPlaybackSession.state.collectAsState()
+          val isPlaybackActive = musicPlayback.isPlaying
           Box(
             modifier = Modifier
               .fillMaxSize()
@@ -337,8 +336,8 @@ fun SharedMusicGridCard(
             )
           }
         } else if (isPlaying) {
-          val paused by PlaybackSession.propBoolean["pause"].collectAsState()
-          val isPlaybackActive = paused != true
+          val musicPlayback by MusicPlaybackSession.state.collectAsState()
+          val isPlaybackActive = musicPlayback.isPlaying
           Box(
             modifier = Modifier
               .fillMaxSize()

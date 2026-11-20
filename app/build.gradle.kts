@@ -21,10 +21,8 @@ val activeAbis =
     listOf("arm64-v8a", "armeabi-v7a") + x86Abis
   }
 val includeMpvFlowMpvRuntime = requestedMpvFlowMpvRuntime && activeAbis == listOf("arm64-v8a")
-// The pinned MPVRx runtime rejects MPVFLOW_DEBUG_CAPTURE, so do not advertise uninstrumented native capture.
-val includeMpvFlowFongmiDiagnostics = false
 val universalOnlyDistributions = setOf("noVulkan")
-val releaseVersionCode = 264
+val releaseVersionCode = 265
 val versionCodeBandSize = 10_000
 val stableVersionCode = releaseVersionCode * versionCodeBandSize + (versionCodeBandSize - 1)
 val previewVersionCode =
@@ -52,7 +50,7 @@ android {
     // Stable occupies the top of its version band. Preview uses the next band's commit-count
     // offset, so Stable -> Preview -> newer Preview -> next Stable is always an Android upgrade.
     versionCode = stableVersionCode
-    versionName = "2.2.5"
+    versionName = "2.2.6"
 
     vectorDrawables {
       useSupportLibrary = true
@@ -62,7 +60,6 @@ android {
     buildConfigField("int", "GIT_COUNT", getCommitCount())
     buildConfigField("boolean", "MPV_HAS_MPVFLOW", "false")
     buildConfigField("boolean", "MPV_HAS_FONGMI_MEMC", includeMpvFlowMpvRuntime.toString())
-    buildConfigField("boolean", "MPV_HAS_FONGMI_DIAGNOSTICS", includeMpvFlowFongmiDiagnostics.toString())
 
     externalNativeBuild {
       cmake {
@@ -104,7 +101,6 @@ android {
       buildConfigField("boolean", "MPV_SUPPORTS_VULKAN", "false")
       buildConfigField("boolean", "MPV_SUPPORTS_MEDIACODEC_VULKAN", "false")
       buildConfigField("boolean", "MPV_HAS_FONGMI_MEMC", "false")
-      buildConfigField("boolean", "MPV_HAS_FONGMI_DIAGNOSTICS", "false")
       externalNativeBuild {
         cmake {
           arguments += "-DMPVFLOW_ENABLE_VULKAN_BACKEND=OFF"
@@ -157,6 +153,7 @@ android {
         debugSymbolLevel = "none"
       }
     }
+
   }
 
   compileOptions {
@@ -324,6 +321,7 @@ dependencies {
   implementation(libs.androidx.media3.ui)
   implementation(libs.androidx.media3.effect)
   implementation(libs.androidx.media3.transformer)
+  implementation(libs.androidx.media3.session)
   implementation("io.github.peerless2012:ass-kt:0.5.1")
   implementation("io.github.peerless2012:ass-media:0.5.1")
   implementation(project(":subtitle-libass"))

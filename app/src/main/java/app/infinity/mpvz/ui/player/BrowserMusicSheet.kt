@@ -51,9 +51,12 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.lifecycle.viewmodel.initializer
@@ -183,6 +186,19 @@ class BrowserMusicSheetState internal constructor(
   internal fun cancelDrag() {
     if (motion.cancelDrag() == null) return
     runSettle(initialVelocity = 0f)
+  }
+
+  /** Land at the pending anchor before Android suspends this Activity's animation clock. */
+  internal fun settleForBackground() {
+    val destination = motion.target ?: when (motion.phase) {
+      MusicSheetPhase.Dragging -> MusicSheetMotion.nearest(motion.progress)
+      else -> return
+    }
+    settleJob?.cancel()
+    settleJob = null
+    motion.snapTo(expanded = destination >= 1f)
+    publish()
+    onRested()
   }
 
   internal fun updateAvailability(available: Boolean) {
@@ -419,8 +435,16 @@ fun Modifier.hiddenUnderBrowserMusicSheet(state: BrowserMusicSheetState): Modifi
  */
 @Composable
 fun BrowserMusicSheet(state: BrowserMusicSheetState) {
+  val lifecycleOwner = LocalLifecycleOwner.current
   val session by PlaybackSession.state.collectAsStateWithLifecycle()
   val serviceActive by MediaPlaybackService.foregroundActive.collectAsStateWithLifecycle()
+  DisposableEffect(lifecycleOwner, state) {
+    val observer = LifecycleEventObserver { _, event ->
+      if (event == Lifecycle.Event.ON_STOP) state.settleForBackground()
+    }
+    lifecycleOwner.lifecycle.addObserver(observer)
+    onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+  }
   val available = MusicSheetInputPolicy.isAvailable(
     serviceActive = serviceActive,
     phase = session.phase,

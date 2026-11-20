@@ -78,8 +78,13 @@ import app.infinity.mpvz.ui.player.PlayerViewModel
 import app.infinity.mpvz.ui.player.SpeedGesturePolicy
 import app.infinity.mpvz.ui.player.Sheets
 import app.infinity.mpvz.ui.player.SingleActionGesture
+import app.infinity.mpvz.ui.player.SubtitleLane
+import app.infinity.mpvz.ui.player.calculateSecondarySubtitlePosition
 import app.infinity.mpvz.ui.player.getSubtitleHitboxBounds
+import app.infinity.mpvz.ui.player.getSubtitleHorizontalHitboxBounds
 import app.infinity.mpvz.ui.player.getTrackSelectionId
+import app.infinity.mpvz.ui.player.isWithinSubtitleTouchBounds
+import app.infinity.mpvz.ui.player.resolveSubtitleLaneForTouch
 import app.infinity.mpvz.ui.theme.AppMotion
 import app.infinity.mpvz.ui.theme.playerRippleConfiguration
 import kotlinx.coroutines.delay
@@ -133,8 +138,9 @@ fun GestureHandler(
     subPos: Int,
     width: Float,
     height: Float,
+    lane: SubtitleLane = SubtitleLane.Primary,
   ): Float {
-    val activeSid = getTrackSelectionId("sid")
+    val activeSid = getTrackSelectionId(if (lane == SubtitleLane.Secondary) "secondary-sid" else "sid")
     val activeSubTrack = subtitleTracks.find { it.id == activeSid }
     val isActiveSubAss =
       activeSubTrack?.codec?.contains("ass", ignoreCase = true) == true ||
@@ -162,6 +168,61 @@ fun GestureHandler(
       }
     }
     return (height * (subPos / 100f)).coerceIn(0f, height)
+  }
+
+  fun getSubtitlePosition(lane: SubtitleLane, width: Float, height: Float): Int {
+    if (lane == SubtitleLane.Secondary && !viewModel.isNativeEngineActive()) {
+      val primaryPosition = PlaybackSession.getPropertyInt("sub-pos") ?: subtitlesPreferences.subPos.get()
+      return PlaybackSession.getPropertyInt("secondary-sub-pos")
+        ?: subtitlesPreferences.secondarySubPos.get().takeIf { it in 0..150 }
+        ?: calculateSecondarySubtitlePosition(primaryPosition, width, height)
+    }
+    return if (viewModel.isNativeEngineActive()) subtitlesPreferences.subPos.get()
+    else PlaybackSession.getPropertyInt("sub-pos") ?: subtitlesPreferences.subPos.get()
+  }
+
+  fun getSubtitleScale(lane: SubtitleLane): Float =
+    if (lane == SubtitleLane.Secondary && !viewModel.isNativeEngineActive()) {
+      PlaybackSession.getPropertyFloat("secondary-sub-scale")
+        ?: subtitlesPreferences.secondarySubScale.get().takeIf { it > 0f }
+        ?: subtitlesPreferences.subScale.get()
+    } else if (viewModel.isNativeEngineActive()) {
+      subtitlesPreferences.subScale.get()
+    } else {
+      PlaybackSession.getPropertyFloat("sub-scale") ?: subtitlesPreferences.subScale.get()
+    }
+
+  fun subtitleTouchAt(
+    lane: SubtitleLane,
+    touchX: Float,
+    touchY: Float,
+    width: Float,
+    height: Float,
+  ): Pair<Boolean, Float> {
+    val active =
+      when {
+        lane == SubtitleLane.Secondary -> !viewModel.isNativeEngineActive() && getTrackSelectionId("secondary-sid") > 0
+        viewModel.isNativeEngineActive() -> subtitleTracks.any { it.isSelected }
+        else -> getTrackSelectionId("sid") > 0
+      }
+    if (!active) return false to Float.POSITIVE_INFINITY
+
+    val anchorY = getSubtitleScreenY(getSubtitlePosition(lane, width, height), width, height, lane)
+    val within =
+      isWithinSubtitleTouchBounds(
+        touchX = touchX,
+        touchY = touchY,
+        subtitleAnchorY = anchorY,
+        horizontalBounds = getSubtitleHorizontalHitboxBounds(width, height, lane),
+        verticalBounds = getSubtitleHitboxBounds(width, height, lane),
+      )
+    return within to kotlin.math.abs(anchorY - touchY)
+  }
+
+  fun subtitleLaneAtPoint(touchX: Float, touchY: Float, width: Float, height: Float): SubtitleLane? {
+    val primary = subtitleTouchAt(SubtitleLane.Primary, touchX, touchY, width, height)
+    val secondary = subtitleTouchAt(SubtitleLane.Secondary, touchX, touchY, width, height)
+    return resolveSubtitleLaneForTouch(primary.first, secondary.first, primary.second, secondary.second)
   }
 
   val panelShown by viewModel.panelShown.collectAsState()
@@ -515,14 +576,27 @@ fun GestureHandler(
             val isVerticalGestureDeadZone =
               startPosition.y <= topGestureDeadZonePx ||
                 startPosition.y >= size.height - bottomGestureDeadZonePx
+            val directSubtitleLane =
+              if (isVerticalGestureDeadZone) null
+              else subtitleLaneAtPoint(startPosition.x, startPosition.y, size.width.toFloat(), size.height.toFloat())
             val hasActiveSubtitle =
               getTrackSelectionId("sid") > 0 ||
                 getTrackSelectionId("secondary-sid") > 0
+            val isLegacyCenterSubtitleTouch =
+              startPosition.x in (size.width / 3f)..(size.width * 2f / 3f)
+            val legacyCenterSubtitleLane =
+              if (!viewModel.isNativeEngineActive() && getTrackSelectionId("sid") <= 0 && getTrackSelectionId("secondary-sid") > 0) {
+                SubtitleLane.Secondary
+              } else {
+                SubtitleLane.Primary
+              }
+            val subtitleGestureLane =
+              directSubtitleLane
+                ?: if (hasActiveSubtitle && isLegacyCenterSubtitleTouch) legacyCenterSubtitleLane else null
             val isCenterSubtitleTouch =
               centerVerticalSubtitlePositionGesture &&
                 !isVerticalGestureDeadZone &&
-                hasActiveSubtitle &&
-                startPosition.x in (size.width / 3f)..(size.width * 2f / 3f)
+                subtitleGestureLane != null
             val activeEnginePlaying = if (viewModel.isNativeEngineActive()) viewModel.isNativePlaying() else paused == false
             speedHoldPending = activeEnginePlaying && multipleSpeedGesture > 0f && !isCenterSubtitleTouch
 
@@ -539,8 +613,9 @@ fun GestureHandler(
             var lastVolumePercentValue = currentVolumePercent
             var lastMPVVolumeValue = currentMPVVolume ?: 100
             var lastBrightnessValue = currentBrightness
-            var originalSubtitlePosition = PlaybackSession.getPropertyInt("sub-pos") ?: subtitlesPreferences.subPos.get()
-            var lastSubtitlePosition = PlaybackSession.getPropertyInt("sub-pos") ?: subtitlesPreferences.subPos.get()
+            var originalSubtitlePosition =
+              getSubtitlePosition(subtitleGestureLane ?: SubtitleLane.Primary, size.width.toFloat(), size.height.toFloat())
+            var lastSubtitlePosition = originalSubtitlePosition
             val brightnessGestureSens = 0.001f
             // Match the anime4k gesture feel, but snap to whole-number volume steps.
             val volumeGestureSens = 0.1f
@@ -570,11 +645,18 @@ fun GestureHandler(
                       isSubtitleHoldActive = true
                       longPressTriggeredDuringTouch = true
                       haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                      originalSubtitlePosition = PlaybackSession.getPropertyInt("sub-pos") ?: subtitlesPreferences.subPos.get()
+                      originalSubtitlePosition =
+                        getSubtitlePosition(subtitleGestureLane ?: SubtitleLane.Primary, size.width.toFloat(), size.height.toFloat())
                       lastSubtitlePosition = originalSubtitlePosition
                       viewModel.playerUpdate.update {
                         PlayerUpdates.ShowText(
-                          context.getString(R.string.player_move_subtitles_hint),
+                          context.getString(
+                            if (subtitleGestureLane == SubtitleLane.Secondary) {
+                              R.string.player_move_secondary_subtitles_hint
+                            } else {
+                              R.string.player_move_primary_subtitles_hint
+                            },
+                          ),
                         )
                       }
                     } else if (
@@ -728,7 +810,7 @@ fun GestureHandler(
                           isVerticalGestureActive = true
                           startingY = 0f
                           originalSubtitlePosition =
-                            PlaybackSession.getPropertyInt("sub-pos") ?: subtitlesPreferences.subPos.get()
+                            getSubtitlePosition(subtitleGestureLane ?: SubtitleLane.Primary, size.width.toFloat(), size.height.toFloat())
                           lastSubtitlePosition = originalSubtitlePosition
                         }
                       }
@@ -812,7 +894,7 @@ fun GestureHandler(
                             ).coerceIn(0, 150)
 
                           if (newSubtitlePosition != lastSubtitlePosition) {
-                            viewModel.changeSubtitlePositionTo(newSubtitlePosition)
+                            viewModel.changeSubtitlePositionTo(newSubtitlePosition, subtitleGestureLane ?: SubtitleLane.Primary)
                             lastSubtitlePosition = newSubtitlePosition
                           }
 
@@ -1025,6 +1107,7 @@ fun GestureHandler(
             var prevMidY = 0f
 
             var isSubZoomMode = false
+            var subtitlePinchLane = SubtitleLane.Primary
             var initialSubScale = 1.0f
             var initialDist = 1.0f
             var lastCalculatedSubScale = 1.0f
@@ -1063,25 +1146,24 @@ fun GestureHandler(
                   currentPanX = viewModel.videoPanX.value
                   currentPanY = viewModel.videoPanY.value
 
-                  val hasActiveSub =
-                    if (viewModel.isNativeEngineActive()) {
-                      subtitleTracks.any { it.isSelected }
-                    } else {
-                      getTrackSelectionId("sid") > 0 || getTrackSelectionId("secondary-sid") > 0
-                    }
-                  val subPos =
-                    if (viewModel.isNativeEngineActive()) subtitlesPreferences.subPos.get()
-                    else PlaybackSession.getPropertyInt("sub-pos") ?: subtitlesPreferences.subPos.get()
-                  val subtitleScreenY = getSubtitleScreenY(subPos, sw, sh)
-                  val isCenterPinchX = midX in (sw * 0.2f)..(sw * 0.8f)
-                  val (lowerBound, upperBound) = getSubtitleHitboxBounds(sw, sh)
-                  val isSubtitlePinch = isCenterPinchX && (subtitleScreenY - midY) in lowerBound..upperBound
+                  val primaryTouches =
+                    pressed.map { touch -> subtitleTouchAt(SubtitleLane.Primary, touch.position.x, touch.position.y, sw, sh) }
+                  val secondaryTouches =
+                    pressed.map { touch -> subtitleTouchAt(SubtitleLane.Secondary, touch.position.x, touch.position.y, sw, sh) }
+                  val primaryDistance = primaryTouches.filter { it.first }.minOfOrNull { it.second } ?: Float.POSITIVE_INFINITY
+                  val secondaryDistance = secondaryTouches.filter { it.first }.minOfOrNull { it.second } ?: Float.POSITIVE_INFINITY
+                  val touchedSubtitleLane =
+                    resolveSubtitleLaneForTouch(
+                      primaryHit = primaryTouches.any { it.first },
+                      secondaryHit = secondaryTouches.any { it.first },
+                      primaryAnchorDistance = primaryDistance,
+                      secondaryAnchorDistance = secondaryDistance,
+                    )
 
-                  if (pinchToZoomSubtitles && hasActiveSub && isSubtitlePinch) {
+                  if (pinchToZoomSubtitles && touchedSubtitleLane != null) {
+                    subtitlePinchLane = touchedSubtitleLane
                     isSubZoomMode = true
-                    initialSubScale =
-                      if (viewModel.isNativeEngineActive()) subtitlesPreferences.subScale.get()
-                      else PlaybackSession.getPropertyFloat("sub-scale") ?: subtitlesPreferences.subScale.get()
+                    initialSubScale = getSubtitleScale(subtitlePinchLane)
                     initialDist = dist
                     lastCalculatedSubScale = initialSubScale
                   } else if (pinchToZoomGesture || panAndZoomEnabled) {
@@ -1099,7 +1181,7 @@ fun GestureHandler(
                     if (gestureStarted && initialDist > 0f) {
                       val currentSubScale = (initialSubScale * (dist / initialDist)).coerceIn(0.1f, 5.0f)
                       lastCalculatedSubScale = currentSubScale
-                      viewModel.setSubtitleScale(currentSubScale)
+                      viewModel.setSubtitleScale(currentSubScale, subtitlePinchLane)
                       viewModel.playerUpdate.update { PlayerUpdates.SubtitleZoom(currentSubScale) }
                     }
                   } else if (pinchToZoomGesture || panAndZoomEnabled) {
@@ -1167,7 +1249,11 @@ fun GestureHandler(
             } while (event.changes.any { it.pressed })
 
             if (isSubZoomMode && gestureStarted) {
-              subtitlesPreferences.subScale.set(lastCalculatedSubScale)
+              if (subtitlePinchLane == SubtitleLane.Secondary && !viewModel.isNativeEngineActive()) {
+                subtitlesPreferences.secondarySubScale.set(lastCalculatedSubScale)
+              } else {
+                subtitlesPreferences.subScale.set(lastCalculatedSubScale)
+              }
             }
 
             releaseGesture(GestureOwner.PINCH)
@@ -1194,16 +1280,13 @@ fun GestureHandler(
             beginGesture(down.id.value, down.uptimeMillis)
             val startPosition = down.position
             val startTime = System.currentTimeMillis()
-
-            val hasActiveSubtitle = getTrackSelectionId("sid") > 0 || getTrackSelectionId("secondary-sid") > 0
-            val subPos = PlaybackSession.getPropertyInt("sub-pos") ?: subtitlesPreferences.subPos.get()
-            val subtitleScreenY = getSubtitleScreenY(subPos, size.width.toFloat(), size.height.toFloat())
-
-            val isCenterTouchX = startPosition.x in (size.width * 0.2f)..(size.width * 0.8f)
-            val (lowerBound, upperBound) = getSubtitleHitboxBounds(size.width.toFloat(), size.height.toFloat())
-            val isSubtitleTouchY = (subtitleScreenY - startPosition.y) in lowerBound..upperBound
-
-            val isSubtitleTouch = swipeSubtitlesToSeekDialog && hasActiveSubtitle && isCenterTouchX && isSubtitleTouchY
+            val subtitleTouchLane =
+              if (swipeSubtitlesToSeekDialog) {
+                subtitleLaneAtPoint(startPosition.x, startPosition.y, size.width.toFloat(), size.height.toFloat())
+              } else {
+                null
+              }
+            val isSubtitleTouch = subtitleTouchLane != null
 
             var gestureType: String? = null
             var hasStartedSeeking = false
@@ -1235,7 +1318,8 @@ fun GestureHandler(
                       hasStartedSeeking = true
                       val isForward = if (isSwipeSubtitlesInverted) deltaX < 0 else deltaX > 0
                       val direction = if (isForward) "1" else "-1"
-                      PlaybackSession.command("sub-seek", direction)
+                      val track = if (subtitleTouchLane == SubtitleLane.Secondary) "secondary" else "primary"
+                      PlaybackSession.command("sub-seek", direction, track)
                       haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                       viewModel.playerUpdate.update {
                         PlayerUpdates.ShowText(

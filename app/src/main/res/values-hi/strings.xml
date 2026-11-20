@@ -1228,6 +1228,7 @@
   <string name="player_horizontal_flip_off">हॉरिजॉन्टल फ्लिप ऑफ</string>
   <string name="player_vertical_flip_on">वर्टिकल फ्लिप ऑन</string>
   <string name="player_vertical_flip_off">वर्टिकल फ्लिप ऑफ</string>
+  <string name="player_flip_requires_hw_or_sw">Flip के लिए HW या SW डिकोडिंग आवश्यक है; HW+ समर्थित नहीं है।</string>
   <string name="btn_label_back">बैक एरो</string>
   <string name="btn_label_title">वीडियो टाइटल</string>
   <string name="btn_label_bookmarks">चैप्टर / बुकमार्क</string>
@@ -2252,4 +2253,14 @@
 <string name="pref_glass_rim_width_summary">चमकीले किनारे की मोटाई (dp में)</string>
 <string name="pref_glass_rim_softness">किनारे की कोमलता</string>
 <string name="pref_glass_rim_softness_summary">किनारे की रोशनी कितनी कोमलता से फीकी होती है</string>
+  <string name="player_sheets_sub_primary">मुख्य</string>
+  <string name="player_sheets_sub_secondary">द्वितीयक</string>
+  <string name="player_move_primary_subtitles_hint">मुख्य उपशीर्षक स्थानांतरित करने के लिए ऊपर/नीचे खींचें</string>
+  <string name="player_move_secondary_subtitles_hint">द्वितीयक उपशीर्षक स्थानांतरित करने के लिए ऊपर/नीचे खींचें</string>
+  <string name="video_mark_as_action">इस रूप में चिह्नित करें</string>
+  <string name="video_mark_as_title">“%1$s” को इस रूप में चिह्नित करें</string>
+  <string name="video_mark_as_new">नया</string>
+  <string name="video_mark_as_last_played">अंतिम बार चलाया गया</string>
+  <string name="video_mark_as_finished">समाप्त</string>
+  <string name="video_mark_as_none">कोई नहीं</string>
 </resources>

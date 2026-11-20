@@ -7,7 +7,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class MpvAspectSurfaceDiagnosticsContractTest {
+class MpvAspectContractTest {
   private val root = generateSequence(File(requireNotNull(System.getProperty("user.dir")))) { it.parentFile }
     .first { File(it, "app/src/main/java/app/infinity/mpvz").isDirectory }
   private fun source(path: String) = File(root, "app/src/main/java/app/infinity/mpvz/$path").readText()
@@ -20,8 +20,10 @@ class MpvAspectSurfaceDiagnosticsContractTest {
     val fongmiInterpolationOptions = mpvView.substringAfter("val mpvFlowRendererOptionResult =")
       .substringBefore("val appVideoFilters =")
 
-    assertTrue(transition.contains("video-aspect-override"))
-    assertTrue(transition.contains("panscan"))
+    assertTrue(transition.contains("setMpvAspectOverrideIfChanged"))
+    assertTrue(transition.contains("setMpvAspectPanscanIfChanged"))
+    assertTrue(viewModel.contains("PlaybackSession.getPropertyDouble(\"video-aspect-override\")"))
+    assertTrue(viewModel.contains("PlaybackSession.getPropertyDouble(\"panscan\")"))
     assertFalse(transition.contains("bindSurface("))
     assertFalse(transition.contains("unbindSurface("))
     assertFalse(transition.contains("initializeSession("))
@@ -40,27 +42,6 @@ class MpvAspectSurfaceDiagnosticsContractTest {
     assertFalse(
       fongmiInterpolationOptions.contains("PlaybackSession.setOptionString(\"interpolation\","),
     )
-  }
-
-  @Test fun debugTraceCorrelatesAspectPropertiesWithSurfaceLifecycle() {
-    val activity = source("ui/player/PlayerActivity.kt")
-    val mpvView = source("ui/player/MPVView.kt")
-    val aspectTrace = activity.substringAfter("override fun onVideoAspectChanged()")
-      .substringBefore("private var interpolationControlRequestGeneration")
-    val surfaceChange = mpvView.substringAfter("override fun surfaceChanged(")
-      .substringBefore("override fun surfaceCreated(")
-    val surfaceCreate = mpvView.substringAfter("override fun surfaceCreated(")
-      .substringBefore("override fun surfaceDestroyed(")
-    val surfaceDestroy = mpvView.substringAfter("override fun surfaceDestroyed(")
-      .substringBefore("override fun onDetachedFromWindow(")
-
-    for (field in listOf("MPV_ASPECT_DIAGNOSTIC", "video-aspect-override", "panscan", "interpolation", "video-sync", "gpuApi", "gpuContext", "ambient")) {
-      assertTrue("Missing aspect trace field: $field", aspectTrace.contains(field))
-    }
-    assertTrue(surfaceChange.contains("event=surface_changed"))
-    assertTrue(surfaceChange.contains("PlaybackSession.resizeSurface"))
-    assertTrue(surfaceCreate.contains("event=surface_created"))
-    assertTrue(surfaceDestroy.contains("event=surface_destroyed"))
   }
 
   @Test fun mpvLoadRestoresTheSavedPerVideoAspectAfterItsCurrentGenerationCheck() {

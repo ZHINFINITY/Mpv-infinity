@@ -113,7 +113,8 @@ fun LiquidGlassBackdropHost(
   // Changes when a sheet/panel opens or closes: sampling pauses briefly so the open
   // animation does not compete with PixelCopy, frost and pane redraws.
   transitionKey: Any? = null,
-  // A sheet/panel covers the video: sample at display cadence. Controls only: half rate.
+  // Sampling refreshes only the backdrop image; sheet animation and input remain display-driven.
+  // Large sheets retain 15 fps video refresh; small controls use the existing 10 fps cadence.
   largeSurfaceVisible: Boolean = true,
   content: @Composable () -> Unit,
 ) {
