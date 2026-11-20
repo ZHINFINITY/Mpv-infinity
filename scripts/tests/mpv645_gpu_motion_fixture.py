@@ -128,6 +128,78 @@ def use_app_policy_shaders(source: str) -> str:
     return source[:start] + function + source[end:]
 
 
+MPV_SAMPLING_FUNCTION = re.compile(
+    r"^static void synthesis_sampling\(pl_gpu gpu\)\n\{.*?^\}",
+    re.MULTILINE | re.DOTALL,
+)
+
+
+def adapt_mpv_synthesis_sampling(source: str) -> str:
+    matches = list(MPV_SAMPLING_FUNCTION.finditer(source))
+    if len(matches) != 1:
+        raise ValueError(f"expected one synthesis_sampling function, found {len(matches)}")
+    start, end = matches[0].span()
+    function = matches[0].group(0)
+    old_variables = """            float size[] = {width, height}, motion_size[] = {480, 270};
+            float source_size[] = {width, height};
+            struct pl_shader_var variables[] = {
+                {.var = pl_var_vec2("motion_size"), .data = motion_size},
+                {.var = pl_var_vec2("output_size"), .data = size},
+                {.var = pl_var_vec2("source_size"), .data = source_size},
+                {.var = pl_var_float("alpha"), .data = &alpha},
+            };"""
+    new_variables = """            float size[] = {width, height}, motion_size[] = {480, 270};
+            int linear_hdr = 0;
+            float projection_ratio[] = {
+                (1.0f - alpha) / alpha, alpha / (1.0f - alpha),
+            };
+            struct pl_shader_var variables[] = {
+                {.var = pl_var_vec2("motion_size"), .data = motion_size},
+                {.var = pl_var_vec2("output_size"), .data = size},
+                {.var = pl_var_float("alpha"), .data = &alpha},
+                {.var = pl_var_int("linear_hdr"), .data = &linear_hdr},
+                {.var = pl_var_vec2("projection_ratio"), .data = projection_ratio},
+            };"""
+    if function.count(old_variables) != 1:
+        raise ValueError("synthesis_sampling no longer has the expected app-test uniform block")
+    function = function.replace(old_variables, new_variables, 1)
+    old_custom = """            assert(pl_shader_custom(shader, &(struct pl_custom_shader) {
+                .header = test_synthesis_header, .body = test_synthesis_body,
+                .compute = true, .compute_group_size = {8, 8},
+                .output = PL_SHADER_SIG_COLOR,
+                .descriptors = descriptors, .num_descriptors = 5,
+                .variables = variables, .num_variables = 4,
+            }));"""
+    new_custom = """            assert(pl_shader_custom(shader, &(struct pl_custom_shader) {
+                .header = test_synthesis_header,
+            }));
+            assert(pl_shader_custom(shader, &(struct pl_custom_shader) {
+                .header = test_synthesis_pixel_header,
+            }));
+            assert(pl_shader_custom(shader, &(struct pl_custom_shader) {
+                .body = test_synthesis_body,
+                .compute = true, .compute_group_size = {8, 8},
+                .output = PL_SHADER_SIG_COLOR,
+                .descriptors = descriptors, .num_descriptors = 5,
+                .variables = variables, .num_variables = 5,
+            }));"""
+    if function.count(old_custom) != 1:
+        raise ValueError("synthesis_sampling no longer has the expected MPV synthesis shader block")
+    function = function.replace(old_custom, new_custom, 1)
+    for marker in (
+        '.header = test_synthesis_pixel_header,',
+        '.body = test_synthesis_body,',
+        'pl_var_int("linear_hdr")',
+        'pl_var_vec2("projection_ratio")',
+        '.num_variables = 5,',
+    ):
+        if marker not in function:
+            raise ValueError("MPV 645 synthesis_sampling setup is missing " + marker)
+    if "source_size" in function or "app_test_" in function:
+        raise ValueError("pinned MPV 645 sampling regression was routed to app-only shader inputs")
+    return source[:start] + function + source[end:]
+
+
 def adapt(source: str) -> str:
     matches = list(FUNCTION.finditer(source))
     if len(matches) != 1:
@@ -144,6 +216,7 @@ def adapt(source: str) -> str:
         raise ValueError("app fixture capability threshold no longer matches the expected test")
     adapted = source[: matches[0].start()] + REPLACEMENT + source[matches[0].end() :]
     adapted = use_app_policy_shaders(adapted)
+    adapted = adapt_mpv_synthesis_sampling(adapted)
     include_marker = '#include "gpu_motion_shaders.h"\n'
     if adapted.count(include_marker) != 1:
         raise ValueError("expected one GPU motion shader include in the app fixture")
@@ -257,7 +330,7 @@ def self_test() -> None:
         raise ValueError("adapter did not retain the app-specific positive midpoint assertion")
     print(
         "MPV 645 GPU motion fixture adapter: upstream warp tests preserved; "
-        "app-owned synthesis policy isolated and positive midpoint retained"
+        "MPV synthesis sampling interface preserved; app-owned policy isolated"
     )
 
 
