@@ -844,7 +844,7 @@ for marker in (
     "displayRefreshRate == null || flowDisplayFpsOverrideRc == 0",
     "snapshotDisplayRefreshRateOnMain()",
     "else cachedDisplayRefreshRate",
-    "val mpvFlowFrameInterpolationEnabled =",
+    "var mpvFlowFrameInterpolationEnabled =",
     "mpvFlowFrameInterpolationCandidate && flowTimingOptionsReady",
     'PlaybackSession.setOptionString("motion-interpolation", targetFps.toString())',
     'PlaybackSession.setOptionString("video-sync", "audio")',
