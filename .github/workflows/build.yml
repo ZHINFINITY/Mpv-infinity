@@ -30,6 +30,122 @@ env:
   ARM64_ONLY: ${{ github.event_name == 'pull_request' || github.ref == 'refs/heads/fix/native-local-direct-source-4ef92fe' }}
 
 jobs:
+  host-vulkan-motion:
+    name: MPV 645 app-owned GPU motion regression (lavapipe)
+    if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Validate the test-only MPV 645 fixture adapter
+        run: python3 scripts/tests/mpv645_gpu_motion_fixture.py --self-test
+
+      - name: Install host build and lavapipe dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            build-essential git meson ninja-build pkg-config python3 \
+            libass-dev libavcodec-dev libavfilter-dev libavformat-dev libavutil-dev \
+            libswresample-dev libswscale-dev libvulkan-dev libshaderc-dev \
+            mesa-vulkan-drivers
+
+      - name: Checkout pinned MPV 645 source
+        uses: actions/checkout@v6
+        with:
+          repository: FongMi/mpv
+          ref: 645f8ecdd3c94379048e9ee3e7014e174de0bd02
+          path: mpv-source
+          fetch-depth: 1
+
+      - name: Checkout pinned libplacebo source
+        uses: actions/checkout@v6
+        with:
+          repository: FongMi/libplacebo
+          ref: 63659d96d1bff7d7a5a1368e9538056a193fc6fb
+          path: libplacebo-source
+          fetch-depth: 1
+
+      - name: Checkout pinned Vulkan headers
+        uses: actions/checkout@v6
+        with:
+          repository: KhronosGroup/Vulkan-Headers
+          ref: a4f8ada9f4f97c45b8c89c57997be9cebaae65d2
+          path: vulkan-headers
+          fetch-depth: 1
+
+      - name: Verify pinned Vulkan headers and expose their SDK metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C vulkan-headers rev-parse HEAD)" = "a4f8ada9f4f97c45b8c89c57997be9cebaae65d2"
+          test "$(awk '/^#define VK_HEADER_VERSION / { print $3 }' vulkan-headers/include/vulkan/vulkan_core.h)" = "309"
+          test -e /usr/lib/x86_64-linux-gnu/libvulkan.so
+          mkdir -p "$RUNNER_TEMP/vulkan-sdk/lib/pkgconfig"
+          cat > "$RUNNER_TEMP/vulkan-sdk/lib/pkgconfig/vulkan.pc" <<EOF
+          prefix=/usr
+          includedir=$GITHUB_WORKSPACE/vulkan-headers/include
+          libdir=/usr/lib/x86_64-linux-gnu
+          Name: Vulkan
+          Description: Pinned Vulkan 1.4.309 headers with the system loader
+          Version: 1.4.309
+          Libs: -L\${libdir} -lvulkan
+          Cflags: -I\${includedir}
+          EOF
+          lvp_icd="$(find /usr/share/vulkan/icd.d -maxdepth 1 -type f -name 'lvp_icd*.json' -print -quit)"
+          test -n "$lvp_icd"
+          echo "PKG_CONFIG_PATH=$RUNNER_TEMP/vulkan-sdk/lib/pkgconfig:${PKG_CONFIG_PATH:-}" >> "$GITHUB_ENV"
+          echo "VK_ICD_FILENAMES=$lvp_icd" >> "$GITHUB_ENV"
+          echo "LVP_ICD=$lvp_icd" >> "$GITHUB_ENV"
+
+      - name: Build and install pinned libplacebo with Vulkan and shaderc
+        shell: bash
+        run: |
+          set -euo pipefail
+          meson setup "$RUNNER_TEMP/libplacebo-build" libplacebo-source \
+            --prefix="$RUNNER_TEMP/mpv-host-sdk" --libdir=lib \
+            -Ddefault_library=shared -Dauto_features=disabled \
+            -Dvulkan=enabled -Dvk-proc-addr=enabled \
+            -Dvulkan-registry="$GITHUB_WORKSPACE/vulkan-headers/registry/vk.xml" \
+            -Dshaderc=enabled -Dglslang=disabled -Dopengl=disabled \
+            -Dlcms=disabled -Ddovi=disabled -Dlibdovi=disabled \
+            -Dxxhash=disabled -Dunwind=disabled -Ddemos=false -Dtests=false -Dbench=false
+          meson compile -C "$RUNNER_TEMP/libplacebo-build" --jobs 2
+          meson install -C "$RUNNER_TEMP/libplacebo-build"
+          echo "PKG_CONFIG_PATH=$RUNNER_TEMP/mpv-host-sdk/lib/pkgconfig:$PKG_CONFIG_PATH" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=$RUNNER_TEMP/mpv-host-sdk/lib:${LD_LIBRARY_PATH:-}" >> "$GITHUB_ENV"
+
+      - name: Verify pinned libplacebo and Vulkan build metadata
+        run: |
+          set -euo pipefail
+          pkg-config --exists 'libplacebo >= 7.387.0'
+          test "$(pkg-config --modversion vulkan)" = "1.4.309"
+          pkg-config --modversion libplacebo
+
+      - name: Adapt only the temporary MPV 645 GPU motion test fixture
+        run: python3 scripts/tests/mpv645_gpu_motion_fixture.py --mpv-dir mpv-source
+
+      - name: Configure MPV 645 host Vulkan test target
+        run: |
+          meson setup "$RUNNER_TEMP/mpv-build" mpv-source \
+            --wrap-mode=nodownload -Dauto_features=disabled \
+            -Dcplayer=false -Dlibmpv=false -Dtests=true \
+            -Dvulkan=enabled -Dgl=disabled \
+            -Dmanpage-build=disabled -Dhtml-build=disabled -Dpdf-build=disabled
+
+      - name: Build and run app-owned GPU motion regression on lavapipe
+        env:
+          LP_NUM_THREADS: '4'
+        run: |
+          set -euo pipefail
+          export VK_ICD_FILENAMES="$LVP_ICD"
+          meson compile -C "$RUNNER_TEMP/mpv-build" gpu-motion --jobs 2
+          meson test -C "$RUNNER_TEMP/mpv-build" gpu-motion --print-errorlogs
+
   build:
     name: Build selected APK flavors
     runs-on: ubuntu-latest
