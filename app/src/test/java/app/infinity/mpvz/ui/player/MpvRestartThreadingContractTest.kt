@@ -75,22 +75,22 @@ class MpvRestartThreadingContractTest {
     assertTrue("post-init options need access before callbacks reopen", initialized < post && post < open)
   }
 
-  @Test fun cancelledNativeDispatchFinalizesCommittedProxyOwnership() {
+  @Test fun committedLoadUsesBehaviorTestedOwnershipAndQueueFences() {
     val session = source("PlaybackSession")
     val transaction = session.substringAfter("private fun prepareResolvedLoadTransaction(")
       .substringBefore("\n  private fun load(")
-    assertTrue(transaction.contains("var committedGeneration: Long? = null"))
-    assertTrue(transaction.contains("committedGeneration = generation"))
-    assertTrue(transaction.contains("if (!transactionFinished)"))
-    val cleanup = transaction.substringAfter("val cleanupOnFailure: () -> Unit = {")
-      .substringBefore("return ResolvedLoadTransaction")
-    val committedBranch = cleanup.substringAfter("if (successfulGeneration != null) {")
-      .substringBefore("} else {")
-    val preCommitBranch = cleanup.substringAfter("} else {")
-    assertTrue(committedBranch.contains("finish(successfulGeneration)"))
-    assertFalse(committedBranch.contains("releaseNetworkStream"))
-    assertTrue(preCommitBranch.contains("resolved.registration?.let(::releaseNetworkStream)"))
-    assertTrue(preCommitBranch.contains("if (!nativeCommitInvoked) resolved.closeUnconsumedFd()"))
+    assertTrue(transaction.contains("ResolvedLoadResourceOwner("))
+    assertTrue(transaction.contains("resourceOwner.markNativeCommitInvoked()"))
+    assertTrue(transaction.contains("resourceOwner.recordSuccessfulCommit(generation, previous, previousAuxiliary)"))
+    assertTrue(transaction.contains("PlaybackQueueReducer.replaceCurrentItemIfUnchanged"))
+    assertTrue(transaction.contains("resourceOwner::finish, resourceOwner::cleanupOnFailure"))
+
+    val boundedLoad = session.substringAfter("suspend fun loadWithBoundedProviderResolution(")
+      .substringBefore("private fun loadResolved(")
+    assertTrue(
+      boundedLoad.indexOf("val queueSnapshot = _queue.value") <
+        boundedLoad.indexOf("resolvePlayableUriBounded(item)"),
+    )
   }
 
   @Test fun generationIsPublishedBeforeNativeLoadCanEmitCallbacks() {
