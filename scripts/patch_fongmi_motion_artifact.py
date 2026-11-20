@@ -2026,14 +2026,15 @@ def transform_source(source: str) -> tuple[str, bool]:
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Legacy-only FongMi source transformer retained for its exact-anchor tests. "
-            "It is not part of the current build workflow and is not supported for the "
-            "active MPVRx runtime revision 95ec8e929f8ad2f97c8415c486971493a0b408df."
+            "Test-only legacy FongMi transformer for synthetic exact-anchor fixtures; "
+            "no legacy upstream/runtime revision is supported. It is not part of the "
+            "current build workflow and does not support active MPVRx runtime revision "
+            "95ec8e929f8ad2f97c8415c486971493a0b408df."
         )
     )
     parser.add_argument(
         "mpv_dir", type=Path,
-        help="legacy FongMi MPV source tree with the tested scalar trust-taper anchors; not the active MPVRx runtime",
+        help="test-only legacy fixture tree with scalar trust-taper anchors; no upstream revision is supported",
     )
     args = parser.parse_args()
     source_path = args.mpv_dir / SOURCE_RELATIVE

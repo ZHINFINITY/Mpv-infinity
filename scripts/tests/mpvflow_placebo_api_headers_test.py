@@ -30,6 +30,16 @@ API_HEADERS = {
     391: API391_HEADER_ROOT / "libplacebo",
 }
 
+API387_LIBAV_INTERNAL = PLACEBO / "include-api-387/libplacebo/utils/libav_internal.h"
+API387_LIBAV_INTERNAL_SOURCE = API387_LIBAV_INTERNAL.read_text(encoding="utf-8")
+DOVI_VALIDATOR_SOURCE = API387_LIBAV_INTERNAL_SOURCE.split(
+    "static bool pl_avdovi_metadata_valid(", 1
+)[1].split("\n}\n", 1)[0]
+assert "header->bl_bit_depth < 8 || header->bl_bit_depth > 16" in DOVI_VALIDATOR_SOURCE
+assert "header->bl_bit_depth != color_depth" not in DOVI_VALIDATOR_SOURCE
+assert "RPU pivots use the base-layer bit-depth domain." in API387_LIBAV_INTERNAL_SOURCE
+assert "1.0f / (1 << header->bl_bit_depth)" in API387_LIBAV_INTERNAL_SOURCE
+
 
 def exported_apis(nm_output: str) -> list[int]:
     """Mirror the CMake symbol shape for representative nm output lines."""

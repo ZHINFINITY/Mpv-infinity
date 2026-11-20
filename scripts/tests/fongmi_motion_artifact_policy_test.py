@@ -35,7 +35,11 @@ assert SOURCE_VERIFIER_SPEC and SOURCE_VERIFIER_SPEC.loader
 SOURCE_VERIFIER = importlib.util.module_from_spec(SOURCE_VERIFIER_SPEC)
 SOURCE_VERIFIER_SPEC.loader.exec_module(SOURCE_VERIFIER)
 parser = argparse.ArgumentParser()
-parser.add_argument("--source", type=Path, help="active pinned FongMi motion.c built by the runtime workflow")
+parser.add_argument(
+    "--source",
+    type=Path,
+    help="exact MPVRx-pinned runtime motion.c; verified by revision/hash, never passed to the legacy transformer",
+)
 args = parser.parse_args()
 
 BASE_PIXEL_HEADER = """    vec4 synthesize_pixel(sampler2D source0, sampler2D source1, sampler2D warp0,
@@ -1211,13 +1215,12 @@ assert "capture_width = m->diagnostic_width" in motion_capture_patcher_source
 if args.source:
     active_source = args.source.read_text(encoding="utf-8")
     mpv_dir = args.source.parents[3]
-    if MOTION_CAPTURE_PATCHER.SOURCE_MARKER in active_source:
-        assert PATCHER.CAMERA_SIMILARITY_MARKER in active_source
-        assert PATCHER._has_camera_similarity_model(active_source)
-    elif PATCHER.CAMERA_SIMILARITY_MARKER in active_source:
-        assert PATCHER._has_camera_similarity_model(active_source)
-    else:
-        SOURCE_VERIFIER.verify_mpv_source(mpv_dir)
+    expected_source = mpv_dir / "video/out/gpu_next/motion.c"
+    if args.source.resolve() != expected_source.resolve():
+        raise ValueError(f"--source must point to the pinned runtime file: {expected_source}")
+    SOURCE_VERIFIER.verify_mpv_source(mpv_dir)
+    assert PATCHER.CAMERA_SIMILARITY_MARKER not in active_source
+    assert MOTION_CAPTURE_PATCHER.SOURCE_MARKER not in active_source
     if MOTION_CAPTURE_PATCHER.SOURCE_MARKER in active_source:
         assert active_source.count(PATCHER.MARKER) == 1
         assert active_source.count(PATCHER.SOURCE_VISIBILITY_MARKER) == 1
@@ -1230,8 +1233,7 @@ if args.source:
         assert PATCHER.SCENE_CUT_MARKER in active_source
         assert "nearest_frame_weight" not in active_source
     else:
-        active_result, active_changed = PATCHER.transform_source(active_source)
-        assert not active_changed and active_result == active_source, "active pinned shader must contain the verified refinement, grid, synthesis, reconstruction, and warp patches exactly once"
+        print("Exact MPVRx-pinned source verified; the legacy transformer was not applied")
     active_header = args.source.with_name("motion.h").read_text(encoding="utf-8")
     active_vo_path = mpv_dir / "video/out/vo_gpu_next.c"
     active_vo = active_vo_path.read_text(encoding="utf-8")

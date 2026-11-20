@@ -998,8 +998,9 @@ static bool pl_avdovi_rational_valid(AVRational value)
     return value.den && isfinite(av_q2d(value));
 }
 
-static bool pl_avdovi_metadata_valid(const AVDOVIMetadata *data, size_t size,
-                                     int color_depth)
+// RPU pivots use the base-layer bit-depth domain. FEL may reconstruct a higher-depth
+// output frame from that base layer; the mapping below normalizes pivots by bl_bit_depth.
+static bool pl_avdovi_metadata_valid(const AVDOVIMetadata *data, size_t size)
 {
     if (!data || size < sizeof(*data) ||
         !pl_avdovi_range_valid(data, data->header_offset,
@@ -1017,7 +1018,6 @@ static bool pl_avdovi_metadata_valid(const AVDOVIMetadata *data, size_t size,
     const AVDOVIDataMapping *mapping = av_dovi_get_mapping(data);
     const AVDOVIColorMetadata *color = av_dovi_get_color(data);
     if (header->bl_bit_depth < 8 || header->bl_bit_depth > 16 ||
-        (color_depth && header->bl_bit_depth != color_depth) ||
         (!header->disable_residual_flag &&
          (header->el_bit_depth < 8 || header->el_bit_depth > 16)) ||
         header->coef_log2_denom > 63 ||
@@ -1244,17 +1244,8 @@ PL_LIBAV_API bool pl_map_avframe_dovi_metadata(struct pl_color_space *color,
                                     _Alignof(AVDOVIMetadata)))
         return false;
 
-    const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(frame->format);
-    if (desc && (desc->flags & AV_PIX_FMT_FLAG_HWACCEL) &&
-        frame->hw_frames_ctx)
-    {
-        const AVHWFramesContext *hwfc =
-            (const AVHWFramesContext *) frame->hw_frames_ctx->data;
-        desc = hwfc ? av_pix_fmt_desc_get(hwfc->sw_format) : NULL;
-    }
-    int color_depth = desc && desc->nb_components ? desc->comp[0].depth : 0;
     const AVDOVIMetadata *metadata = (const AVDOVIMetadata *) sd->data;
-    if (!pl_avdovi_metadata_valid(metadata, sd->size, color_depth))
+    if (!pl_avdovi_metadata_valid(metadata, sd->size))
         return false;
 
     pl_map_avdovi_metadata(color, repr, dovi, metadata);

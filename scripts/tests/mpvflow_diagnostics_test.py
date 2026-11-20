@@ -25,6 +25,7 @@ VO_CAPTURE_PATCH = (ROOT / "scripts/patch_fongmi_vo_diagnostics.py").read_text(e
 DIAGNOSTICS_GUIDE = (ROOT / "docs/mpvflow-diagnostics.md").read_text(encoding="utf-8")
 FONGMI_HELPER_README = (ROOT / "app/src/main/cpp/mpvflow/fongmi/README.md").read_text(encoding="utf-8")
 LEGACY_PATCHER = (ROOT / "scripts/patch_fongmi_motion_artifact.py").read_text(encoding="utf-8")
+MOTION_POLICY_TEST = (ROOT / "scripts/tests/fongmi_motion_artifact_policy_test.py").read_text(encoding="utf-8")
 
 
 def require(source: str, fragment: str, message: str) -> None:
@@ -127,7 +128,12 @@ scene_body = FONGMI_MOTION.split("static const char scene_body[] = GLSL(", 1)[1]
 require(scene_body, "cut = max(cut, min(spatial_cut, 0.44));", "spatial-only disagreement must not independently cross the 0.45 hard-hold threshold")
 require(DIAGNOSTICS_GUIDE, "does **not** expose FongMi one-shot capture", "the guide must accurately describe the currently disabled capture path")
 require(DIAGNOSTICS_GUIDE, "unavailable in the current build", "older capture instructions must not be presented as a current feature")
-require(LEGACY_PATCHER, "not supported for the ", "the legacy patcher must not imply compatibility with the runtime pin")
-require(LEGACY_PATCHER, "active MPVRx runtime revision 95ec8e929f8ad2f97c8415c486971493a0b408df", "the legacy patcher warning must name the exact unsupported runtime pin")
-require(FONGMI_HELPER_README, "not a supported current workflow", "the legacy patcher support boundary must be documented alongside runtime provenance")
+require(LEGACY_PATCHER, "no legacy upstream/runtime revision is supported", "the legacy patcher must remain test-only without claiming support for an upstream runtime revision")
+require(LEGACY_PATCHER, "does not support active MPVRx runtime revision", "the legacy patcher warning must explicitly reject the active runtime pin")
+require(LEGACY_PATCHER, "95ec8e929f8ad2f97c8415c486971493a0b408df", "the legacy patcher warning must name the exact unsupported runtime pin")
+require(FONGMI_HELPER_README, "There is no supported legacy upstream/runtime revision", "the legacy patcher support boundary must be documented alongside runtime provenance")
+require(MOTION_POLICY_TEST, "exact MPVRx-pinned runtime motion.c", "the optional runtime source check must name its exact pin contract")
+source_mode = MOTION_POLICY_TEST.split("if args.source:", 1)[1].split('print(\n    "FongMi artifact policy passed', 1)[0]
+require(source_mode, "SOURCE_VERIFIER.verify_mpv_source(mpv_dir)", "the runtime source option must verify the exact source revision and hashes")
+assert not re.search(r"\bPATCHER\.transform_source\(active_source\)", source_mode), "the active runtime source must not be routed through the legacy transformer"
 print("Native FongMi MPV and pre-FongMi Native Media3 diagnostic regression tests passed")
