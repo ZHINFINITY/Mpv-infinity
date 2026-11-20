@@ -623,7 +623,7 @@ class DirectAudiobookRestorePathContractTest {
     assertTrue(sharedLoadTransform.contains("radioMimeType?.let { item.copy(mimeType = it) } ?: item"))
     assertFalse(sharedLoadTransform.contains("directAudiobook = null"))
     assertTrue(
-      Regex("""PlaybackSession\.load\(\s*item\s*=\s*playbackItem,""")
+      Regex("""PlaybackSession\.loadWithBoundedProviderResolution\(\s*item\s*=\s*playbackItem,""")
         .containsMatchIn(issuePlaybackLoad),
     )
 

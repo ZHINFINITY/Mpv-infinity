@@ -36,7 +36,7 @@ internal fun playbackStateForMarkAs(
 ): PlaybackStateEntity =
   when (markAs) {
     VideoMarkAs.Finished -> current.copy(
-      lastPosition = durationSeconds.coerceAtLeast(0),
+      lastPosition = 0,
       timeRemaining = 0,
       hasBeenWatched = true,
     )

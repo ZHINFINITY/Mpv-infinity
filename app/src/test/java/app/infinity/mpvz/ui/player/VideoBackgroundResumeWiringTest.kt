@@ -189,7 +189,7 @@ class VideoBackgroundResumeWiringTest {
     val nativeEngine = File(root, "app/infinity/mpvz/ui/player/NativeMedia3Engine.kt").readText()
     assertTrue(nativeEngine.contains(".setMediaId(mediaId?.takeIf(String::isNotBlank).orEmpty())"))
     assertTrue(activity.contains("mediaId = nativeItem.stableId"))
-    assertTrue(activity.contains("mediaId = currentItem?.stableId ?: mediaIdentifier"))
+    assertTrue(activity.contains("mediaId = currentItem?.stableId ?: handoffMediaIdentifier"))
   }
 
   @Test

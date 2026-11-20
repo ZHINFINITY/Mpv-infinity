@@ -44,7 +44,7 @@ class SeekbarGlassContractTest {
     assertTrue(playSong.contains("MusicPlaybackLauncher.playSongs"))
     assertTrue(playAll.contains("MusicPlaybackLauncher.playSongs"))
     val musicLauncher = source("ui/browser/music/MusicPlaybackLauncher.kt")
-    assertTrue(musicLauncher.contains("MusicQueueLaunchStore.stage(songs, selectedIndex)"))
+    assertTrue(musicLauncher.contains("MusicQueueLaunchStore.stage(songs, selectedIndex, launchSource)"))
     assertTrue(musicLauncher.contains("Intent(context, MusicPlayerActivity::class.java)"))
     assertTrue(musicLauncher.contains("songs.any { isAudiobookSong(it) }"))
     assertTrue(musicLauncher.contains("PreparedPlaybackLaunchStore.stage("))

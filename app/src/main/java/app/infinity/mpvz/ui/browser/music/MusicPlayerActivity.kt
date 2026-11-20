@@ -47,31 +47,38 @@ class MusicPlayerActivity : ComponentActivity() {
     }
 
     // If Android recreates the Activity after process death, the in-memory queue handoff is gone.
-    // Restore the selected local track from the explicit Intent URI without touching video state.
-    val uri = intent.data ?: return
-    val title = intent.getStringExtra(EXTRA_TITLE)
-      ?: uri.lastPathSegment?.substringAfterLast('/')?.substringBeforeLast('.')
-      ?: "Audio Track"
-    val song =
-      MusicSong(
-        id = intent.getLongExtra(EXTRA_SONG_ID, uri.toString().hashCode().toLong()),
-        title = title,
-        artist = intent.getStringExtra(EXTRA_ARTIST).orEmpty(),
-        album = intent.getStringExtra(EXTRA_ALBUM).orEmpty(),
-        albumId = intent.getLongExtra(EXTRA_ALBUM_ID, 0L),
-        durationMs = intent.getLongExtra(EXTRA_DURATION_MS, 0L),
-        path = intent.getStringExtra(EXTRA_PATH) ?: uri.path.orEmpty(),
-        uri = uri,
-        dateAdded = 0L,
-        albumArtUri = intent.getStringExtra(EXTRA_ARTWORK_URI)?.let(Uri::parse),
-      )
-    viewModel.openLaunch(
-      MusicQueueLaunch(
-        token = token ?: UUID.randomUUID().toString(),
-        songs = listOf(song),
-        currentIndex = 0,
-      ),
-    )
+    // Keep the explicit track as a safe fallback while attempting token-matched queue recovery.
+    val uri = intent.data
+    val fallback =
+      uri?.let {
+        val title = intent.getStringExtra(EXTRA_TITLE)
+          ?: it.lastPathSegment?.substringAfterLast('/')?.substringBeforeLast('.')
+          ?: "Audio Track"
+        val song =
+          MusicSong(
+            id = intent.getLongExtra(EXTRA_SONG_ID, it.toString().hashCode().toLong()),
+            title = title,
+            artist = intent.getStringExtra(EXTRA_ARTIST).orEmpty(),
+            album = intent.getStringExtra(EXTRA_ALBUM).orEmpty(),
+            albumId = intent.getLongExtra(EXTRA_ALBUM_ID, 0L),
+            durationMs = intent.getLongExtra(EXTRA_DURATION_MS, 0L),
+            path = intent.getStringExtra(EXTRA_PATH) ?: it.path.orEmpty(),
+            uri = it,
+            dateAdded = 0L,
+            albumArtUri = intent.getStringExtra(EXTRA_ARTWORK_URI)?.let(Uri::parse),
+          )
+        MusicQueueLaunch(
+          token = token ?: UUID.randomUUID().toString(),
+          songs = listOf(song),
+          currentIndex = 0,
+          launchSource = intent.getStringExtra(EXTRA_LAUNCH_SOURCE) ?: "music_library",
+        )
+      }
+    if (token == null && fallback != null) {
+      viewModel.openLaunch(fallback)
+    } else {
+      viewModel.restoreLaunch(token, fallback)
+    }
   }
 
   companion object {
@@ -84,5 +91,6 @@ class MusicPlayerActivity : ComponentActivity() {
     const val EXTRA_DURATION_MS = "music_duration_ms"
     const val EXTRA_PATH = "music_path"
     const val EXTRA_ARTWORK_URI = "music_artwork_uri"
+    const val EXTRA_LAUNCH_SOURCE = "music_launch_source"
   }
 }

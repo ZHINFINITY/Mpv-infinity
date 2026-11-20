@@ -40,10 +40,29 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import java.io.File
+
+internal class SearchPlaybackRefreshOwner {
+  private var generation = 0L
+
+  @Synchronized
+  fun begin(): Long = ++generation
+
+  @Synchronized
+  fun isCurrent(candidate: Long): Boolean = generation == candidate
+
+  @Synchronized
+  fun publishIfCurrent(candidate: Long, publish: () -> Unit): Boolean {
+    if (generation != candidate) return false
+    publish()
+    return true
+  }
+}
 
 /**
  * ViewModel for FileSystem Browser - based on Fossify's ItemsFragment logic
@@ -101,6 +120,7 @@ class FileSystemBrowserViewModel(
   val searchWatchedVideoIds: StateFlow<Set<Long>> = _searchWatchedVideoIds.asStateFlow()
 
   private val _searchItems = MutableStateFlow<List<FileSystemItem>>(emptyList())
+  private val searchPlaybackRefreshOwner = SearchPlaybackRefreshOwner()
   private var searchPlaybackJob: Job? = null
 
   private data class PlaybackDisplayState(
@@ -576,27 +596,45 @@ class FileSystemBrowserViewModel(
   }
 
   fun updateSearchPlaybackState(items: List<FileSystemItem>) {
-    _searchItems.value = items
+    synchronized(searchPlaybackRefreshOwner) {
+      _searchItems.value = items
+    }
     refreshSearchPlaybackState()
   }
 
   private fun refreshSearchPlaybackState() {
-    val items = _searchItems.value
-    searchPlaybackJob?.cancel()
-    if (items.isEmpty()) {
-      _searchVideoFilesWithPlayback.value = emptyMap()
-      _searchNewVideoIds.value = emptySet()
-      _searchWatchedVideoIds.value = emptySet()
-      return
+    val request = synchronized(searchPlaybackRefreshOwner) {
+      val items = _searchItems.value
+      val generation = searchPlaybackRefreshOwner.begin()
+      searchPlaybackJob?.cancel()
+      searchPlaybackJob = null
+      if (items.isEmpty()) {
+        _searchVideoFilesWithPlayback.value = emptyMap()
+        _searchNewVideoIds.value = emptySet()
+        _searchWatchedVideoIds.value = emptySet()
+        null
+      } else {
+        items to generation
+      }
     }
 
-    searchPlaybackJob = viewModelScope.launch(Dispatchers.IO) {
+    val (items, generation) = request ?: return
+    val job = viewModelScope.launch(Dispatchers.IO) {
       val state = calculatePlaybackDisplayState(items)
-      if (_searchItems.value == items) {
-        _searchVideoFilesWithPlayback.value = state.progressByVideoId
-        _searchNewVideoIds.value = state.newVideoIds
-        _searchWatchedVideoIds.value = state.watchedVideoIds
+      val coroutineContext = currentCoroutineContext()
+      coroutineContext.ensureActive()
+      synchronized(searchPlaybackRefreshOwner) {
+        coroutineContext.ensureActive()
+        if (_searchItems.value != items) return@synchronized
+        searchPlaybackRefreshOwner.publishIfCurrent(generation) {
+          _searchVideoFilesWithPlayback.value = state.progressByVideoId
+          _searchNewVideoIds.value = state.newVideoIds
+          _searchWatchedVideoIds.value = state.watchedVideoIds
+        }
       }
+    }
+    synchronized(searchPlaybackRefreshOwner) {
+      if (searchPlaybackRefreshOwner.isCurrent(generation)) searchPlaybackJob = job else job.cancel()
     }
   }
 

@@ -42,7 +42,7 @@ internal object MusicPlaybackLauncher {
       playAudiobookSongsOnLegacyPlayer(context, songs, selectedIndex, launchSource)
       return
     }
-    val launch = MusicQueueLaunchStore.stage(songs, selectedIndex)
+    val launch = MusicQueueLaunchStore.stage(songs, selectedIndex, launchSource)
     val intent = Intent(context, MusicPlayerActivity::class.java).apply {
       action = Intent.ACTION_VIEW
       data = selectedSong.uri
@@ -56,7 +56,7 @@ internal object MusicPlaybackLauncher {
       putExtra(MusicPlayerActivity.EXTRA_DURATION_MS, selectedSong.durationMs)
       putExtra(MusicPlayerActivity.EXTRA_PATH, selectedSong.path)
       putExtra(MusicPlayerActivity.EXTRA_ARTWORK_URI, selectedSong.albumArtUri?.toString())
-      putExtra(EXTRA_LAUNCH_SOURCE, launchSource)
+      putExtra(MusicPlayerActivity.EXTRA_LAUNCH_SOURCE, launchSource)
     }
     context.startActivity(intent)
   }
@@ -149,6 +149,5 @@ internal object MusicPlaybackLauncher {
     context.startActivity(intent)
   }
 
-  private const val EXTRA_LAUNCH_SOURCE = "music_launch_source"
   private val AUDIOBOOK_EXTENSIONS = setOf("aa", "aax", "aaxc", "m4b")
 }

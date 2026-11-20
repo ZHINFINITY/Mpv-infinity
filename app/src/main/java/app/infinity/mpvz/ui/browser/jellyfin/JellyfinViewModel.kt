@@ -70,6 +70,26 @@ data class JellyfinLibraryView(
   val isMusic: Boolean = false,
 )
 
+internal class JellyfinListRequestOwner {
+  private val lock = Any()
+  private var generation = 0L
+
+  fun begin(): Long = synchronized(lock) { ++generation }
+
+  fun isCurrent(requestGeneration: Long): Boolean =
+    synchronized(lock) { generation == requestGeneration }
+
+  fun publishIfCurrent(requestGeneration: Long, publish: () -> Unit): Boolean =
+    synchronized(lock) {
+      if (generation != requestGeneration) {
+        false
+      } else {
+        publish()
+        true
+      }
+    }
+}
+
 data class JellyfinHomeSection(
   val library: JellyfinItem,
   val title: String,
@@ -103,6 +123,7 @@ data class JellyfinUiState(
   val isLoading: Boolean = false,
   val isLoadingMore: Boolean = false,
   val hasMore: Boolean = false,
+  val failedPageStartIndex: Int? = null,
   val isAuthenticating: Boolean = false,
   val error: String? = null,
   val authError: String? = null,
@@ -144,6 +165,7 @@ class JellyfinViewModel(
   private val downloadManager: AppDownloadManager by inject()
 
   private var loadDashboardJob: Job? = null
+  private val listRequestOwner = JellyfinListRequestOwner()
   private var loadItemsJob: Job? = null
   private var searchJob: Job? = null
   private var detailJob: Job? = null
@@ -181,6 +203,7 @@ class JellyfinViewModel(
   }
 
   fun selectServer(server: JellyfinServer) {
+    invalidateListRequests()
     val selected = server.copy(lastConnected = System.currentTimeMillis())
     _uiState.update {
       it.copy(
@@ -202,13 +225,20 @@ class JellyfinViewModel(
     loadHomeDashboard(selected)
   }
 
+  private fun invalidateListRequests() {
+    listRequestOwner.begin()
+    loadItemsJob?.cancel()
+    searchJob?.cancel()
+  }
+
   fun refresh() {
     val active = _uiState.value.activeServer ?: return
     val library = _uiState.value.openLibrary
     if (library == null) {
+      invalidateListRequests()
       loadHomeDashboard(active)
     } else {
-      loadLibraryItems(active, library, resetPagination = true)
+      reloadLibraryItems(active, library)
     }
   }
 
@@ -219,8 +249,7 @@ class JellyfinViewModel(
       loadHomeDashboard(active)
       loadDashboardJob?.join()
     } else {
-      loadLibraryItems(active, library, resetPagination = true)
-      loadItemsJob?.join()
+      reloadLibraryItems(active, library)?.join()
     }
   }
 
@@ -229,6 +258,7 @@ class JellyfinViewModel(
   }
 
   fun enterMusicOnlyMode(server: JellyfinServer) {
+    invalidateListRequests()
     loadDashboardJob?.cancel()
     loadItemsJob?.cancel()
     musicLoadJob?.cancel()
@@ -589,7 +619,7 @@ class JellyfinViewModel(
     _uiState.update { it.copy(sortBy = sortBy, sortOrder = sortOrder) }
     val active = _uiState.value.activeServer ?: return
     val library = _uiState.value.openLibrary ?: return
-    loadLibraryItems(active, library, resetPagination = true)
+    reloadLibraryItems(active, library)
   }
 
   fun toggleUnplayedOnly() {
@@ -597,7 +627,7 @@ class JellyfinViewModel(
     _uiState.update { it.copy(isUnplayedOnly = newFilter) }
     val active = _uiState.value.activeServer ?: return
     val library = _uiState.value.openLibrary ?: return
-    loadLibraryItems(active, library, resetPagination = true)
+    reloadLibraryItems(active, library)
   }
 
   fun navigateToItem(item: JellyfinItem) {
@@ -660,7 +690,7 @@ class JellyfinViewModel(
     _uiState.update { it.copy(selectedGenreFilter = genre) }
     val active = _uiState.value.activeServer ?: return
     val library = _uiState.value.openLibrary ?: return
-    loadLibraryItems(active, library, resetPagination = true)
+    reloadLibraryItems(active, library)
   }
 
   fun navigateBack(): Boolean {
@@ -972,18 +1002,31 @@ class JellyfinViewModel(
       else -> "Movie,Series"
     }
 
+  private fun reloadLibraryItems(
+    server: JellyfinServer,
+    library: JellyfinLibraryView,
+  ): Job? {
+    val state = _uiState.value
+    if (state.searchQuery.isNotBlank()) {
+      performSearch(state.searchQuery, debounceMs = 0L, startIndex = 0)
+      return searchJob
+    }
+    loadLibraryItems(server, library, resetPagination = true)
+    return loadItemsJob
+  }
+
   private fun loadLibraryItems(
     server: JellyfinServer,
     library: JellyfinLibraryView,
     resetPagination: Boolean = true,
   ) {
+    val requestGeneration = listRequestOwner.begin()
+    searchJob?.cancel()
+    loadItemsJob?.cancel()
     val startIndex = if (resetPagination) 0 else _uiState.value.startIndex
     val currentList = if (resetPagination) emptyList() else _uiState.value.currentItems
 
-    if (resetPagination) {
-      loadItemsJob?.cancel()
-      musicLoadJob?.cancel()
-    }
+    if (resetPagination) musicLoadJob?.cancel()
 
     loadItemsJob =
       viewModelScope.launch {
@@ -994,15 +1037,17 @@ class JellyfinViewModel(
               currentItems = emptyList(),
               startIndex = 0,
               hasMore = false,
+              failedPageStartIndex = null,
               error = null,
             )
           }
         } else {
-          _uiState.update { it.copy(isLoadingMore = true) }
+          _uiState.update { it.copy(isLoadingMore = true, error = null, failedPageStartIndex = null) }
         }
 
         val currentState = _uiState.value
 
+        if (!listRequestOwner.isCurrent(requestGeneration)) return@launch
         jellyfinRepository
           .getItems(
             server = server,
@@ -1015,6 +1060,7 @@ class JellyfinViewModel(
             startIndex = startIndex,
             limit = 100,
           ).onSuccess { queryResult ->
+            if (!listRequestOwner.isCurrent(requestGeneration)) return@onSuccess
             val knownItemIds = currentList.mapTo(mutableSetOf()) { it.id }
             val pageHasNewItems = queryResult.items.any { knownItemIds.add(it.id) }
             val combined = (currentList + queryResult.items).distinctBy { it.id }
@@ -1025,12 +1071,13 @@ class JellyfinViewModel(
                 startIndex = startIndex,
                 pageItemCount = queryResult.items.size,
               )
-            _uiState.update {
-              it.copy(
-                currentItems = combined,
-                totalRecordCount = totalRecordCount,
-                startIndex = nextStartIndex,
-                hasMore =
+            listRequestOwner.publishIfCurrent(requestGeneration) {
+              _uiState.update {
+                it.copy(
+                  currentItems = combined,
+                  totalRecordCount = totalRecordCount,
+                  startIndex = nextStartIndex,
+                  hasMore =
                   JellyfinPaginationPolicy.hasMore(
                     totalRecordCount = queryResult.totalRecordCount,
                     startIndex = startIndex,
@@ -1038,18 +1085,23 @@ class JellyfinViewModel(
                     pageSize = 100,
                     pageHasNewItems = pageHasNewItems,
                   ),
-                isLoading = false,
-                isLoadingMore = false,
-                error = null,
-              )
+                  isLoading = false,
+                  isLoadingMore = false,
+                  failedPageStartIndex = null,
+                  error = null,
+                )
+              }
             }
           }.onFailure { err ->
-            _uiState.update {
-              it.copy(
-                isLoading = false,
-                isLoadingMore = false,
-                error = err.message ?: "Failed to load items",
-              )
+            listRequestOwner.publishIfCurrent(requestGeneration) {
+              _uiState.update {
+                it.copy(
+                  isLoading = false,
+                  isLoadingMore = false,
+                  failedPageStartIndex = if (resetPagination) null else startIndex,
+                  error = err.message ?: "Failed to load items",
+                )
+              }
             }
           }
       }
@@ -1057,14 +1109,33 @@ class JellyfinViewModel(
 
   fun loadMoreItems() {
     val state = _uiState.value
-    if (state.isLoading || state.isLoadingMore || !state.hasMore) return
+    if (state.isLoading || state.isLoadingMore || !state.hasMore || state.error != null) return
+    if (state.searchQuery.isNotBlank()) {
+      performSearch(state.searchQuery, debounceMs = 0L, startIndex = state.startIndex)
+      return
+    }
     val active = state.activeServer ?: return
     val library = state.openLibrary ?: return
     loadLibraryItems(active, library, resetPagination = false)
   }
 
+  fun retryFailedPage() {
+    val state = _uiState.value
+    if (state.isLoading || state.isLoadingMore) return
+    val failedStartIndex = state.failedPageStartIndex ?: return
+    if (failedStartIndex != state.startIndex) return
+    if (state.searchQuery.isNotBlank()) {
+      performSearch(state.searchQuery, debounceMs = 0L, startIndex = failedStartIndex)
+      return
+    }
+    val active = state.activeServer ?: return
+    val library = state.openLibrary ?: return
+    // startIndex advances only after a successful page; retry exactly the same offset.
+    loadLibraryItems(active, library, resetPagination = false)
+  }
+
   fun onSearchQueryChanged(query: String) {
-    _uiState.update { it.copy(searchQuery = query) }
+    _uiState.update { it.copy(searchQuery = query, failedPageStartIndex = null) }
     performSearch(query, debounceMs = 300L)
   }
 
@@ -1078,54 +1149,115 @@ class JellyfinViewModel(
   fun performSearch(
     query: String,
     debounceMs: Long = 0L,
+    startIndex: Int = 0,
   ) {
-    val active = _uiState.value.activeServer ?: return
+    val requestedState = _uiState.value
+    val active = requestedState.activeServer ?: return
+    val requestGeneration = listRequestOwner.begin()
+    loadItemsJob?.cancel()
     searchJob?.cancel()
     if (query.isBlank()) {
+      _uiState.update { it.copy(failedPageStartIndex = null) }
       refresh()
       return
     }
+    val offset = startIndex.coerceAtLeast(0)
+    if (offset != 0 && offset != requestedState.startIndex) return
+    val library = requestedState.openLibrary
+    val searchCategory = requestedState.searchCategory
+    val sortBy = requestedState.sortBy
+    val sortOrder = requestedState.sortOrder
+    val isUnplayedOnly = requestedState.isUnplayedOnly
+    val selectedGenreFilter = requestedState.selectedGenreFilter
+    val currentItems = if (offset == 0) emptyList() else requestedState.currentItems
+    _uiState.update {
+      it.copy(
+        isLoading = offset == 0,
+        isLoadingMore = offset > 0,
+        startIndex = if (offset == 0) 0 else it.startIndex,
+        hasMore = if (offset == 0) false else it.hasMore,
+        failedPageStartIndex = null,
+        error = null,
+      )
+    }
     searchJob =
       viewModelScope.launch {
-        if (debounceMs > 0) {
-          delay(debounceMs)
-        }
-        _uiState.update { it.copy(isLoading = true, error = null) }
-        val library = _uiState.value.openLibrary
-
+        if (debounceMs > 0) delay(debounceMs)
         val includeTypes =
-          when (_uiState.value.searchCategory) {
+          when (searchCategory) {
             JellyfinSearchCategory.ALL -> null
             JellyfinSearchCategory.MOVIES -> "Movie"
             JellyfinSearchCategory.SHOWS -> "Series"
             JellyfinSearchCategory.EPISODES -> "Episode"
           }
-
+        if (!listRequestOwner.isCurrent(requestGeneration)) return@launch
         val result =
           jellyfinRepository.getItems(
             server = active,
             parentId = library?.id,
             searchTerm = query,
             includeItemTypes = includeTypes,
-            sortBy = _uiState.value.sortBy,
-            sortOrder = _uiState.value.sortOrder,
-            startIndex = 0,
+            sortBy = sortBy,
+            sortOrder = sortOrder,
+            isPlayed = if (isUnplayedOnly) false else null,
+            genres = selectedGenreFilter,
+            startIndex = offset,
             limit = 100,
           )
         result
           .onSuccess { queryResult ->
-            _uiState.update {
-              it.copy(
-                currentItems = queryResult.items.distinctBy { item -> item.id },
+            val latest = _uiState.value
+            if (!listRequestOwner.isCurrent(requestGeneration) ||
+              latest.searchQuery != query || latest.searchCategory != searchCategory ||
+              latest.activeServer?.id != active.id || latest.openLibrary?.id != library?.id
+            ) return@onSuccess
+            val knownItemIds = currentItems.mapTo(mutableSetOf()) { it.id }
+            val pageHasNewItems = queryResult.items.any { knownItemIds.add(it.id) }
+            val combined = (currentItems + queryResult.items).distinctBy { it.id }
+            val nextStartIndex = JellyfinPaginationPolicy.nextStartIndex(offset, queryResult.items.size)
+            val totalRecordCount =
+              JellyfinPaginationPolicy.estimatedTotalRecordCount(
                 totalRecordCount = queryResult.totalRecordCount,
-                startIndex = queryResult.items.size,
-                hasMore = queryResult.items.size < queryResult.totalRecordCount,
-                isLoading = false,
-                error = null,
+                startIndex = offset,
+                pageItemCount = queryResult.items.size,
               )
+            listRequestOwner.publishIfCurrent(requestGeneration) {
+              _uiState.update {
+                it.copy(
+                  currentItems = combined,
+                  totalRecordCount = totalRecordCount,
+                  startIndex = nextStartIndex,
+                  hasMore =
+                  JellyfinPaginationPolicy.hasMore(
+                    totalRecordCount = queryResult.totalRecordCount,
+                    startIndex = offset,
+                    pageItemCount = queryResult.items.size,
+                    pageSize = 100,
+                    pageHasNewItems = pageHasNewItems,
+                  ),
+                  isLoading = false,
+                  isLoadingMore = false,
+                  failedPageStartIndex = null,
+                  error = null,
+                )
+              }
             }
           }.onFailure { err ->
-            _uiState.update { it.copy(isLoading = false, error = err.message) }
+            val latest = _uiState.value
+            if (!listRequestOwner.isCurrent(requestGeneration) ||
+              latest.searchQuery != query || latest.searchCategory != searchCategory ||
+              latest.activeServer?.id != active.id || latest.openLibrary?.id != library?.id
+            ) return@onFailure
+            listRequestOwner.publishIfCurrent(requestGeneration) {
+              _uiState.update {
+                it.copy(
+                  isLoading = false,
+                  isLoadingMore = false,
+                  failedPageStartIndex = offset,
+                  error = err.message ?: "Failed to search items",
+                )
+              }
+            }
           }
       }
   }

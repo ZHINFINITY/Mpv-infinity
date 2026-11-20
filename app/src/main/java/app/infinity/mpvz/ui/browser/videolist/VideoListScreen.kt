@@ -1265,6 +1265,9 @@ internal fun VideoListContent(
                           { onVideoClick(videoWithInfo.video) }
                         },
                       isGridMode = true,
+                      onMarkAsClick =
+                        if (selectionManager.isInSelectionMode) null
+                        else onMarkAs?.let { callback -> { callback(videoWithInfo.video) } },
                       gridColumns = columns,
                       thumbnailWidthPx = thumbWidthPx,
                       thumbnailHeightPx = thumbHeightPx,
@@ -1341,6 +1344,9 @@ internal fun VideoListContent(
                           { onVideoClick(videoWithInfo.video) }
                         },
                       isGridMode = false,
+                      onMarkAsClick =
+                        if (selectionManager.isInSelectionMode) null
+                        else onMarkAs?.let { callback -> { callback(videoWithInfo.video) } },
                       showSubtitleIndicator = showSubtitleIndicator,
                       allowThumbnailGeneration = false,
                       allowThumbnailLoading = allowThumbnailLoading,

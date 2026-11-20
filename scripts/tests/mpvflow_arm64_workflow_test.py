@@ -5,10 +5,18 @@ import re
 import sys
 import unittest
 
-DEFAULT = Path(__file__).resolve().parents[2] / ".github/workflows/mpvflow-debug-arm64.yml"
+ROOT = Path(__file__).resolve().parents[2]
+DEFAULT = ROOT / ".github/workflows/mpvflow-debug-arm64.yml"
 WORKFLOW = Path(sys.argv.pop()) if len(sys.argv) > 1 else DEFAULT
 TEXT = WORKFLOW.read_text(encoding="utf-8")
-STEPS = dict(re.findall(r"^      - name: ([^\n]+)\n(.*?)(?=^      - name: |\Z)", TEXT, re.M | re.S))
+
+def parse_steps(text: str) -> dict[str, str]:
+    return dict(re.findall(r"^      - name: ([^\n]+)\n(.*?)(?=^      - name: |\Z)", text, re.M | re.S))
+
+STEPS = parse_steps(TEXT)
+DEBUG_APK_TEXT = (ROOT / ".github/workflows/debug-apk.yml").read_text(encoding="utf-8")
+DEBUG_APK_STEPS = parse_steps(DEBUG_APK_TEXT)
+RELEASE_STEPS = parse_steps((ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8"))
 CACHE_MISS = "if: ${{ steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' }}"
 MPV_SHA = "645f8ecdd3c94379048e9ee3e7014e174de0bd02"
 PLACEBO_SHA = "63659d96d1bff7d7a5a1368e9538056a193fc6fb"
@@ -77,6 +85,29 @@ class Arm64WorkflowTest(unittest.TestCase):
         self.assertEqual(TEXT.count("uses: actions/cache/restore@v4"), 1)
         self.assertIn("steps.mpvflow-runtime-cache.outputs.cache-hit == 'true'", STEPS["Use cached Mpv-infinity FongMi 645 arm64 runtime"])
 
+    def test_vendored_api391_headers_are_verified_in_build_workflows(self):
+        generated = "app/mpvflow-generated/libplacebo-api-391"
+        cmake = (ROOT / "app/src/main/cpp/CMakeLists.txt").read_text(encoding="utf-8")
+        self.assertIn("include-api-391", cmake)
+        self.assertNotIn(generated, cmake)
+        for workflow_steps in (STEPS, DEBUG_APK_STEPS, RELEASE_STEPS):
+            cache_text = "\n".join(workflow_steps.values())
+            self.assertNotIn(generated, cache_text)
+            self.assertIn("Verify vendored libplacebo API headers", workflow_steps)
+            self.assertIn(
+                "scripts/tests/mpvflow_placebo_api_headers_test.py",
+                workflow_steps["Verify vendored libplacebo API headers"],
+            )
+
+    def test_focused_invariants_run_before_the_runtime_build(self):
+        focused = STEPS["Test complete MPVFlow focused invariants"]
+        for script in (
+            "scripts/tests/mpvflow_flow_only_test.py",
+            "scripts/tests/mpvflow_native_build_test.py",
+        ):
+            self.assertIn("python3 " + script, focused)
+        self.assertLess(TEXT.index("- name: Test complete MPVFlow focused invariants"), TEXT.index("- name: Set up JDK 17"))
+
     def test_core_gpu_suite_is_unconditional_and_precedes_native_build(self):
         tests = STEPS["Run MPVFlow core and GPU shader regression tests"]
         self.assertNotIn("        if:", tests)
@@ -139,6 +170,20 @@ class Arm64WorkflowTest(unittest.TestCase):
         self.assertIn("retention-days: 3", upload)
         self.assertLess(TEXT.index("- name: Verify Standard arm64 Debug APK contents"), TEXT.index("- name: Upload single Standard arm64-v8a Debug APK"))
         self.assertEqual(TEXT.count("uses: actions/upload-artifact@v7"), 1)
+
+    def test_standard_arm64_debug_apk_verifies_motion_payload_before_upload(self):
+        verification = DEBUG_APK_STEPS["Verify APK package, ABI, integrity and signing identity"]
+        for script in (
+            "scripts/verify-debug-apk-artifact.py",
+            "scripts/verify-region3-shader-apk.py",
+            "scripts/verify-pair-ghost-apk.py",
+        ):
+            with self.subTest(script=script):
+                self.assertIn(f'python3 {script} "$apk"', verification)
+        self.assertLess(
+            DEBUG_APK_TEXT.index("- name: Verify APK package, ABI, integrity and signing identity"),
+            DEBUG_APK_TEXT.index("- name: Upload debug APKs"),
+        )
 
 
 if __name__ == "__main__":

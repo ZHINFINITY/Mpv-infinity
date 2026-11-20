@@ -485,6 +485,7 @@ fun PlayerControls(
         isEnded = nativeSnapshot.isEnded,
         hasError = nativeSnapshot.hasError,
         isReady = nativeSnapshot.isReady,
+        isLoading = nativeSnapshot.isLoading,
         isBuffering = nativeSnapshot.isBuffering,
         isLocalSource = isLocalNativeSource,
         hasRenderedFirstFrame = nativeSnapshot.hasRenderedFirstFrame,

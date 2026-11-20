@@ -45,12 +45,13 @@ internal object PlayerControlVisibilityPolicy {
     return if (nativeEngineActive) nativeBufferingVisible else mpvBufferingVisible
   }
 
-  /** Suppress local prepare until its first frame; active playback loading ahead is not a stall. */
+  /** Suppress local prepare until its first frame; playback advancement wins and loading alone after it is not a stall. */
   fun isNativePlaybackStalled(
     isEnded: Boolean,
     isBuffering: Boolean,
     hasError: Boolean = false,
     isReady: Boolean = true,
+    isLoading: Boolean = false,
     isLocalSource: Boolean = false,
     hasRenderedFirstFrame: Boolean = true,
     isPlaying: Boolean = false,
@@ -59,7 +60,7 @@ internal object PlayerControlVisibilityPolicy {
       !hasError &&
       (!isLocalSource || hasRenderedFirstFrame) &&
       !isPlaying &&
-      (!isReady || isBuffering)
+      (!isReady || isBuffering || (isLoading && !hasRenderedFirstFrame))
 
   /** A torrent can be waiting for data before MPV has a playable source to report as stalled. */
   fun shouldForceMpvBufferingIndicator(

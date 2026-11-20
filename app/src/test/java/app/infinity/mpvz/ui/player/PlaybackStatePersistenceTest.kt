@@ -251,6 +251,7 @@ class PlaybackStatePersistenceTest {
   @Test
   fun legacySecondaryTimingFollowsPrimaryUntilASeparateValueExists() {
     assertEquals(420, secondarySubtitleDelayForRestore(-1, 420))
+    assertEquals(-250, secondarySubtitleDelayForRestore(-250, 420))
     assertEquals(850, secondarySubtitleDelayForRestore(850, 420))
     assertEquals(1.25, secondarySubtitleSpeedForRestore(-1.0, 1.25), 0.0)
     assertEquals(0.85, secondarySubtitleSpeedForRestore(0.85, 1.25), 0.0)

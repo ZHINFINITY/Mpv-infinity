@@ -32,7 +32,7 @@ class ReferenceUiRollbackContractTest {
       // Mpv-infinity aspect-recovery follow-up: decoder changes can retry the remembered failed video track.
       // Local playback follow-up: suppress local-startup false buffering until the first frame while retaining remote cache stalls.
       // Native follow-up: loading-ahead does not show a buffering spinner while Media3 is playing.
-      "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "8ddca137fb72df56d7738ff6d5ec2fc54ba0458124e5751e6376347c3ed88971" /* Integrated landscape lanes and source-aware startup buffering */,
+      "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "8b7f5a7bdde947a3dfd8d2cc0732203856ced79ba0d49072547e9aca97c98b05" /* Integrated landscape lanes and source-aware startup buffering */,
       // Owner follow-up: music uses its legacy visual rail while video retains the global-glass path.
       "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/Seekbar.kt" to "5e3cbc03be3aa7b35f464e0ee313615192d8d1cdcfbc7e8a819b7a6c2331843c",
       // Build 1910: shared rimLight/thick-surface routing is intentionally owned by this stream.
@@ -57,6 +57,10 @@ class ReferenceUiRollbackContractTest {
     assertTrue(current.contains("val snapshot = immutableGlassSnapshot(bitmap)"))
     assertTrue(current.contains("bitmap.copy(Bitmap.Config.ARGB_8888, false)"))
     assertTrue(current.contains("pendingRetirements > MaxRetiredBitmapCount"))
+    assertTrue(current.contains("GlassCustomizationPolicy.sampledFrostStrength(tuning.frost, largeSurfaceVisible)"))
+    assertTrue(current.contains("val currentFrost by rememberUpdatedState(sampledFrost)"))
+    assertTrue(current.contains("val frostStrength = currentFrost"))
+    assertTrue(current.contains("frostGlassFrame(\n                  copiedBitmap,\n                  frostStrength,"))
     val guarded = """        // When video sampling is temporarily unavailable, the ambient video
         // presentation remains underneath this Compose layer. Do not cover it
         // with the theme's dark surface tint (which reads as a black control
@@ -208,12 +212,14 @@ private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float): Bitmap? = 
     // Capture reuses mutable scratch buffers and now runs on a worker dispatcher. Normalize the
     // sample callsite so older film/cadence contracts remain focused on their own changes.
     val smoothness = listOf(
-      """  val frostPasses = GlassCustomizationPolicy.frostPasses(tuning.frost)
+      """  val sampledFrost = GlassCustomizationPolicy.sampledFrostStrength(tuning.frost, largeSurfaceVisible)
+  val frostPasses = GlassCustomizationPolicy.frostPasses(sampledFrost)
   val frame = remember { mutableStateOf<LiquidGlassFrame?>(null) }
   val captureBuffers = remember { GlassCaptureBuffers() }
   DisposableEffect(Unit) { onDispose { captureBuffers.recycle() } }
   val ready by rememberUpdatedState(isReady)
   val playing by rememberUpdatedState(isPlaying)
+  val currentFrost by rememberUpdatedState(sampledFrost)
 """ to
         """  val frostPasses = GlassCustomizationPolicy.frostPasses(tuning.frost)
   val frame = remember { mutableStateOf<LiquidGlassFrame?>(null) }
@@ -222,6 +228,7 @@ private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float): Bitmap? = 
 """,
       """        }
         // Only the tiny UI copy is cropped/frosted. The actual video surface remains untouched.
+        val frostStrength = currentFrost
         val sampled = withContext(Dispatchers.Default) {
           captureBuffers.sampleMutex.withLock {
             val target = captureBuffers.acquire(dimensions.first, dimensions.second)
@@ -231,7 +238,7 @@ private suspend fun frostGlassFrame(bitmap: Bitmap, strength: Float): Bitmap? = 
               val frosted = copied?.let { copiedBitmap ->
                 frostGlassFrame(
                   copiedBitmap,
-                  tuning.frost,
+                  frostStrength,
                   captureBuffers.pixels,
                   captureBuffers.frostOutput,
                   captureBuffers.frostScratch,

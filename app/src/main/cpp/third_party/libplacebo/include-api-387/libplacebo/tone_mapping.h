@@ -163,7 +163,7 @@ struct pl_tone_map_params {
     PL_DEPRECATED_IN(v6.311) float param; // see `constants`
 };
 
-#define pl_tone_map_params(...) (&(struct pl_tone_map_params) { __VA_ARGS__ });
+#define pl_tone_map_params(...) (&(struct pl_tone_map_params) { __VA_ARGS__ })
 
 // Note: Only does pointer equality testing on `function`
 PL_API bool pl_tone_map_params_equal(const struct pl_tone_map_params *a,

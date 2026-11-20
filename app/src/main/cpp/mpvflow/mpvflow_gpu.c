@@ -1182,6 +1182,8 @@ static struct pl_hook_res flow_renderer_hook(void *priv,
     const char *body = pl_shader_is_compute(params->sh)
         ? "mpvflowSynthesizeAt(ivec2(gl_GlobalInvocationID.xy), color);"
         : "mpvflowSynthesizeAt(ivec2(gl_FragCoord.xy), color);";
+    const int output_w = (int) state->source0->params.w;
+    const int output_h = (int) state->source0->params.h;
     const struct pl_custom_shader custom = {
         .header = state->owner->renderer_hook_shader,
         .description = "MPVFlow renderer-fused synthesis",
@@ -1192,8 +1194,8 @@ static struct pl_hook_res flow_renderer_hook(void *priv,
         .num_descriptors = (int) (sizeof(descs) / sizeof(descs[0])),
         .variables = variables,
         .num_variables = (int) (sizeof(variables) / sizeof(variables[0])),
-        .output_w = (int) state->source0->params.w,
-        .output_h = (int) state->source0->params.h,
+        .output_w = output_w,
+        .output_h = output_h,
     };
     if (!pl_shader_custom(params->sh, &custom))
         return (struct pl_hook_res) { .failed = true };
@@ -1201,7 +1203,7 @@ static struct pl_hook_res flow_renderer_hook(void *priv,
     struct pl_color_space output_color = params->color;
     if (state->linear_hdr_source)
         output_color.transfer = PL_COLOR_TRC_LINEAR;
-    return (struct pl_hook_res) {
+    struct pl_hook_res result = {
         .output = PL_HOOK_SIG_COLOR,
         .sh = params->sh,
         .repr = pl_color_repr_rgb,
@@ -1209,6 +1211,14 @@ static struct pl_hook_res flow_renderer_hook(void *priv,
         .components = 4,
         .rect = params->rect,
     };
+    if (result.rect.x1 - result.rect.x0 != output_w ||
+        result.rect.y1 - result.rect.y0 != output_h) {
+        result.rect.x0 = 0;
+        result.rect.y0 = 0;
+        result.rect.x1 = output_w;
+        result.rect.y1 = output_h;
+    }
+    return result;
 #endif
 }
 
@@ -1341,7 +1351,8 @@ static bool analyze_pair_ghost(MPVFlowGPUContext *ctx, MPVFlowGPUPair *pair)
                                        "pair_ghost_tile_evidence");
     pair->pair_gate[1] = create_texture(ctx, 1, 2, ctx->fmt_rgba16f, false,
                                        "pair_ghost_pair_evidence");
-    pl_tex merged = create_texture(ctx, 1, 1, ctx->fmt_rgba16f, true,
+    pl_tex merged = create_texture(ctx, 1, 1, ctx->fmt_rgba16f,
+                                   (ctx->fmt_rgba16f->caps & PL_FMT_CAP_SAMPLEABLE) != 0,
                                    "pair_ghost_scene_metadata");
     if (!pair->pair_gate[0] || !pair->pair_gate[1] || !merged) {
         destroy_tex(ctx, &merged);
@@ -1385,7 +1396,8 @@ static bool allocate_pair_textures(MPVFlowGPUContext *ctx,
     for (int i = 0; i < FLOW_LEVELS && w >= FLOW_BLOCK && h >= FLOW_BLOCK; i++) {
         struct FlowLevel *lv = &pair->level[i];
         lv->w = w; lv->h = h;
-        const bool hook_sampleable = i == 0;
+        const bool hook_sampleable = i == 0 &&
+            (ctx->fmt_rgba16f->caps & PL_FMT_CAP_SAMPLEABLE);
         lv->luma[0] = create_texture(ctx, w, h, ctx->fmt_rgba16f,
                                      hook_sampleable, "pyramid_luma_frame0");
         lv->luma[1] = create_texture(ctx, w, h, ctx->fmt_rgba16f,
@@ -1414,7 +1426,8 @@ static bool allocate_pair_textures(MPVFlowGPUContext *ctx,
     h = (pair->h + 15) / 16;
     for (int i = 0; i < FLOW_REDUCTIONS; i++) {
         pair->scene[i] = create_texture(ctx, w, h, ctx->fmt_rgba16f,
-                                        w == 1 && h == 1,
+                                        w == 1 && h == 1 &&
+                                        (ctx->fmt_rgba16f->caps & PL_FMT_CAP_SAMPLEABLE),
                                         "scene_cut_reduction_texture");
         if (!pair->scene[i])
             return false;

@@ -18,7 +18,7 @@ class MusicPlaybackIsolationContractTest {
     val launcher = musicSource("MusicPlaybackLauncher.kt")
 
     assertTrue(launcher.contains("Intent(context, MusicPlayerActivity::class.java)"))
-    assertTrue(launcher.contains("MusicQueueLaunchStore.stage(songs, selectedIndex)"))
+    assertTrue(launcher.contains("MusicQueueLaunchStore.stage(songs, selectedIndex, launchSource)"))
     assertTrue(launcher.contains("playRecentAudioPathIfPresent"))
     assertTrue(launcher.contains("if (songs.any { isAudiobookSong(it) })"))
     assertTrue(launcher.contains("playAudiobookSongsOnLegacyPlayer(context, songs, selectedIndex, launchSource)"))

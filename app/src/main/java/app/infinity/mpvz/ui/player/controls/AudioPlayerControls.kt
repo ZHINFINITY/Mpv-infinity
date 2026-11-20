@@ -1972,7 +1972,7 @@ fun AudioPlayerControls(
                 CoverArtCardImage(
                   bitmap = activeCoverOverride ?: albumArtBitmap,
                   artworkUrl = currentArtworkUri,
-                  motionArtwork = currentAudioPresentation?.motionArtwork?.takeIf { activeCoverOverride == null },
+                  motionArtwork = currentAudioPresentation?.motionArtwork?.takeIf { activeCoverOverride == null && !(isRadio && streamCover != null) },
                   isPlaying = paused != true && !coverShown,
                 )
               }

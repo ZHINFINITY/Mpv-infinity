@@ -21,6 +21,7 @@ import app.infinity.mpvz.domain.recentlyplayed.repository.RecentlyPlayedReposito
 import app.infinity.mpvz.repository.MediaFileRepository
 import app.infinity.mpvz.ui.browser.base.BaseBrowserViewModel
 import app.infinity.mpvz.ui.player.PlaybackIdentity
+import app.infinity.mpvz.ui.player.PlaybackStateSaveCoordinator
 import app.infinity.mpvz.ui.player.isPlaybackStateWatched
 import app.infinity.mpvz.utils.history.RecentlyPlayedOps
 import app.infinity.mpvz.utils.media.MediaLibraryEvents
@@ -102,13 +103,17 @@ internal fun explicitVideoWatchedOverride(context: Context, videoPath: String): 
   }
 }
 
-internal fun setExplicitVideoWatchedOverride(context: Context, videoPath: String, watched: Boolean) {
+private val explicitVideoWatchedOverridesLock = Any()
+
+internal fun setExplicitVideoWatchedOverride(context: Context, videoPath: String, watched: Boolean?) {
   val prefix = "$videoPath\u001f"
   val preferences = context.getSharedPreferences("video_watched_overrides", Context.MODE_PRIVATE)
-  val values = preferences.getStringSet("values", emptySet())?.toMutableSet() ?: mutableSetOf()
-  values.removeIf { it.startsWith(prefix) }
-  values += "$prefix${if (watched) 1 else 0}"
-  preferences.edit().putStringSet("values", values).apply()
+  synchronized(explicitVideoWatchedOverridesLock) {
+    val values = preferences.getStringSet("values", emptySet())?.toMutableSet() ?: mutableSetOf()
+    values.removeIf { it.startsWith(prefix) }
+    if (watched != null) values += "$prefix${if (watched) 1 else 0}"
+    preferences.edit().putStringSet("values", values).apply()
+  }
 }
 
 internal fun buildVideoWithPlaybackInfo(
@@ -123,8 +128,8 @@ internal fun buildVideoWithPlaybackInfo(
   explicitlyMarkedWatched: Boolean = false,
 ): VideoWithPlaybackInfo {
   val durationSeconds = video.duration / 1000L
-  // Only the explicit override is allowed to force NEW. A reset playback row (including Mark as
-  // None) must not become a stale NEW override and must remain governed by the age window.
+  // Only an explicit child override can force NEW: a reset playback row alone (including Mark as
+  // None) stays age-governed, while an explicit manual NEW survives an old file or watched folder.
   val persistedUnwatched = explicitlyMarkedUnwatched
   val newLabelWindowMillis = newLabelDays.toLong() * 24L * 60L * 60L * 1000L
   val videoAgeMillis = currentTimeMillis - video.dateModified * 1000L
@@ -181,6 +186,11 @@ class VideoListViewModel(
           split.size == 2 && split[0] == bucketId && split[1] == "1"
         } == true
 
+  private fun explicitlyMarkedUnwatched(video: Video): Boolean =
+    explicitVideoWatchedOverride(getApplication(), video.path) == false
+
+  private fun explicitlyMarkedWatched(video: Video): Boolean =
+    explicitVideoWatchedOverride(getApplication(), video.path) == true
   // Using MediaFileRepository singleton directly
 
   private val _videos = MutableStateFlow<List<Video>>(emptyList())
@@ -505,48 +515,52 @@ class VideoListViewModel(
 
   /** Applies the local VideoListScreen-only Mark as action. */
   fun markAs(video: Video, markAs: VideoMarkAs) {
+    val canonicalIdentifier = canonicalPlaybackIdentifier(video)
+    // Sequence at the user action, so an already-captured older player snapshot cannot undo it.
+    val sequence = PlaybackStateSaveCoordinator.nextSequence()
     viewModelScope.launch(Dispatchers.IO) {
       val durationSeconds = (video.duration / 1000L).coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
-      val canonicalIdentifier = canonicalPlaybackIdentifier(video)
       runCatching {
-        val current = findPlaybackState(video) ?: emptyPlaybackState(video, durationSeconds)
-        playbackStateRepository.upsert(
-          playbackStateForMarkAs(current, markAs, durationSeconds).copy(mediaTitle = canonicalIdentifier),
-        )
-
-        val overrides = getApplication<Application>()
-          .getSharedPreferences("video_watched_overrides", android.content.Context.MODE_PRIVATE)
-        val values = overrides.getStringSet("values", emptySet())?.toMutableSet() ?: mutableSetOf()
-        values.removeIf { it.startsWith("${video.path}\u001f") }
-        when (markAs) {
-          VideoMarkAs.New -> values.add("${video.path}\u001f0")
-          VideoMarkAs.Finished -> values.add("${video.path}\u001f1")
-          VideoMarkAs.LastPlayed, VideoMarkAs.None -> Unit
-        }
-        overrides.edit().putStringSet("values", values).apply()
-
-        when (markAs) {
-          VideoMarkAs.New, VideoMarkAs.None -> recentlyPlayedRepository.deleteByFilePath(video.path)
-          VideoMarkAs.LastPlayed -> {
-            recentlyPlayedRepository.deleteByFilePath(video.path)
-            RecentlyPlayedOps.addRecentlyPlayed(
-              context = getApplication(), filePath = video.path, fileName = video.displayName,
-              videoTitle = video.title, duration = video.duration, fileSize = video.size,
-              width = video.width, height = video.height, launchSource = "video_list",
-            )
-          }
-          VideoMarkAs.Finished -> {
-            // Manual finish is retained in history but excluded from the active highlight query.
-            recentlyPlayedRepository.deleteByFilePath(video.path)
-            RecentlyPlayedOps.addRecentlyPlayed(
-              context = getApplication(), filePath = video.path, fileName = video.displayName,
-              videoTitle = video.title, duration = video.duration, fileSize = video.size,
-              width = video.width, height = video.height, launchSource = "manual_finished",
-            )
-          }
+        val committed = PlaybackStateSaveCoordinator.persistIfNewest(canonicalIdentifier, sequence) {
+          val current = findPlaybackState(video) ?: emptyPlaybackState(video, durationSeconds)
+          playbackStateRepository.upsert(
+            playbackStateForMarkAs(current, markAs, durationSeconds).copy(mediaTitle = canonicalIdentifier),
+          )
+          setExplicitVideoWatchedOverride(
+            getApplication(),
+            video.path,
+            when (markAs) {
+              VideoMarkAs.New -> false
+              VideoMarkAs.Finished -> true
+              VideoMarkAs.LastPlayed, VideoMarkAs.None -> null
+            },
+          )
         }
 
-        PlaybackStateEvents.notifyChanged(canonicalIdentifier)
+        if (committed) {
+          when (markAs) {
+            VideoMarkAs.New, VideoMarkAs.None -> recentlyPlayedRepository.deleteByFilePath(video.path)
+            VideoMarkAs.LastPlayed -> {
+              recentlyPlayedRepository.deleteByFilePath(video.path)
+              RecentlyPlayedOps.addRecentlyPlayed(
+                context = getApplication(), filePath = video.path, fileName = video.displayName,
+                videoTitle = video.title, duration = video.duration, fileSize = video.size,
+                width = video.width, height = video.height, launchSource = "video_list",
+              )
+            }
+            VideoMarkAs.Finished -> {
+              // Manual finish is retained in history but excluded from the active highlight query.
+              recentlyPlayedRepository.deleteByFilePath(video.path)
+              RecentlyPlayedOps.addRecentlyPlayed(
+                context = getApplication(), filePath = video.path, fileName = video.displayName,
+                videoTitle = video.title, duration = video.duration, fileSize = video.size,
+                width = video.width, height = video.height, launchSource = "manual_finished",
+              )
+            }
+          }
+
+          PlaybackStateEvents.notifyChanged(canonicalIdentifier)
+        }
         MediaLibraryEvents.notifyChanged()
         loadPlaybackInfo(_videos.value)
       }.onFailure { error ->

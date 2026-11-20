@@ -503,7 +503,7 @@ class MPVView(
           "fallback=source_passthrough",
       )
     }
-    val mpvFlowFrameInterpolationEnabled =
+    var mpvFlowFrameInterpolationEnabled =
       mpvFlowFrameInterpolationCandidate && flowTimingOptionsReady
     mpvFlowOsdStatsEnabled = false
     mpvFlowDiagnosticsEnabled = BuildConfig.DEBUG && BuildConfig.MPV_HAS_MPVFLOW && mpvFlowFrameInterpolationEnabled
@@ -711,7 +711,13 @@ class MPVView(
         val result = PlaybackSession.setOptionString("motion-interpolation", targetFps.toString())
         acceptedInterpolationConfiguration = if (result == 0) {
           mpvFlowFrameInterpolationEnabled to mpvFlowTargetFps
-        } else null
+        } else {
+          // Do not retain or advertise a target hint when native rejects the option.
+          mpvFlowFrameInterpolationEnabled = false
+          interpolationOutputFrameRate = null
+          PlaybackSession.setSurfaceFrameRateHintHz(null)
+          null
+        }
         "motion_interpolation_rc=$result target_fps=$targetFps"
       } else {
         acceptedInterpolationConfiguration = null

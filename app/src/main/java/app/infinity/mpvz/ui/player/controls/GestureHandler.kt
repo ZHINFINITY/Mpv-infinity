@@ -1280,9 +1280,13 @@ fun GestureHandler(
             beginGesture(down.id.value, down.uptimeMillis)
             val startPosition = down.position
             val startTime = System.currentTimeMillis()
-            val isSubtitleTouch =
-              swipeSubtitlesToSeekDialog &&
-                subtitleLaneAtPoint(startPosition.x, startPosition.y, size.width.toFloat(), size.height.toFloat()) != null
+            val subtitleTouchLane =
+              if (swipeSubtitlesToSeekDialog) {
+                subtitleLaneAtPoint(startPosition.x, startPosition.y, size.width.toFloat(), size.height.toFloat())
+              } else {
+                null
+              }
+            val isSubtitleTouch = subtitleTouchLane != null
 
             var gestureType: String? = null
             var hasStartedSeeking = false
@@ -1314,7 +1318,8 @@ fun GestureHandler(
                       hasStartedSeeking = true
                       val isForward = if (isSwipeSubtitlesInverted) deltaX < 0 else deltaX > 0
                       val direction = if (isForward) "1" else "-1"
-                      PlaybackSession.command("sub-seek", direction)
+                      val track = if (subtitleTouchLane == SubtitleLane.Secondary) "secondary" else "primary"
+                      PlaybackSession.command("sub-seek", direction, track)
                       haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                       viewModel.playerUpdate.update {
                         PlayerUpdates.ShowText(

@@ -65,20 +65,51 @@ internal fun Uri.extractLocalPath(): String? {
 internal fun Uri.openContentFd(
   context: Context,
   allowFdFallback: Boolean = true,
-): String? =
-  extractLocalPath()
-    ?: tryFileDescriptorPath(context, allowFdFallback)
-    ?: tryMediaStoreQuery(context)
-    ?: tryDocumentUriParsing(context)
-    ?: (if (allowFdFallback) tryFileDescriptorFallback(context) else null)
+  shouldAbort: () -> Boolean = { Thread.currentThread().isInterrupted },
+): String? {
+  val normalizedUri = normalizeScheme()
+  if (shouldAbort()) return null
+  normalizedUri.extractLocalPath()?.let { return it }
+  if (shouldAbort()) return null
+  normalizedUri.tryFileDescriptorPath(context, allowFdFallback, shouldAbort)?.let { resolved ->
+    if (shouldAbort()) {
+      resolved.closeDetachedFileDescriptorIfNeeded()
+      return null
+    }
+    return resolved
+  }
+  if (shouldAbort()) return null
+  normalizedUri.tryMediaStoreQuery(context)?.let { return it }
+  if (shouldAbort()) return null
+  normalizedUri.tryDocumentUriParsing(context)?.let { return it }
+  if (shouldAbort() || !allowFdFallback) return null
+  val fallback = normalizedUri.tryFileDescriptorFallback(context, shouldAbort)
+  if (shouldAbort()) {
+    fallback?.closeDetachedFileDescriptorIfNeeded()
+    return null
+  }
+  return fallback
+}
+
+private fun String.closeDetachedFileDescriptorIfNeeded() {
+  if (!startsWith("fd://")) return
+  removePrefix("fd://").toIntOrNull()?.let { fd ->
+    runCatching { android.os.ParcelFileDescriptor.adoptFd(fd).close() }
+  }
+}
 
 /** Resolves identity only; unlike [openContentFd], this never detaches a file descriptor. */
-internal fun Uri.resolveLocalPath(context: Context): String? =
-  when (scheme?.lowercase()) {
-    "file" -> path
-    "content" -> extractLocalPath() ?: tryMediaStoreQuery(context) ?: tryDocumentUriParsing(context)
+internal fun Uri.resolveLocalPath(context: Context): String? {
+  val normalizedUri = normalizeScheme()
+  return when (normalizedUri.scheme) {
+    "file" -> normalizedUri.path
+    "content" ->
+      normalizedUri.extractLocalPath()
+        ?: normalizedUri.tryMediaStoreQuery(context)
+        ?: normalizedUri.tryDocumentUriParsing(context)
     else -> null
   }
+}
 
 /**
  * Method 1: Extract real filesystem path from file descriptor.
@@ -90,24 +121,32 @@ internal fun Uri.resolveLocalPath(context: Context): String? =
  */
 private fun Uri.tryFileDescriptorPath(
   context: Context,
-  allowFdFallback: Boolean = true,
-): String? =
-  runCatching {
+  allowFdFallback: Boolean,
+  shouldAbort: () -> Boolean,
+): String? {
+  return runCatching {
     val pfd = context.contentResolver.openFileDescriptor(this, "r") ?: return null
-    val path = Utils.findRealPath(pfd.fd)
-    if (path != null && File(path).canRead()) {
-      pfd.close()
-      Log.d(TAG, "Resolved via file descriptor: $path")
-      path
-    } else if (allowFdFallback) {
-      val fd = pfd.detachFd()
-      Log.d(TAG, "Using file descriptor fallback (fd://$fd) for $this")
-      "fd://$fd"
-    } else {
-      pfd.close()
-      null
+    var detached = false
+    try {
+      if (shouldAbort()) return null
+      val path = Utils.findRealPath(pfd.fd)
+      if (shouldAbort()) return null
+      if (path != null && File(path).canRead()) {
+        Log.d(TAG, "Resolved via file descriptor: $path")
+        path
+      } else if (allowFdFallback) {
+        val fd = pfd.detachFd()
+        detached = true
+        Log.d(TAG, "Using file descriptor fallback (fd://$fd) for $this")
+        "fd://$fd"
+      } else {
+        null
+      }
+    } finally {
+      if (!detached) pfd.close()
     }
   }.getOrNull()
+}
 
 /**
  * Method 2: Query MediaStore for direct file path.
@@ -216,13 +255,19 @@ private fun tryExternalStoragePaths(docId: String): String? {
  * Common with scoped storage on Android 11+.
  */
 @SuppressLint("Recycle")
-private fun Uri.tryFileDescriptorFallback(context: Context): String? =
+private fun Uri.tryFileDescriptorFallback(context: Context, shouldAbort: () -> Boolean): String? =
   runCatching {
-    context.contentResolver.openFileDescriptor(this, "r")?.detachFd()?.let { fd ->
-      "fd://$fd".also {
-        Log.d(TAG, "Using file descriptor fallback: $it")
-      }
+    val pfd = context.contentResolver.openFileDescriptor(this, "r") ?: return null
+    if (shouldAbort()) {
+      pfd.close()
+      return null
     }
+    val fd = pfd.detachFd()
+    if (shouldAbort()) {
+      runCatching { android.os.ParcelFileDescriptor.adoptFd(fd).close() }
+      return null
+    }
+    "fd://$fd".also { Log.d(TAG, "Using file descriptor fallback: $it") }
   }.getOrNull()
 
 /**
@@ -234,22 +279,24 @@ internal fun Uri.resolveUri(
   context: Context,
   allowFdFallback: Boolean = true,
 ): String? {
-  if (scheme == null) {
+  val normalizedUri = normalizeScheme()
+  val normalizedScheme = normalizedUri.scheme
+  if (normalizedScheme == null) {
     Log.e(TAG, "URI has null scheme: $this")
     return null
   }
 
-  return when (scheme) {
-    "file" -> path
+  return when (normalizedScheme) {
+    "file" -> normalizedUri.path
     "content" ->
-      openContentFd(context, allowFdFallback = allowFdFallback)
-        ?: if (allowFdFallback) null else toString()
-    "data" -> "data://$schemeSpecificPart"
-    "magnet", "torrent" -> toString()
-    NetworkPlaybackUri.SCHEME -> toString()
-    in Utils.PROTOCOLS -> toString()
+      normalizedUri.openContentFd(context, allowFdFallback = allowFdFallback)
+        ?: if (allowFdFallback) null else normalizedUri.toString()
+    "data" -> "data://${normalizedUri.schemeSpecificPart}"
+    "magnet", "torrent" -> normalizedUri.toString()
+    NetworkPlaybackUri.SCHEME -> normalizedUri.toString()
+    in Utils.PROTOCOLS -> normalizedUri.toString()
     else -> {
-      Log.e(TAG, "Unsupported URI scheme: $scheme")
+      Log.e(TAG, "Unsupported URI scheme: $normalizedScheme")
       null
     }
   }

@@ -227,7 +227,7 @@ struct pl_shader_desc {
 
     // For storage images and buffers, this specifies additional memory
     // qualifiers on the descriptor. It's highly recommended to always use
-    // at least PL_MEMORY_RESTRICT. Ignored for other descriptor types.
+    // at least PL_MEMORY_COHERENT or PL_MEMORY_VOLATILE as appropriate. Ignored for other descriptor types.
     pl_memory_qualifiers memory;
 };
 

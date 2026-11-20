@@ -47,6 +47,8 @@ end
 
 assert(page() == "")
 has(page("disabled", 0, 1e9, 0, 0, 0), "MEMC:disabled")
+has(page("active", 0, 1e9, 0, 0, 0), "MEMC:active")
+has(page("disabled", 1, 1e9, 0, 0, 0), "MEMC:disabled")
 no_rates(page("active", 1, 1e9, 200, 100))
 local text = page("active", 1, 2e9, 260, 130)
 has(text, "MEMC:active")

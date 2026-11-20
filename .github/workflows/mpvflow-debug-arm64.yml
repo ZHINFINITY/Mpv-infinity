@@ -107,6 +107,8 @@ jobs:
         run: python3 scripts/tests/mpvrx_motion_source_test.py --mpv-dir native-builder/buildscripts/deps/mpv --require-analysis-downsample-aa --require-paired-color-mask
       - name: Overlay FongMi 645 MPV/FFmpeg arm64 runtime into MPV∞ AAR
         run: python3 scripts/package-mpv-runtime-aar.py --runtime-apk "$MPVFLOW_RUNTIME_APK" --mpv-aar app/libs/mpvlib.aar --abis arm64-v8a
+      - name: Verify vendored libplacebo API headers
+        run: python3 scripts/tests/mpvflow_placebo_api_headers_test.py
       - name: Test Android NDK path resolver
         run: python3 scripts/tests/android_ndk_path_test.py
       - name: Test Media3 FFmpeg runtime verifier

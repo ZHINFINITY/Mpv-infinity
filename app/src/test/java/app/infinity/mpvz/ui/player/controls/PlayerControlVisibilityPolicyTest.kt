@@ -171,6 +171,32 @@ class PlayerControlVisibilityPolicyTest {
   }
 
   @Test
+  fun localNativeLoadingWaitsForFirstFrameButRemoteLoadingCanStall() {
+    assertFalse(
+      PlayerControlVisibilityPolicy.isNativePlaybackStalled(
+        isEnded = false,
+        hasError = false,
+        isReady = false,
+        isLoading = true,
+        isBuffering = false,
+        isLocalSource = true,
+        hasRenderedFirstFrame = false,
+      ),
+    )
+    assertTrue(
+      PlayerControlVisibilityPolicy.isNativePlaybackStalled(
+        isEnded = false,
+        hasError = false,
+        isReady = false,
+        isLoading = true,
+        isBuffering = false,
+        isLocalSource = false,
+        hasRenderedFirstFrame = false,
+      ),
+    )
+  }
+
+  @Test
   fun mpvUsesItsDebouncedBufferingStateAndSeekingSuppressesEitherEngine() {
     assertTrue(
       PlayerControlVisibilityPolicy.shouldShowBufferingIndicator(
@@ -237,6 +263,7 @@ class PlayerControlVisibilityPolicyTest {
         isEnded = false,
         isReady = true,
         isBuffering = false,
+        isLoading = true,
         isLocalSource = false,
         hasRenderedFirstFrame = true,
         isPlaying = true,
@@ -247,18 +274,31 @@ class PlayerControlVisibilityPolicyTest {
         isEnded = false,
         isReady = true,
         isBuffering = true,
+        isLoading = true,
         isLocalSource = false,
         hasRenderedFirstFrame = true,
         isPlaying = true,
+      ),
+    )
+    assertFalse(
+      PlayerControlVisibilityPolicy.isNativePlaybackStalled(
+        isEnded = false,
+        isReady = true,
+        isBuffering = false,
+        isLoading = true,
+        isLocalSource = false,
+        hasRenderedFirstFrame = true,
+        isPlaying = false,
       ),
     )
     assertTrue(
       PlayerControlVisibilityPolicy.isNativePlaybackStalled(
         isEnded = false,
         isReady = true,
-        isBuffering = true,
+        isBuffering = false,
+        isLoading = true,
         isLocalSource = false,
-        hasRenderedFirstFrame = true,
+        hasRenderedFirstFrame = false,
         isPlaying = false,
       ),
     )

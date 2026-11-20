@@ -61,6 +61,16 @@ class EffectiveRuntimeConfigTest(unittest.TestCase):
         self.assertEqual("n9.1-FongMi-f2c5162b", ffmpeg_runtime_version(FONGMI_RUNTIME))
         self.assertEqual({"CONFIG_GPL": 0, "CONFIG_NONFREE": 0}, flags)
 
+    def test_pinned_fongmi_runtime_accepts_git_abbreviation_lengths(self) -> None:
+        for length in (7, 10, 12, 20, 40):
+            version = (
+                f"git-2026-11-10-{FONGMI_SHA[:length]}-"
+                f"mpvflow-fongmi-{FONGMI_SHA}"
+            )
+            runtime = BASE_RUNTIME.replace("n9.0.2", version)
+            with self.subTest(length=length):
+                self.assertEqual("n9.1-FongMi-f2c5162b", ffmpeg_runtime_version(runtime))
+
     def test_unpinned_or_wrong_ffmpeg_markers_are_rejected(self) -> None:
         for version in (
             "n8.0.2",
@@ -72,6 +82,8 @@ class EffectiveRuntimeConfigTest(unittest.TestCase):
             f"n9.1.0-mpvflow-fongmi-{FONGMI_SHA}",
             f"9.1.git-mpvflow-fongmi-{FONGMI_SHA}",
             f"git-2026-11-10-deadbee-mpvflow-fongmi-{FONGMI_SHA}",
+            f"git-2026-11-11-f2c5162-mpvflow-fongmi-{FONGMI_SHA}",
+            f"git-2026-11-10-f-mpvflow-fongmi-{FONGMI_SHA}",
             f"garbage-mpvflow-fongmi-{FONGMI_SHA}",
             "git-2026-11-10-f2c5162-mpvflow-fongmi-wrongcommit",
         ):

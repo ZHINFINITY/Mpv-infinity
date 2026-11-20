@@ -21,6 +21,7 @@ import java.io.StringReader
 import java.net.URI
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -32,6 +33,8 @@ import okhttp3.Credentials
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import kotlinx.coroutines.InternalCoroutinesApi
+import kotlinx.coroutines.Job
 
 data class M3UPlaylistItem(
   val url: String,
@@ -73,7 +76,39 @@ data class M3ULimits(
 
 /** Bounded parser/loader for simple and extended M3U playlists. */
 object M3UParser {
+  internal const val PROVIDER_QUERY_TIMEOUT_MS = 1_000L
+  internal const val PROVIDER_READ_TIMEOUT_MS = 4_000L
   private const val TIMEOUT_MS = 30_000L
+
+  /** Canonicalizes equivalent absolute local paths without changing relative-playlist semantics. */
+  internal fun sourceCacheKey(source: String): String {
+    val schemeMatch = Regex("^([A-Za-z][A-Za-z0-9+.-]*):").find(source)
+    if (schemeMatch == null) {
+      val file = File(source)
+      return if (file.isAbsolute) {
+        runCatching { file.canonicalFile.toURI().toASCIIString() }
+          .getOrElse { file.absoluteFile.toURI().toASCIIString() }
+      } else {
+        source
+      }
+    }
+
+    val scheme = schemeMatch.groupValues[1]
+    val normalizedScheme = scheme.lowercase(Locale.ROOT) + source.substring(scheme.length)
+    if (!scheme.equals("file", ignoreCase = true)) return normalizedScheme
+
+    val parsed = runCatching { URI(source) }.getOrNull() ?: return normalizedScheme
+    val authority = parsed.rawAuthority
+    if (!authority.isNullOrEmpty() && !authority.equals("localhost", ignoreCase = true)) {
+      return normalizedScheme
+    }
+    val path = parsed.path ?: return normalizedScheme
+    val file = File(path)
+    if (!file.isAbsolute) return normalizedScheme
+    val canonical = runCatching { file.canonicalFile.toURI().toASCIIString() }
+      .getOrElse { file.absoluteFile.toURI().toASCIIString() }
+    return canonical + parsed.rawQuery?.let { "?$it" }.orEmpty() + parsed.rawFragment?.let { "#$it" }.orEmpty()
+  }
   // HTTP header values must be ISO-8859-1/ASCII compatible. The Unicode infinity symbol
   // caused OkHttp's Request.Builder to throw, which was surfaced as "Invalid playlist request".
   private const val DEFAULT_USER_AGENT = "MpvInfinity/2.0"
@@ -157,32 +192,69 @@ object M3UParser {
   suspend fun parseFromUri(
     context: Context,
     uri: Uri,
-  ): M3UParseResult =
-    withContext(Dispatchers.IO) {
+  ): M3UParseResult {
+    val normalizedUri = uri.normalizeScheme()
+    val providerReadCancelled = java.util.concurrent.atomic.AtomicBoolean(false)
+    val streamRef = java.util.concurrent.atomic.AtomicReference<InputStream?>(null)
+    val outcome = BoundedProviderIo.readWithStatus(
+      timeoutMs = PROVIDER_READ_TIMEOUT_MS,
+      fallback = M3UParseResult.Error("M3U provider read timed out"),
+      onCancellationRequested = { providerReadCancelled.set(true) },
+      onCancellation = { runCatching { streamRef.getAndSet(null)?.close() } },
+    ) {
       try {
-        // Identity-only resolution never detaches an fd, but recovers the parent directory for
-        // relative entries in primary-storage document URIs.
-        val sourceUrl = uri.resolveLocalPath(context) ?: uri.toString()
+        check(!Thread.currentThread().isInterrupted) { "M3U provider read cancelled" }
+        val sourceUrl = normalizedUri.resolveLocalPath(context) ?: normalizedUri.toString()
         val rawFilename =
-          context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+          context.contentResolver.query(normalizedUri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
             val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
             if (nameIndex >= 0 && cursor.moveToFirst()) cursor.getString(nameIndex) else null
-          } ?: uri.lastPathSegment
-            ?: "Local M3U Playlist"
+          } ?: normalizedUri.lastPathSegment ?: "Local M3U Playlist"
+        check(!Thread.currentThread().isInterrupted) { "M3U provider read cancelled" }
         val playlistName = cleanPlaylistName(decode(rawFilename), "Local M3U Playlist")
-        val stream = context.contentResolver.openInputStream(uri) ?: return@withContext error("Failed to open file")
-
-        parseFromStream(stream, sourceUrl, playlistName)
-      } catch (error: CancellationException) {
-        throw error
+        if (providerReadCancelled.get()) return@readWithStatus M3UParseResult.Error("M3U provider read timed out")
+        val stream = context.contentResolver.openInputStream(normalizedUri)
+          ?: return@readWithStatus M3UParseResult.Error("Failed to open file")
+        streamRef.set(stream)
+        if (providerReadCancelled.get()) {
+          streamRef.getAndSet(null)?.let(::closeProviderStreamAsync)
+          return@readWithStatus M3UParseResult.Error("M3U provider read timed out")
+        }
+        check(!Thread.currentThread().isInterrupted) { "M3U provider read cancelled" }
+        parseFromStreamBlocking(stream, sourceUrl, playlistName) {
+          if (Thread.currentThread().isInterrupted) throw InterruptedException("M3U provider read cancelled")
+        }
+      } catch (cancelled: CancellationException) {
+        throw cancelled
       } catch (_: Exception) {
-        error("Failed to parse playlist")
+        M3UParseResult.Error("Failed to parse playlist")
+      } finally {
+        val remainingStream = streamRef.getAndSet(null)
+        if (providerReadCancelled.get()) {
+          remainingStream?.let(::closeProviderStreamAsync)
+        } else {
+          runCatching { remainingStream?.close() }
+        }
       }
     }
+    return when (outcome.status) {
+      BoundedProviderIo.ReadStatus.COMPLETED -> outcome.value
+      BoundedProviderIo.ReadStatus.TIMED_OUT -> M3UParseResult.Error("M3U provider read timed out")
+      BoundedProviderIo.ReadStatus.SATURATED -> M3UParseResult.Error("M3U provider I/O is saturated; try again later")
+      BoundedProviderIo.ReadStatus.FAILED -> M3UParseResult.Error("M3U provider read failed", outcome.error)
+    }
+  }
+
+  private fun closeProviderStreamAsync(stream: InputStream) {
+    if (!BoundedProviderIo.cleanupAsync { runCatching { stream.close() } }) {
+      runCatching { stream.close() }
+    }
+  }
 
   /**
    * Parses and closes [inputStream]. Cancellation closes the stream so a blocked network read can unwind.
    */
+  @OptIn(InternalCoroutinesApi::class)
   suspend fun parseFromStream(
     inputStream: InputStream,
     sourceUrl: String? = null,
@@ -190,13 +262,13 @@ object M3UParser {
     limits: M3ULimits = defaultLimits,
   ): M3UParseResult {
     val context = currentCoroutineContext()
+    val cancellationHandle =
+      context[Job]?.invokeOnCompletion(onCancelling = true) { cause ->
+        if (cause != null) BoundedProviderIo.cleanupAsync { inputStream.close() }
+      }
     return try {
       runInterruptible(Dispatchers.IO) {
-        inputStream.use { stream ->
-          LimitedInputStream(stream, limits.maxBytes)
-            .bufferedReader(StandardCharsets.UTF_8)
-            .use { reader -> parseReader(reader, sourceUrl, overridePlaylistName, limits) { context.ensureActive() } }
-        }
+        parseFromStreamBlocking(inputStream, sourceUrl, overridePlaylistName, limits) { context.ensureActive() }
       }
     } catch (error: CancellationException) {
       throw error
@@ -206,8 +278,31 @@ object M3UParser {
     } catch (_: Exception) {
       context.ensureActive()
       error("Failed to read playlist")
+    } finally {
+      cancellationHandle?.dispose()
     }
   }
+
+  private fun parseFromStreamBlocking(
+    inputStream: InputStream,
+    sourceUrl: String?,
+    overridePlaylistName: String?,
+    limits: M3ULimits = defaultLimits,
+    checkCancellation: () -> Unit,
+  ): M3UParseResult =
+    try {
+      inputStream.use { stream ->
+        LimitedInputStream(stream, limits.maxBytes)
+          .bufferedReader(StandardCharsets.UTF_8)
+          .use { reader -> parseReader(reader, sourceUrl, overridePlaylistName, limits, checkCancellation) }
+      }
+    } catch (error: CancellationException) {
+      throw error
+    } catch (error: M3ULimitException) {
+      M3UParseResult.Error(error.message ?: "Playlist exceeds a safety limit")
+    } catch (_: Exception) {
+      M3UParseResult.Error("Failed to read playlist")
+    }
 
   /** Compatibility wrapper for callers that already hold text. New loaders should use [parseFromStream]. */
   fun parseContent(

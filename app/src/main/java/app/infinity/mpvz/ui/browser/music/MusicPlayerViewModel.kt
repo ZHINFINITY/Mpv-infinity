@@ -9,13 +9,17 @@ import android.app.Application
 import android.content.ComponentName
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
 import androidx.media3.common.C
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** Activity-side controller for the independent Music MediaSession. */
 internal class MusicPlayerViewModel(application: Application) : AndroidViewModel(application) {
@@ -26,16 +30,36 @@ internal class MusicPlayerViewModel(application: Application) : AndroidViewModel
   private var controllerFuture: ListenableFuture<MediaController>? = null
   private var pendingLaunch: MusicQueueLaunch? = null
   private var appliedLaunchToken: String? = null
+  private var restoreRequestGeneration = 0L
 
   init {
     connectToMusicService()
   }
 
   fun openLaunch(launch: MusicQueueLaunch) {
+    restoreRequestGeneration++
     if (appliedLaunchToken == launch.token) return
     appliedLaunchToken = launch.token
     pendingLaunch = launch
     mutableController.value?.let { applyLaunch(it, launch) }
+  }
+
+  fun restoreLaunch(requestedToken: String?, fallback: MusicQueueLaunch?) {
+    val generation = ++restoreRequestGeneration
+    val app = getApplication<Application>()
+    viewModelScope.launch {
+      val restored =
+        withContext(Dispatchers.IO) {
+          restoreMusicPlaybackLaunch(
+            snapshot = MusicPlaybackResumeStore.load(app),
+            requestedToken = requestedToken,
+            fallback = fallback,
+            isUriAccessible = { uri -> isMusicPlaybackUriAccessible(app, uri) },
+          )
+        }
+      if (generation != restoreRequestGeneration) return@launch
+      restored?.let(::openLaunch)
+    }
   }
 
   private fun connectToMusicService() {
@@ -58,19 +82,23 @@ internal class MusicPlayerViewModel(application: Application) : AndroidViewModel
     launch: MusicQueueLaunch,
   ) {
     if (launch.songs.isEmpty()) return
-    val items = launch.songs.map(MusicSong::toMusicMediaItem)
+    val items =
+      launch.songs.map { song ->
+        song.toMusicMediaItem(launchToken = launch.token, launchSource = launch.launchSource)
+      }
     val selectedIndex = launch.currentIndex.coerceIn(items.indices)
     val firstBatch = items.take(MAX_ITEMS_PER_TRANSACTION)
+    val startPositionMs = launch.positionMs.takeIf { it > 0L } ?: C.TIME_UNSET
     controller.setMediaItems(
       firstBatch,
       selectedIndex.coerceAtMost(firstBatch.lastIndex),
-      C.TIME_UNSET,
+      startPositionMs,
     )
     items.drop(firstBatch.size).chunked(MAX_ITEMS_PER_TRANSACTION).forEach { batch ->
       controller.addMediaItems(batch)
     }
     if (selectedIndex >= firstBatch.size) {
-      controller.seekTo(selectedIndex, C.TIME_UNSET)
+      controller.seekTo(selectedIndex, startPositionMs)
     }
     controller.prepare()
     controller.play()

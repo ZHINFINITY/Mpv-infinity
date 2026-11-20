@@ -84,19 +84,19 @@ class RadioMusicUiContracts(unittest.TestCase):
 
     def test_raw_m3u_preflight_precedes_player_ui_and_is_reused(self):
         source = (JAVA / "ui/player/PlayerActivity.kt").read_text()
-        on_create = source[source.index("override fun onCreate("):source.index("private fun shouldPreflightExternalM3u")]
+        on_create = source[source.index("override fun onCreate("):source.index("private fun shouldAttemptExternalM3uPreflight")]
         self.assertIn("preflightExternalM3u(launchIntent, preflightGeneration)", on_create)
         self.assertNotIn("setContentView", on_create)
         self.assertIn("withTimeoutOrNull(M3U_PREFLIGHT_TIMEOUT_MS)", source)
         self.assertIn('sourceIntent.putExtra("mime_type", "audio/x-mpegurl")', source)
-        self.assertIn("preflightM3uParse = ExternalM3uPreflight(generation, playableUri, result)", source)
-        self.assertIn("it.generation == m3uPreflightGeneration && it.sourceUri == uriString", source)
+        self.assertIn("preflightM3uParse = ExternalM3uPreflight(generation, M3UParser.sourceCacheKey(playableUri), result)", source)
+        self.assertIn("it.generation == m3uPreflightGeneration && it.sourceKey == M3UParser.sourceCacheKey(uriString)", source)
         self.assertIn("shouldRetryM3uPreflightFailure(cachedResult)", source)
         self.assertIn("startInitializedPlayer()", source)
         self.assertIn("resumeInitializedPlayer()", source)
         new_intent = source[source.index("override fun onNewIntent("):source.index("private fun handleNewIntent(")]
         self.assertIn("m3uPreflightJob?.cancel()", new_intent)
-        self.assertIn("shouldPreflightExternalM3u(intent)", new_intent)
+        self.assertIn("shouldAttemptExternalM3uPreflight(intent)", new_intent)
         self.assertNotIn('extras?.getStringArrayExtra(', source)
 
     def test_source_picker_is_bounded_and_accessible(self):
@@ -175,7 +175,7 @@ class RadioMusicUiContracts(unittest.TestCase):
         service = (JAVA / "ui/browser/music/MusicPlaybackService.kt").read_text()
         recent = (JAVA / "ui/browser/recentlyplayed/RecentlyPlayedScreen.kt").read_text()
         self.assertIn("Intent(context, MusicPlayerActivity::class.java)", launcher)
-        self.assertIn("MusicQueueLaunchStore.stage(songs, selectedIndex)", launcher)
+        self.assertIn("MusicQueueLaunchStore.stage(songs, selectedIndex, launchSource)", launcher)
         self.assertIn("putExtra(MusicPlayerActivity.EXTRA_ARTIST, selectedSong.artist)", launcher)
         self.assertIn("putExtra(MusicPlayerActivity.EXTRA_ARTWORK_URI, selectedSong.albumArtUri?.toString())", launcher)
         self.assertIn(".setArtist(artist)", session)
