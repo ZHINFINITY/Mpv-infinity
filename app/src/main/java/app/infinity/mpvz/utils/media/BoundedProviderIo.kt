@@ -60,14 +60,22 @@ internal object BoundedProviderIo {
     fallback: T,
     onCancellation: () -> Unit = {},
     operation: () -> T,
-  ): T = readWithStatus(timeoutMs, fallback, onCancellation, operation).value
+  ): T = readWithStatus(timeoutMs, fallback, onCancellation = onCancellation, operation = operation).value
 
   suspend fun <T> readWithStatus(
     timeoutMs: Long,
     fallback: T,
     onCancellation: () -> Unit = {},
+    onCancellationRequested: () -> Unit = {},
     operation: () -> T,
-  ): ReadResult<T> = providerReads.runWithStatus(timeoutMs, fallback, onCancellation, operation)
+  ): ReadResult<T> =
+    providerReads.runWithStatus(
+      timeoutMs,
+      fallback,
+      onCancellation = onCancellation,
+      onCancellationRequested = onCancellationRequested,
+      operation = operation,
+    )
 
   internal class BoundedLane(
     threadName: String,
@@ -88,13 +96,14 @@ internal object BoundedProviderIo {
       fallback: T,
       onCancellation: () -> Unit = {},
       operation: () -> T,
-    ): T = runWithStatus(timeoutMs, fallback, onCancellation, operation).value
+    ): T = runWithStatus(timeoutMs, fallback, onCancellation = onCancellation, operation = operation).value
 
     @OptIn(InternalCoroutinesApi::class)
     suspend fun <T> runWithStatus(
       timeoutMs: Long,
       fallback: T,
       onCancellation: () -> Unit = {},
+      onCancellationRequested: () -> Unit = {},
       operation: () -> T,
     ): ReadResult<T> {
       val outcome =
@@ -112,6 +121,7 @@ internal object BoundedProviderIo {
                 Unit
               }
             continuation.invokeOnCancellation {
+              runCatching { onCancellationRequested() }
               task.cancel(true)
               cleanupAsync(onCancellation)
             }

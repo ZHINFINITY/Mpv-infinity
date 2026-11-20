@@ -194,10 +194,12 @@ object M3UParser {
     uri: Uri,
   ): M3UParseResult {
     val normalizedUri = uri.normalizeScheme()
+    val providerReadCancelled = java.util.concurrent.atomic.AtomicBoolean(false)
     val streamRef = java.util.concurrent.atomic.AtomicReference<InputStream?>(null)
     val outcome = BoundedProviderIo.readWithStatus(
       timeoutMs = PROVIDER_READ_TIMEOUT_MS,
       fallback = M3UParseResult.Error("M3U provider read timed out"),
+      onCancellationRequested = { providerReadCancelled.set(true) },
       onCancellation = { runCatching { streamRef.getAndSet(null)?.close() } },
     ) {
       try {
@@ -210,9 +212,14 @@ object M3UParser {
           } ?: normalizedUri.lastPathSegment ?: "Local M3U Playlist"
         check(!Thread.currentThread().isInterrupted) { "M3U provider read cancelled" }
         val playlistName = cleanPlaylistName(decode(rawFilename), "Local M3U Playlist")
+        if (providerReadCancelled.get()) return@readWithStatus M3UParseResult.Error("M3U provider read timed out")
         val stream = context.contentResolver.openInputStream(normalizedUri)
           ?: return@readWithStatus M3UParseResult.Error("Failed to open file")
         streamRef.set(stream)
+        if (providerReadCancelled.get()) {
+          streamRef.getAndSet(null)?.let(::closeProviderStreamAsync)
+          return@readWithStatus M3UParseResult.Error("M3U provider read timed out")
+        }
         check(!Thread.currentThread().isInterrupted) { "M3U provider read cancelled" }
         parseFromStreamBlocking(stream, sourceUrl, playlistName) {
           if (Thread.currentThread().isInterrupted) throw InterruptedException("M3U provider read cancelled")
@@ -222,7 +229,12 @@ object M3UParser {
       } catch (_: Exception) {
         M3UParseResult.Error("Failed to parse playlist")
       } finally {
-        runCatching { streamRef.getAndSet(null)?.close() }
+        val remainingStream = streamRef.getAndSet(null)
+        if (providerReadCancelled.get()) {
+          remainingStream?.let(::closeProviderStreamAsync)
+        } else {
+          runCatching { remainingStream?.close() }
+        }
       }
     }
     return when (outcome.status) {
@@ -230,6 +242,12 @@ object M3UParser {
       BoundedProviderIo.ReadStatus.TIMED_OUT -> M3UParseResult.Error("M3U provider read timed out")
       BoundedProviderIo.ReadStatus.SATURATED -> M3UParseResult.Error("M3U provider I/O is saturated; try again later")
       BoundedProviderIo.ReadStatus.FAILED -> M3UParseResult.Error("M3U provider read failed", outcome.error)
+    }
+  }
+
+  private fun closeProviderStreamAsync(stream: InputStream) {
+    if (!BoundedProviderIo.cleanupAsync { runCatching { stream.close() } }) {
+      runCatching { stream.close() }
     }
   }
 

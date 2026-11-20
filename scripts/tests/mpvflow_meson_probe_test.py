@@ -33,6 +33,31 @@ assert module_placed.index(marker) < module_placed.index("shared_module('helper'
     "renderer-hook project arguments must precede shared-module targets too"
 )
 
+assigned_fixture = (
+    "cc = meson.get_compiler('c')\n"
+    "libplacebo = dependency('libplacebo')\n"
+    "features = {'libplacebo': true}\n"
+    "ebml_defs = custom_target('ebml_defs', [])\n"
+    "libmpv = library('mpv', [])\n"
+    "if rst2man.found()\n"
+    "  custom_target('manpages', [])\n"
+    "endif\n"
+)
+assigned_placed = prepare.insert_project_arguments_before_first_target(assigned_fixture, probe)
+dependency_index = assigned_placed.index("libplacebo = dependency")
+probe_index = assigned_placed.index(marker)
+first_target_index = assigned_placed.index("ebml_defs = custom_target")
+assert dependency_index < probe_index < first_target_index, (
+    "renderer-hook probe must follow the libplacebo dependency and precede the first assigned target"
+)
+conditional_target_index = assigned_placed.index("custom_target('manpages'")
+assert first_target_index < conditional_target_index, (
+    "the assignment-form target must be selected before a later conditional bare target"
+)
+assert probe.count("dependencies: libplacebo") == 2, (
+    "both renderer-hook header probes must use libplacebo's dependency include paths"
+)
+
 legacy_appended = fixture + "\n" + probe
 relocated = prepare.insert_project_arguments_before_first_target(legacy_appended, probe)
 assert relocated.index(marker) < relocated.index("library('mpv',"), (

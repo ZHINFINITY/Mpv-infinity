@@ -37,7 +37,7 @@ MPV_CLONE_FEATURE = "features += {'clone': cc.has_header_symbol('sched.h', 'clon
 MPV_ANDROID_CLONE_FEATURE = "features += {'clone': host_machine.system() != 'android' and cc.has_header_symbol('sched.h', 'clone', args: '-D_GNU_SOURCE')}"
 RENDERER_HOOK_PROBE = """
 # MPVFLOW_HAVE_RENDERER_HOOK
-if features.get('libplacebo', false) and cc.has_header_symbol('libplacebo/shaders/custom.h', 'pl_shader_custom') and cc.has_header_symbol('libplacebo/shaders.h', 'pl_shader_is_compute')
+if features.get('libplacebo', false) and cc.has_header_symbol('libplacebo/shaders/custom.h', 'pl_shader_custom', dependencies: libplacebo) and cc.has_header_symbol('libplacebo/shaders.h', 'pl_shader_is_compute', dependencies: libplacebo)
     add_project_arguments('-DMPVFLOW_HAVE_RENDERER_HOOK=1', language: 'c')
 endif
 """
@@ -60,7 +60,11 @@ def insert_project_arguments_before_first_target(meson: str, block: str) -> str:
             raise SystemExit("Multiple renderer-hook probes found in MPV Meson source")
 
     target = re.search(
-        r"(?m)^[ \t]*(?:library|shared_library|static_library|both_libraries|shared_module|executable|custom_target|run_target|alias_target|jar)\s*\(",
+        (
+            r"(?m)^[ \t]*(?:[A-Za-z_]\w*\s*=\s*)?"
+            r"(?:library|shared_library|static_library|both_libraries|"
+            r"shared_module|executable|custom_target|run_target|alias_target|jar)\s*\("
+        ),
         meson,
     )
     if target is None:

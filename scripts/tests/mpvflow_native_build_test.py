@@ -86,9 +86,8 @@ prepare_source = PREPARE.read_text(encoding="utf-8")
 for marker in (
     "MPVFLOW_HAVE_RENDERER_HOOK",
     "features.get('libplacebo', false)",
-    "pl_shader_custom",
-    "pl_shader_is_compute",
-    "cc.has_header_symbol('libplacebo/shaders.h', 'pl_shader_is_compute')",
+    "cc.has_header_symbol('libplacebo/shaders/custom.h', 'pl_shader_custom', dependencies: libplacebo)",
+    "cc.has_header_symbol('libplacebo/shaders.h', 'pl_shader_is_compute', dependencies: libplacebo)",
 ):
     assert marker in prepare_source, f"MPV Meson renderer hook must be capability-gated: missing {marker!r}"
 assert "add_project_arguments('-DMPVFLOW_HAVE_RENDERER_HOOK=1', language: 'c')" in prepare_source, (

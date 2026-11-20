@@ -47,16 +47,18 @@ class BoundedProviderIoTest {
   }
 
   @Test
-  fun cancellingProviderReadSchedulesResourceCleanup() = runBlocking {
+  fun cancellingProviderReadSignalsImmediatelyAndSchedulesResourceCleanup() = runBlocking {
     val lane = BoundedProviderIo.BoundedLane("mpv-provider-cancellation-test")
     val started = CountDownLatch(1)
     val release = CountDownLatch(1)
+    val cancellationRequested = CountDownLatch(1)
     val cleaned = CountDownLatch(1)
     val job = launch(Dispatchers.Default) {
-      lane.run(
+      lane.runWithStatus(
         timeoutMs = 10_000L,
         fallback = Unit,
         onCancellation = { cleaned.countDown() },
+        onCancellationRequested = { cancellationRequested.countDown() },
       ) {
         started.countDown()
         waitIgnoringInterrupt(release)
@@ -66,6 +68,7 @@ class BoundedProviderIoTest {
     try {
       assertTrue(started.await(1, TimeUnit.SECONDS))
       job.cancelAndJoin()
+      assertTrue(cancellationRequested.await(1, TimeUnit.SECONDS))
       assertTrue(cleaned.await(1, TimeUnit.SECONDS))
     } finally {
       release.countDown()

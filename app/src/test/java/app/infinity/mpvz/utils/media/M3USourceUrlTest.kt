@@ -74,4 +74,22 @@ class M3USourceUrlTest {
     assertTrue(playerActivity.contains("Uri.parse(uriString).normalizeScheme()"))
     assertTrue(parser.contains("val normalizedUri = uri.normalizeScheme()"))
   }
+
+  @Test
+  fun providerCancellationIsRecordedBeforeLateStreamPublicationAndParsing() {
+    val mainRoot = File("src/main/java").takeIf { it.exists() } ?: File("app/src/main/java")
+    val parser = File(mainRoot, "app/infinity/mpvz/utils/media/M3UParser.kt").readText()
+    val providerIo = File(mainRoot, "app/infinity/mpvz/utils/media/BoundedProviderIo.kt").readText()
+    val providerRead =
+      parser.substringAfter("suspend fun parseFromUri(")
+        .substringBefore("suspend fun parseFromStream(")
+    val streamPublished = providerRead.indexOf("streamRef.set(stream)")
+    val cancellationCheck = providerRead.indexOf("if (providerReadCancelled.get())", streamPublished)
+    val parseCall = providerRead.indexOf("parseFromStreamBlocking(stream, sourceUrl, playlistName)")
+
+    assertTrue(providerRead.contains("onCancellationRequested = { providerReadCancelled.set(true) }"))
+    assertTrue(streamPublished >= 0 && cancellationCheck > streamPublished && parseCall > cancellationCheck)
+    assertTrue(providerRead.contains("streamRef.getAndSet(null)?.let(::closeProviderStreamAsync)"))
+    assertTrue(providerIo.contains("runCatching { onCancellationRequested() }"))
+  }
 }

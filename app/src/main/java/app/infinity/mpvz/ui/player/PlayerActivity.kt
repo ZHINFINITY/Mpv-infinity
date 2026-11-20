@@ -2456,6 +2456,7 @@ class PlayerActivity :
             viewModel.showToast("Scripts enabled")
           }
         } else {
+          mpvScriptAssetGeneration.incrementAndGet()
           viewModel.showToast("Scripts disabled. Reopen the video if a script stays active.")
         }
       }
@@ -4912,12 +4913,24 @@ class PlayerActivity :
     val sourceDir = scriptsSubdir ?: tree
     val scriptExtensions = setOf("lua", "js")
     val selectedScripts = advancedPreferences.selectedLuaScripts.get()
+    val protectedCustomButtonScripts =
+      internalScriptsDir.listFiles()
+        ?.asSequence()
+        ?.filter { file ->
+          file.isFile &&
+            !file.name.endsWith(".tmp") &&
+            CustomButtonScriptFilePolicy.isManaged(file.name, emptySet())
+        }
+        ?.map { it.name }
+        ?.toSet()
+        .orEmpty()
     val count =
       syncFlatDocumentDirectory(
         sourceDir = sourceDir,
         destinationDir = internalScriptsDir,
         includeFile = { name -> name.substringAfterLast('.', "").lowercase() in scriptExtensions },
         allowedNames = selectedScripts,
+        protectedNames = protectedCustomButtonScripts,
         deleteMissing = true,
       )
     val supportCount = syncScriptSupportDirectories(scriptsSubdir, assetRoot)
@@ -5456,21 +5469,26 @@ class PlayerActivity :
   private fun loadScriptsAtRuntime(scriptNames: List<String>) {
     if (!mpvInitialized || isFinishing) return
 
-    val requestedScripts =
+    val requestedScriptNames =
       scriptNames
         .map(String::trim)
         .filter { it.isNotBlank() && File(it).name == it && it != "." && it != ".." }
         .distinct()
-    if (requestedScripts.isEmpty()) return
+    if (requestedScriptNames.isEmpty()) return
     val mpvConfStorageUri = advancedPreferences.mpvConfStorageUri.get()
     if (mpvConfStorageUri.isBlank()) return
 
     val ownerToken = playbackOwnerToken
     lifecycleScope.launch(Dispatchers.IO) {
       mpvScriptAssetLoadMutex.withLock {
+        if (!advancedPreferences.enableLuaScripts.get()) return@withLock
+        val selectedScripts = advancedPreferences.selectedLuaScripts.get()
+        val requestedScripts = requestedScriptNames.filter { it in selectedScripts }
+        if (requestedScripts.isEmpty()) return@withLock
         val generation = mpvScriptAssetGeneration.incrementAndGet()
         runCatching {
           var stagedScriptNames = emptyList<String>()
+          var failedScriptNames = emptyList<String>()
           val published =
             runStagedMpvAssetUpdate(
               generation,
@@ -5487,6 +5505,7 @@ class PlayerActivity :
               syncScriptOpts(tree, rootChildren, assetRoot)
 
               val stagedNames = mutableListOf<String>()
+              val failedNames = mutableListOf<String>()
               for (scriptName in requestedScripts) {
                 val targetFile = File(stagedScriptsDir, scriptName)
                 var copiedFromProvider = false
@@ -5517,26 +5536,63 @@ class PlayerActivity :
                   }
                 }
                 if (!RuntimeScriptStagePolicy.isUsable(targetFile.isFile, copiedFromProvider, cachedCopyAvailable)) {
-                  return@runStagedMpvAssetUpdate false
+                  failedNames += scriptName
+                  continue
                 }
                 stagedNames += scriptName
               }
-              stagedScriptNames = stagedNames
-              true
+              val currentlyEnabled = advancedPreferences.enableLuaScripts.get()
+              val currentSelection = advancedPreferences.selectedLuaScripts.get()
+              stagedScriptNames = if (currentlyEnabled) stagedNames.filter { it in currentSelection } else emptyList()
+              stagedNames.filterNot { it in stagedScriptNames }.forEach { name ->
+                File(stagedScriptsDir, name).delete()
+              }
+              failedScriptNames = failedNames
+              currentlyEnabled && stagedScriptNames.isNotEmpty()
             }
-          if (!published || stagedScriptNames.isEmpty()) return@withLock
+          if (stagedScriptNames.isEmpty()) {
+            val selectedFailures =
+              if (advancedPreferences.enableLuaScripts.get()) {
+                failedScriptNames.filter { it in advancedPreferences.selectedLuaScripts.get() }
+              } else {
+                emptyList()
+              }
+            if (selectedFailures.isNotEmpty()) {
+              withContext(Dispatchers.Main) {
+                PlaybackActivityOwner.runIfOwner(ownerToken, false) {
+                  viewModel.showToast("Unable to load selected scripts: ${selectedFailures.joinToString()}")
+                  true
+                }
+              }
+            }
+            return@withLock
+          }
+          if (!published) return@withLock
 
           withContext(Dispatchers.Main) {
             PlaybackActivityOwner.runIfOwner(ownerToken, false) {
-              if (!canIssueMpvCommands() || mpvScriptAssetGeneration.get() != generation) {
+              val scriptsEnabled = advancedPreferences.enableLuaScripts.get()
+              val currentSelection = advancedPreferences.selectedLuaScripts.get()
+              val scriptsToLoad =
+                if (scriptsEnabled) stagedScriptNames.filter { it in currentSelection } else emptyList()
+              val unavailableScripts =
+                if (scriptsEnabled) failedScriptNames.filter { it in currentSelection } else emptyList()
+              if (
+                !canIssueMpvCommands() ||
+                mpvScriptAssetGeneration.get() != generation ||
+                scriptsToLoad.isEmpty()
+              ) {
                 false
               } else {
-                stagedScriptNames.forEach { scriptName ->
+                scriptsToLoad.forEach { scriptName ->
                   PlaybackSession.command("load-script", File(filesDir, "scripts/$scriptName").absolutePath)
                 }
+                val loadedMessage =
+                  if (scriptsToLoad.size == 1) "Loaded script: ${scriptsToLoad.single()}"
+                  else "Loaded scripts: ${scriptsToLoad.joinToString()}"
                 viewModel.showToast(
-                  if (stagedScriptNames.size == 1) "Loaded script: ${stagedScriptNames.single()}"
-                  else "Loaded scripts: ${stagedScriptNames.joinToString()}",
+                  if (unavailableScripts.isEmpty()) loadedMessage
+                  else "$loadedMessage (unavailable: ${unavailableScripts.joinToString()})",
                 )
                 true
               }
