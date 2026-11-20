@@ -186,6 +186,8 @@ APP_MOTION_TARGET = """    app_motion_shaders = custom_target('app-motion-policy
                   '--generate', '@OUTPUT@', '--prefix', 'app_test_'])"""
 MPV_MOTION_EXEC = "['gpu_motion.c', motion_shaders], link_with: libmpv_motion,"
 BOTH_MOTION_EXECS = "['gpu_motion.c', motion_shaders, app_motion_shaders], link_with: libmpv_motion,"
+GPU_TEST_TARGET = "test('gpu-motion', gpu_motion, suite: 'gpu')"
+GPU_TEST_EXTENDED = "test('gpu-motion', gpu_motion, suite: 'gpu', timeout: 120)"
 
 
 def adapt_meson(source: str) -> str:
@@ -193,14 +195,19 @@ def adapt_meson(source: str) -> str:
         raise ValueError("expected exactly one pinned MPV motion-shader custom target")
     if source.count(MPV_MOTION_EXEC) != 1:
         raise ValueError("expected exactly one pinned MPV gpu-motion executable source list")
+    if source.count(GPU_TEST_TARGET) != 1:
+        raise ValueError("expected exactly one gpu-motion test registration")
     adapted = source.replace(MPV_MOTION_TARGET, MPV_MOTION_TARGET + "\n" + APP_MOTION_TARGET, 1)
     adapted = adapted.replace(MPV_MOTION_EXEC, BOTH_MOTION_EXECS, 1)
+    adapted = adapted.replace(GPU_TEST_TARGET, GPU_TEST_EXTENDED, 1)
     if "input: files('../video/out/gpu_next/motion.c', '../video/out/vo_gpu_next.c')" not in adapted:
         raise ValueError("the pinned MPV shader source was not preserved")
     if "input: files('mpvflow_app_motion.c')" not in adapted or "'--prefix', 'app_test_'" not in adapted:
         raise ValueError("app-only policy shader target is not separately prefixed")
     if "motion_shaders, app_motion_shaders" not in adapted:
         raise ValueError("gpu-motion executable is missing one of its distinct shader headers")
+    if GPU_TEST_EXTENDED not in adapted:
+        raise ValueError("the temporary gpu-motion test timeout was not extended")
     return adapted
 
 
@@ -239,9 +246,13 @@ def self_test() -> None:
                   '--vo-source', '@INPUT1@',
                   '--generate', '@OUTPUT@'])
     gpu_motion = executable('gpu-motion',
-        ['gpu_motion.c', motion_shaders], link_with: libmpv_motion,"""
+        ['gpu_motion.c', motion_shaders], link_with: libmpv_motion,
+        include_directories: incdir, dependencies: [libplacebo, libm])
+    test('gpu-motion', gpu_motion, suite: 'gpu')"""
     if 'app_motion_shaders' not in adapt_meson(sample_meson):
         raise ValueError("Meson self-test failed to retain upstream shaders and add the app target")
+    if GPU_TEST_EXTENDED not in adapt_meson(sample_meson):
+        raise ValueError("Meson self-test did not extend only the gpu-motion test timeout")
     if "value > 0.10f && value < 0.14f" not in adapted:
         raise ValueError("adapter did not retain the app-specific positive midpoint assertion")
     print(
