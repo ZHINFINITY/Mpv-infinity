@@ -47,7 +47,7 @@ VULKAN_HEADERS_SHA = "a4f8ada9f4f97c45b8c89c57997be9cebaae65d2"
 GPL_SHA = "edaef632cbb643e4e7a221717a6c441a4c1a7c918e6e4d56debc3d8739b233f6"
 PATCH_HASHES = {
     "libbluray-1.4.1-still-eof.patch": "cc0a15ee88b1ead665dadbc3ac363c2686e5184fc1e04a76713665cad57c0fc7",
-    "libbluray-1.4.1-checked-seek.patch": "0124542e530f03d41f5770386f00836523333c635fe5216c5f0729181550219d",
+    "libbluray-1.4.1-checked-seek.patch": "58ef2e5649b2bd592352ac5823c226b534de43dcadbf346f4d472bb3aa16926b",
     "libbluray-1.4.1-menu-info.patch": "17a1b88c72c3b467ba6ac8d9419f003c93f694733b9214deee13bad5ebfedb5c",
     "libbluray-1.4.1-bdj-pointer.patch": "232ce1e634335af5d69a705745a57ea5cd5da8d7160b9441b5ba154e7b3dec85",
 }
