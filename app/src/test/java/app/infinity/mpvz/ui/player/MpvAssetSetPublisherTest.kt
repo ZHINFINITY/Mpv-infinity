@@ -30,16 +30,16 @@ class MpvAssetSetPublisherTest {
       File(stale, "mpv.conf").writeText("stale")
       File(current, "mpv.conf").writeText("current")
 
-      assertFalse(publisher.publish(stale) { false })
+      assertFalse(publisher.publish(stale, isCurrent = { false }))
       assertEquals("old", File(live, "mpv.conf").readText())
-      assertTrue(publisher.publish(current) { true })
+      assertTrue(publisher.publish(current, isCurrent = { true }))
       assertEquals("current", File(live, "mpv.conf").readText())
       assertTrue(File(live, "scripts/old.lua").isFile)
 
       val superseded = publisher.newStage(ownerToken = 41L, generation = 3L)
       File(superseded, "mpv.conf").writeText("must-not-stick")
       var currentChecks = 0
-      assertFalse(publisher.publish(superseded) { ++currentChecks <= 2 })
+      assertFalse(publisher.publish(superseded, isCurrent = { ++currentChecks <= 2 }))
       assertEquals("current", File(live, "mpv.conf").readText())
       assertTrue(File(live, "scripts/old.lua").isFile)
     } finally {
@@ -66,7 +66,7 @@ class MpvAssetSetPublisherTest {
       File(stage, "input.conf").writeText("next")
 
       try {
-        publisher.publish(stage) { true }
+        publisher.publish(stage, isCurrent = { true })
         throw AssertionError("expected transactional publish failure")
       } catch (expected: MpvAssetSetPublishException) {
         assertFalse(expected.retainStage)
