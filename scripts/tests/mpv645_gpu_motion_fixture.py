@@ -2,8 +2,9 @@
 """Adapt the app-owned GPU motion fixture to MPV 645 for host Vulkan CI only.
 
 The tracked app fixture predates MPV 645's removal of the explicit source-pair
-helpers. This adapter replaces only its scale test in a temporary MPV checkout;
-no shipped runtime or tracked fixture source is changed.
+helpers. This adapter changes only its source-pair API and capability-boundary
+test in a temporary MPV checkout; no shipped runtime or tracked fixture source
+is changed.
 """
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 from __future__ import annotations
@@ -17,6 +18,14 @@ import sys
 ROOT = Path(__file__).resolve().parents[2]
 APP_FIXTURE = ROOT / "app/src/main/cpp/mpvflow/fongmi/test/gpu_motion.c"
 MPV_REVISION = "645f8ecdd3c94379048e9ee3e7014e174de0bd02"
+MATCH_GROUP_SIZE_MARKER = "#define MATCH_GROUP_SIZE 64"
+MATCH_SHARED_BYTES_MARKER = (
+    "#define MATCH_SHARED_BYTES ((49 + 361) * 16 + "
+    "(169 + 2 * MATCH_GROUP_SIZE) * 4)"
+)
+MPV645_SHARED_BYTES_EXPR = "((49 + 361) * 16 + (169 + 2 * 64) * 4)"
+APP_SHARED_BYTES_EXPR = "49 * 16 + 169 * 4 - 1"
+ADAPTED_SHARED_BYTES_EXPR = "MPV645_MATCH_SHARED_BYTES - 1"
 FUNCTION = re.compile(
     r"^static void scaled_source_pair\(pl_gpu gpu, struct mp_motion \*motion\)\n"
     r"\{.*?^\}",
@@ -105,13 +114,27 @@ def adapt(source: str) -> str:
     )
     if not all(marker in old for marker in required_old):
         raise ValueError("app fixture no longer matches the expected source-pair test")
+    if source.count(APP_SHARED_BYTES_EXPR) != 1:
+        raise ValueError("app fixture capability threshold no longer matches the expected test")
     adapted = source[: matches[0].start()] + REPLACEMENT + source[matches[0].end() :]
+    include_marker = '#include "gpu_motion_shaders.h"\n'
+    if adapted.count(include_marker) != 1:
+        raise ValueError("expected one GPU motion shader include in the app fixture")
+    adapted = adapted.replace(
+        include_marker,
+        include_marker
+        + f"\n#define MPV645_MATCH_SHARED_BYTES {MPV645_SHARED_BYTES_EXPR}\n",
+        1,
+    )
+    adapted = adapted.replace(APP_SHARED_BYTES_EXPR, ADAPTED_SHARED_BYTES_EXPR, 1)
     if "mp_motion_render_sources(" in adapted or "mp_motion_render_sources_to(" in adapted:
         raise ValueError("removed source-pair API remains in the adapted fixture")
     for marker in (
         "stats.analysis_width == analysis_width",
         "stats.synthesis_width == width",
         "const int scales[] = {2, 4}",
+        f"#define MPV645_MATCH_SHARED_BYTES {MPV645_SHARED_BYTES_EXPR}",
+        ADAPTED_SHARED_BYTES_EXPR,
     ):
         if marker not in adapted:
             raise ValueError(f"adapted fixture is missing scale coverage: {marker}")
@@ -125,7 +148,19 @@ def self_test() -> None:
         raise ValueError("adapter did not change the fixture")
     if "mp_motion_render_sources" in adapted:
         raise ValueError("adapter left an obsolete API reference")
-    print("MPV 645 GPU motion fixture adapter: source-pair scaling coverage preserved")
+    if "mp_motion_supported(&limited)" not in adapted:
+        raise ValueError("adapter removed the capability-boundary regression")
+    print(
+        "MPV 645 GPU motion fixture adapter: source-pair scaling and pinned "
+        "capability-boundary coverage preserved"
+    )
+
+
+def verify_pinned_capability_source(mpv_dir: Path) -> None:
+    motion_source = (mpv_dir / "video/out/gpu_next/motion.c").read_text(encoding="utf-8")
+    for marker in (MATCH_GROUP_SIZE_MARKER, MATCH_SHARED_BYTES_MARKER):
+        if motion_source.count(marker) != 1:
+            raise SystemExit(f"pinned MPV 645 motion capability source changed: missing {marker}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -149,6 +184,8 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit(
             f"expected pinned MPV {MPV_REVISION}, found {actual_revision}"
         )
+
+    verify_pinned_capability_source(mpv_dir)
 
     meson_test = (mpv_dir / "test/meson.build").read_text(encoding="utf-8")
     if meson_test.count("test('gpu-motion', gpu_motion, suite: 'gpu')") != 1:
