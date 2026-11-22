@@ -4,10 +4,9 @@
 package app.infinity.mpvz.ui.player.controls.components
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -45,12 +44,14 @@ fun MediaBadgesRow(
   }
 
   if (badges.isEmpty()) return
-  LazyRow(
+  // A plain Row: lazy layouts (SubcomposeLayout) throw when measured with
+  // intrinsics, which the player controls ConstraintLayout does.
+  Row(
     verticalAlignment = Alignment.CenterVertically,
     horizontalArrangement = Arrangement.spacedBy(8.dp),
     modifier = modifier.padding(start = 14.dp, top = 8.dp),
   ) {
-    items(badges, key = { it.id }) { badge ->
+    badges.forEach { badge ->
       AsyncImage(
         model = "file:///android_asset/${badge.assetPath}",
         contentDescription = badge.name,
