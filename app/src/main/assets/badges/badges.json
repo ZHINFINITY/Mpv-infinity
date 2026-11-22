@@ -316,7 +316,7 @@
       "id": "dolby-digital",
       "groupId": "audio-tech",
       "name": "Dolby Digital",
-      "pattern": "(?i)\\b(dd[\\s._-]*[0-9][\\s._-]*[0-9]|dd|dolby[\\s._-]*digital|ac-?3)(?![\\s._-]*plus|\\+|p|[a-z])",
+      "pattern": "(?i)\\b(dd[\\s._-]*[0-9][\\s._-]*[0-9]|dd|dolby[\\s._-]*digital|(?<!e-)ac-?3)(?![\\s._-]*plus|\\+|p|[a-z])",
       "imageURL": "https://raw.githubusercontent.com/leonevz/Elite-Badges/main/Badges/dolby_digital.png",
       "tagColor": "#00000000",
       "borderColor": "#00000000",

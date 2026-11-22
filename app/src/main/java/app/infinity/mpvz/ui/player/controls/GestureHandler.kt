@@ -212,7 +212,16 @@ fun GestureHandler(
       }
     if (!active) return false to Float.POSITIVE_INFINITY
 
-    val anchorY = getSubtitleScreenY(getSubtitlePosition(lane, width, height), width, height, lane)
+    // The translated overlay is positioned from the primary `sub-pos` (see the
+    // translatedSubtitle constraints in PlayerControls), so its touch anchor must
+    // use the primary position — not `secondary-sub-pos`, which can diverge.
+    val anchorPosition =
+      if (lane == SubtitleLane.Secondary && translationOverlayActive) {
+        getSubtitlePosition(SubtitleLane.Primary, width, height)
+      } else {
+        getSubtitlePosition(lane, width, height)
+      }
+    val anchorY = getSubtitleScreenY(anchorPosition, width, height, lane)
     val within =
       isWithinSubtitleTouchBounds(
         touchX = touchX,
@@ -1096,6 +1105,7 @@ fun GestureHandler(
           panAndZoomEnabled,
           areControlsLocked,
           isVerticalGestureActive,
+          translationOverlayActive,
         ) {
           if ((!pinchToZoomGesture && !pinchToZoomSubtitles && !panAndZoomEnabled) ||
             areControlsLocked ||

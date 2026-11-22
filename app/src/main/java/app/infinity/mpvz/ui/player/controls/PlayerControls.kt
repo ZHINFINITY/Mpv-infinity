@@ -400,6 +400,7 @@ fun PlayerControls(
   val mpvSubtitleMarginX by PlaybackSession.propInt["sub-margin-x"].collectAsState()
   val mpvSubtitleScale by PlaybackSession.propFloat["sub-scale"].collectAsState()
   val translatedSubtitleScale by subtitlesPreferences.secondarySubScale.collectAsState()
+  val mpvSecondarySubtitleScale by PlaybackSession.propFloat["secondary-sub-scale"].collectAsState()
   // Live mpv sub styling: the translated overlay must match whatever mpv is
   // actually rendering right now (user prefs, override-ass mode, in-session
   // changes), so prefer the properties and fall back to the preferences.
@@ -1105,7 +1106,11 @@ fun PlayerControls(
                     (osdHeightPx / 720f) *
                     (mpvSubtitleScale ?: subtitleScale)
                       .let { primaryScale ->
-                        translatedSubtitleScale.takeIf { it > 0f } ?: primaryScale
+                        // Prefer the live secondary scale so a pinch is reflected
+                        // immediately, falling back to the persisted preference,
+                        // then the primary scale.
+                        (mpvSecondarySubtitleScale ?: translatedSubtitleScale)
+                          .takeIf { it > 0f } ?: primaryScale
                       }
                 (fontSizePx / density.density).coerceIn(8f, 120f).sp
               }
@@ -3410,14 +3415,32 @@ private fun OutlinedLabeled(
 }
 
 /**
- * Parses an mpv color value ("#AARRGGBB" or "#RRGGBB") into an ARGB int, or
- * null when it isn't a hex literal (mpv also allows named colors).
+ * Parses an mpv color value ("#AARRGGBB", "#RRGGBB" or a named color like
+ * "yellow") into an ARGB int, or null when unrecognized.
  */
 fun parseMpvColor(value: String?): Int? {
-  val hex = value?.trim()?.removePrefix("#")?.takeIf { it.isNotEmpty() } ?: return null
-  return when (hex.length) {
-    6 -> hex.toLongOrNull(16)?.let { (0xFF000000L or it).toInt() }
-    8 -> hex.toLongOrNull(16)?.let { it.toInt() }
+  val trimmed = value?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+  if (trimmed.startsWith("#")) {
+    val hex = trimmed.removePrefix("#")
+    return when (hex.length) {
+      6 -> hex.toLongOrNull(16)?.let { (0xFF000000L or it).toInt() }
+      8 -> hex.toLongOrNull(16)?.let { it.toInt() }
+      else -> null
+    }
+  }
+  // mpv accepts the full CSS color-name set; the ones users actually pick in
+  // subtitle settings cover the common named colors.
+  return when (trimmed.lowercase()) {
+    "black" -> 0xFF000000.toInt()
+    "white" -> 0xFFFFFFFF.toInt()
+    "red" -> 0xFFFF0000.toInt()
+    "green" -> 0xFF00FF00.toInt()
+    "blue" -> 0xFF0000FF.toInt()
+    "yellow" -> 0xFFFFFF00.toInt()
+    "magenta" -> 0xFFFF00FF.toInt()
+    "cyan" -> 0xFF00FFFF.toInt()
+    "gray", "grey" -> 0xFF808080.toInt()
+    "orange" -> 0xFFFFA500.toInt()
     else -> null
   }
 }

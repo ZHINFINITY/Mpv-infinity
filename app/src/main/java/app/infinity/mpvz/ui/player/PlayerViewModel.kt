@@ -5294,6 +5294,7 @@ class PlayerViewModel(
     if (lane == SubtitleLane.Secondary && !host.isNativeEngineActive()) {
       subtitlesPreferences.secondarySubPos.set(newPosition)
       PlaybackSession.setPropertyInt("secondary-sub-pos", newPosition)
+      allowAssPosition("secondary-sub-ass-override")
       playerUpdate.value = PlayerUpdates.ShowText(appContext.getString(R.string.subtitle_position_update, newPosition))
       return
     }
@@ -5303,6 +5304,7 @@ class PlayerViewModel(
       playerUpdate.value = PlayerUpdates.ShowText(appContext.getString(R.string.subtitle_position_update, newPosition))
       return
     }
+    allowAssPosition("sub-ass-override")
     syncSubtitleLayout(newPosition)
     playerUpdate.value = PlayerUpdates.ShowText(appContext.getString(R.string.subtitle_position_update, newPosition))
   }
@@ -5333,6 +5335,18 @@ class PlayerViewModel(
     if (host.isNativeEngineActive()) return
     if (PlaybackSession.getPropertyString(property) == "no") {
       PlaybackSession.setPropertyString(property, "scale")
+    }
+  }
+
+  /**
+   * With `sub-ass-override=no`, mpv ignores `sub-pos` for ASS subtitles, so a drag has
+   * no effect. `yes` applies position overrides while keeping the script's own styling
+   * (colors, scale, karaoke), unlike `force` which replaces the styling entirely.
+   */
+  private fun allowAssPosition(property: String) {
+    if (host.isNativeEngineActive()) return
+    if (PlaybackSession.getPropertyString(property) == "no") {
+      PlaybackSession.setPropertyString(property, "yes")
     }
   }
 

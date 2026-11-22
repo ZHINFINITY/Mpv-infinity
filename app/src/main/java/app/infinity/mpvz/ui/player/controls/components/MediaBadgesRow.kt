@@ -53,7 +53,7 @@ fun MediaBadgesRow(
   val videoCodec by PlaybackSession.propString["video-codec"].collectAsState()
   val audioCodec by PlaybackSession.propString["audio-codec-name"].collectAsState()
   val pixFmt by PlaybackSession.propString["video-params/pixelformat"].collectAsState()
-  val primaries by PlaybackSession.propString["video-params/primaries"].collectAsState()
+  val gamma by PlaybackSession.propString["video-params/gamma"].collectAsState()
   val channelCount by PlaybackSession.propInt["audio-params/channel-count"].collectAsState()
 
   var badges by remember { mutableStateOf<List<MediaBadge>>(emptyList()) }
@@ -65,7 +65,7 @@ fun MediaBadgesRow(
     videoCodec,
     audioCodec,
     pixFmt,
-    primaries,
+    gamma,
     channelCount,
     showMediaBadges,
   ) {
@@ -80,7 +80,9 @@ fun MediaBadgesRow(
             8 -> append("7.1 ")
           }
           pixFmt?.lowercase()?.let { if ("10" in it) append("10bit ") }
-          primaries?.lowercase()?.let { if ("2020" in it) append("hdr ") }
+          // HDR is about the transfer curve (PQ/HLG), not the color gamut —
+          // a BT.2020-primaries SDR stream must not be labeled HDR.
+          gamma?.lowercase()?.let { if ("pq" in it || "hlg" in it) append("hdr ") }
         }
         listOf(mediaTitle, rawMediaTitle, mediaPath, derived).flatMap { source ->
           MediaBadges.matchTitle(context, source)
