@@ -38,6 +38,9 @@
   <string name="pref_appearance_hide_player_buttons_background_summary">プレーヤーのすべての操作ボタンの背景を非表示にします</string>
   <string name="pref_appearance_force_dark_player_buttons_background_title">プレーヤーボタンの背景を常に暗くする</string>
   <string name="pref_appearance_force_dark_player_buttons_background_summary">ライト、ダーク、自動の各テーマでプレーヤー操作ボタンの背景を暗く保ちます</string>
+  <string name="pref_appearance_category_player">プレーヤー</string>
+  <string name="pref_appearance_media_badges_title">メディアバッジ</string>
+  <string name="pref_appearance_media_badges_summary">プレーヤーのタイトル下に透過フォーマットバッジ（ソース、解像度、コーデック、音声）を表示</string>
   <string name="pref_appearance_category_file_browser">ファイルブラウザー</string>
   <string name="pref_appearance_category_thumbnails">サムネイル</string>
   <string name="pref_appearance_show_unplayed_old_video_label_title">新しい未再生動画にラベルを表示</string>

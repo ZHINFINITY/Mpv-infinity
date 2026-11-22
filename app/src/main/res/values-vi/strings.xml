@@ -38,6 +38,9 @@
   <string name="pref_appearance_hide_player_buttons_background_summary">Ẩn nền của tất cả các nút điều khiển trình phát</string>
   <string name="pref_appearance_force_dark_player_buttons_background_title">Luôn sử dụng hình nền nút trình phát tối</string>
   <string name="pref_appearance_force_dark_player_buttons_background_summary">Giữ nền nút điều khiển trình phát tối trong các chủ đề sáng, tối và tự động</string>
+  <string name="pref_appearance_category_player">Trình phát</string>
+  <string name="pref_appearance_media_badges_title">Huy hiệu phương tiện</string>
+  <string name="pref_appearance_media_badges_summary">Hiển thị huy hiệu định dạng trong suốt (nguồn, độ phân giải, codec, âm thanh) dưới tiêu đề trình phát</string>
   <string name="pref_appearance_category_file_browser">Trình duyệt tệp</string>
   <string name="pref_appearance_category_thumbnails">Hình thu nhỏ</string>
   <string name="pref_appearance_show_unplayed_old_video_label_title">Hiển thị nhãn cho video mới chưa phát</string>

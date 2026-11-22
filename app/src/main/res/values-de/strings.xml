@@ -38,6 +38,9 @@
   <string name="pref_appearance_hide_player_buttons_background_summary">Den Hintergrund aller Player-Steuerungsschaltflächen ausblenden</string>
   <string name="pref_appearance_force_dark_player_buttons_background_title">Immer dunkle Hintergründe für Player-Schaltflächen verwenden</string>
   <string name="pref_appearance_force_dark_player_buttons_background_summary">Hintergründe der Player-Steuerelemente im hellen, dunklen und automatischen Design dunkel halten</string>
+  <string name="pref_appearance_category_player">Wiedergabe</string>
+  <string name="pref_appearance_media_badges_title">Medien-Badges</string>
+  <string name="pref_appearance_media_badges_summary">Transparente Format-Badges (Quelle, Auflösung, Codec, Audio) unter dem Player-Titel anzeigen</string>
   <string name="pref_appearance_category_file_browser">Dateibrowser</string>
   <string name="pref_appearance_category_thumbnails">Vorschaubilder</string>
   <string name="pref_appearance_show_unplayed_old_video_label_title">Kennzeichnung für neue, nicht abgespielte Videos anzeigen</string>

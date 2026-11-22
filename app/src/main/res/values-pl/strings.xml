@@ -38,6 +38,9 @@
   <string name="pref_appearance_hide_player_buttons_background_summary">Ukryj ten tło — Wszystkie odtwarzacz sterowanie przyciski</string>
   <string name="pref_appearance_force_dark_player_buttons_background_title">Always używaj ciemny odtwarzacz przycisk backgrounds</string>
   <string name="pref_appearance_force_dark_player_buttons_background_summary">Zachowaj odtwarzacz sterowanie przycisk backgrounds ciemny w jasny, ciemny, i automatyczny themes</string>
+  <string name="pref_appearance_category_player">Odtwarzacz</string>
+  <string name="pref_appearance_media_badges_title">Odznaki multimediów</string>
+  <string name="pref_appearance_media_badges_summary">Pokaż przezroczyste odznaki formatu (źródło, rozdzielczość, kodek, audio) pod tytułem odtwarzacza</string>
   <string name="pref_appearance_category_file_browser">Plik Browser</string>
   <string name="pref_appearance_category_thumbnails">Miniatury</string>
   <string name="pref_appearance_show_unplayed_old_video_label_title">Pokaż label dla nowe unplayed filmy</string>

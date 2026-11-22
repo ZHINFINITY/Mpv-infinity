@@ -44,6 +44,7 @@ import app.infinity.mpvz.ui.player.Sheets
 import app.infinity.mpvz.ui.player.VideoAspect
 import app.infinity.mpvz.ui.player.controls.components.ControlsButton
 import app.infinity.mpvz.ui.player.controls.components.ControlsGroup
+import app.infinity.mpvz.ui.player.controls.components.MediaBadgesRow
 import app.infinity.mpvz.ui.player.controls.components.playerButtonBorderColor
 import app.infinity.mpvz.ui.player.controls.components.playerButtonContainerColor
 import app.infinity.mpvz.ui.player.controls.components.playerButtonContentColor
@@ -148,6 +149,10 @@ fun TopPlayerControlsPortrait(
           }
         }
       }
+
+      MediaBadgesRow(
+        mediaTitle = mediaTitle,
+      )
 
       androidx.compose.animation.AnimatedVisibility(
         visible = isTranslatingSub || isRealtimeSubsActive,

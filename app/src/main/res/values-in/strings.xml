@@ -38,6 +38,9 @@
   <string name="pref_appearance_hide_player_buttons_background_summary">Sembunyikan latar belakang semua tombol kontrol pemutar</string>
   <string name="pref_appearance_force_dark_player_buttons_background_title">Selalu gunakan latar belakang tombol pemutar yang gelap</string>
   <string name="pref_appearance_force_dark_player_buttons_background_summary">Jaga agar latar belakang tombol kontrol pemutar tetap gelap dalam tema terang, gelap, dan otomatis</string>
+  <string name="pref_appearance_category_player">Pemutar</string>
+  <string name="pref_appearance_media_badges_title">Lencana Media</string>
+  <string name="pref_appearance_media_badges_summary">Tampilkan lencana format transparan (sumber, resolusi, codec, audio) di bawah judul pemutar</string>
   <string name="pref_appearance_category_file_browser">Peramban Berkas</string>
   <string name="pref_appearance_category_thumbnails">gambar mini</string>
   <string name="pref_appearance_show_unplayed_old_video_label_title">Tampilkan label untuk video baru yang belum diputar</string>

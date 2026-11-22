@@ -709,6 +709,32 @@ object AppearancePreferencesScreen : Screen {
 
           item {
             PreferenceSectionHeader(
+              title = stringResource(id = R.string.pref_appearance_category_player),
+            )
+          }
+
+          item {
+            PreferenceCard {
+              val showMediaBadges by preferences.showMediaBadges.collectAsState()
+              SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_appearance_media_badges_title),
+                value = showMediaBadges,
+                onValueChange = { preferences.showMediaBadges.set(it) },
+                title = {
+                  Text(text = stringResource(id = R.string.pref_appearance_media_badges_title))
+                },
+                summary = {
+                  Text(
+                    text = stringResource(id = R.string.pref_appearance_media_badges_summary),
+                    color = MaterialTheme.colorScheme.outline,
+                  )
+                },
+              )
+            }
+          }
+
+          item {
+            PreferenceSectionHeader(
               title = stringResource(id = R.string.pref_appearance_category_thumbnails),
             )
           }

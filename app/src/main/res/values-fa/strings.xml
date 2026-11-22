@@ -38,6 +38,9 @@
   <string name="pref_appearance_hide_player_buttons_background_summary">پنهان کردن پس زمینه تمام دکمه های کنترل بازیکن</string>
   <string name="pref_appearance_force_dark_player_buttons_background_title">همیشه از پس زمینه های دکمه Dark Player استفاده کنید</string>
   <string name="pref_appearance_force_dark_player_buttons_background_summary">نگه داشتن دکمه کنترل بازیکن پس زمینه های تاریک در نور، تاریک و خودکار</string>
+  <string name="pref_appearance_category_player">پخش‌کننده</string>
+  <string name="pref_appearance_media_badges_title">نشان‌های رسانه</string>
+  <string name="pref_appearance_media_badges_summary">نمایش نشان‌های شفاف فرمت (منبع، رزولوشن، کدک، صدا) زیر عنوان پخش‌کننده</string>
   <string name="pref_appearance_category_file_browser">File Browser</string>
   <string name="pref_appearance_category_thumbnails">Thumbnails</string>
   <string name="pref_appearance_show_unplayed_old_video_label_title">برچسب های جدید برای فیلم های بدون پخش</string>
