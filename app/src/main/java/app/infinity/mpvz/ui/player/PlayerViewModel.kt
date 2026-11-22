@@ -5309,9 +5309,10 @@ class PlayerViewModel(
 
   internal fun setSubtitleScale(scale: Float, lane: SubtitleLane = SubtitleLane.Primary) {
     val clamped = scale.coerceIn(0.1f, 5f)
-    if (lane == SubtitleLane.Secondary && !host.isNativeEngineActive()) {
+    if (lane == SubtitleLane.Secondary) {
       PlaybackSession.setPropertyFloat("secondary-sub-scale", clamped)
       allowAssScale("secondary-sub-ass-override")
+      subtitlesPreferences.secondarySubScale.set(clamped)
       playerUpdate.value = PlayerUpdates.SubtitleZoom(clamped)
       return
     }

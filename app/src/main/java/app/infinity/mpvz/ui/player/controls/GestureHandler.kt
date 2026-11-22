@@ -133,6 +133,8 @@ fun GestureHandler(
   val videoZoomState by PlaybackSession.propDouble["video-zoom"].collectAsState()
   val videoPanYState by PlaybackSession.propDouble["video-pan-y"].collectAsState()
   val subUseMarginsState by PlaybackSession.propString["sub-use-margins"].collectAsState()
+  val embeddedTranslatedSubtitle by viewModel.embeddedTranslatedSubtitle.collectAsState()
+  val translationOverlayActive = embeddedTranslatedSubtitle?.isNotBlank() == true
 
   fun getSubtitleScreenY(
     subPos: Int,
@@ -182,7 +184,7 @@ fun GestureHandler(
   }
 
   fun getSubtitleScale(lane: SubtitleLane): Float =
-    if (lane == SubtitleLane.Secondary && !viewModel.isNativeEngineActive()) {
+    if (lane == SubtitleLane.Secondary && (!viewModel.isNativeEngineActive() || translationOverlayActive)) {
       PlaybackSession.getPropertyFloat("secondary-sub-scale")
         ?: subtitlesPreferences.secondarySubScale.get().takeIf { it > 0f }
         ?: subtitlesPreferences.subScale.get()
@@ -201,7 +203,10 @@ fun GestureHandler(
   ): Pair<Boolean, Float> {
     val active =
       when {
-        lane == SubtitleLane.Secondary -> !viewModel.isNativeEngineActive() && getTrackSelectionId("secondary-sid") > 0
+        lane == SubtitleLane.Secondary ->
+          translationOverlayActive ||
+            (!viewModel.isNativeEngineActive() && getTrackSelectionId("secondary-sid") > 0)
+        translationOverlayActive -> false
         viewModel.isNativeEngineActive() -> subtitleTracks.any { it.isSelected }
         else -> getTrackSelectionId("sid") > 0
       }
@@ -1249,7 +1254,7 @@ fun GestureHandler(
             } while (event.changes.any { it.pressed })
 
             if (isSubZoomMode && gestureStarted) {
-              if (subtitlePinchLane == SubtitleLane.Secondary && !viewModel.isNativeEngineActive()) {
+              if (subtitlePinchLane == SubtitleLane.Secondary) {
                 subtitlesPreferences.secondarySubScale.set(lastCalculatedSubScale)
               } else {
                 subtitlesPreferences.subScale.set(lastCalculatedSubScale)

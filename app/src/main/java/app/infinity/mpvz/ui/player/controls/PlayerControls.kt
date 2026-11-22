@@ -399,6 +399,7 @@ fun PlayerControls(
   val mpvSubtitleFontSize by PlaybackSession.propInt["sub-font-size"].collectAsState()
   val mpvSubtitleMarginX by PlaybackSession.propInt["sub-margin-x"].collectAsState()
   val mpvSubtitleScale by PlaybackSession.propFloat["sub-scale"].collectAsState()
+  val translatedSubtitleScale by subtitlesPreferences.secondarySubScale.collectAsState()
   // Live mpv sub styling: the translated overlay must match whatever mpv is
   // actually rendering right now (user prefs, override-ass mode, in-session
   // changes), so prefer the properties and fall back to the preferences.
@@ -1103,6 +1104,9 @@ fun PlayerControls(
                   (mpvSubtitleFontSize ?: subtitleFontSize) *
                     (osdHeightPx / 720f) *
                     (mpvSubtitleScale ?: subtitleScale)
+                      .let { primaryScale ->
+                        translatedSubtitleScale.takeIf { it > 0f } ?: primaryScale
+                      }
                 (fontSizePx / density.density).coerceIn(8f, 120f).sp
               }
               TranslatedSubtitleText(
