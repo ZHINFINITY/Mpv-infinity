@@ -1082,9 +1082,10 @@ class MPVView(
     PlaybackSession.setOptionString("sub-font", preferredFont)
 
     if (subtitlesPreferences.overrideAssSubs.get()) {
-      PlaybackSession.setOptionString("sub-ass-override", "force")
-      PlaybackSession.setOptionString("sub-ass-justify", "yes")
-      PlaybackSession.setOptionString("secondary-sub-ass-override", "force")
+      // `force` strips all ASS styling and renders plain text; `scale` keeps the script's
+      // styling (colors, positioning) while still applying the user font/size and sub-scale.
+      PlaybackSession.setOptionString("sub-ass-override", "scale")
+      PlaybackSession.setOptionString("secondary-sub-ass-override", "scale")
     } else {
       PlaybackSession.setOptionString("sub-ass-override", "no")
       PlaybackSession.setOptionString("secondary-sub-ass-override", "no")

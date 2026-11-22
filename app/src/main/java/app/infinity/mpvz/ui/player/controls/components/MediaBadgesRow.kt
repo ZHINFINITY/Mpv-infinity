@@ -16,10 +16,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.ui.player.PlaybackSession
 import app.infinity.mpvz.utils.media.MediaBadge
 import app.infinity.mpvz.utils.media.MediaBadges
 import coil3.compose.AsyncImage
@@ -38,9 +41,18 @@ fun MediaBadgesRow(
   val preferences = koinInject<AppearancePreferences>()
   val showMediaBadges by preferences.showMediaBadges.collectAsState()
 
+  val rawMediaTitle by PlaybackSession.propString["media-title"].collectAsState()
+
   var badges by remember { mutableStateOf<List<MediaBadge>>(emptyList()) }
-  LaunchedEffect(mediaTitle, showMediaBadges) {
-    badges = if (showMediaBadges) MediaBadges.matchTitle(context, mediaTitle) else emptyList()
+  LaunchedEffect(mediaTitle, rawMediaTitle, showMediaBadges) {
+    // Badge patterns look for release tags (1080p, HEVC, ...) which only appear in the
+    // original file name; the cleaned display title strips them, so match against both.
+    badges =
+      if (showMediaBadges) {
+        MediaBadges.matchTitle(context, mediaTitle) + MediaBadges.matchTitle(context, rawMediaTitle)
+      } else {
+        emptyList()
+      }.distinctBy { it.id }
   }
 
   if (badges.isEmpty()) return

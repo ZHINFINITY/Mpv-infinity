@@ -3446,6 +3446,10 @@ class PlayerViewModel(
 
               withContext(Dispatchers.Main) {
                 addSubtitle(savedUri, select = true)
+                // A freshly added track renders with mpv's default scale; re-apply the
+                // user's pinch zoom so translated subs match the original sizing.
+                val savedScale = subtitlesPreferences.subScale.get()
+                if (savedScale != 1f) setSubtitleScale(savedScale)
                 showToast("Translation complete: $newFileName")
               }
             }.onFailure { error ->
@@ -5304,12 +5308,28 @@ class PlayerViewModel(
     val clamped = scale.coerceIn(0.1f, 5f)
     if (lane == SubtitleLane.Secondary && !host.isNativeEngineActive()) {
       PlaybackSession.setPropertyFloat("secondary-sub-scale", clamped)
+      allowAssScale("secondary-sub-ass-override")
       playerUpdate.value = PlayerUpdates.SubtitleZoom(clamped)
       return
     }
     if (host.isNativeEngineActive()) host.nativeSetSubtitleScale(clamped)
-    else PlaybackSession.setPropertyFloat("sub-scale", clamped)
+    else {
+      PlaybackSession.setPropertyFloat("sub-scale", clamped)
+      allowAssScale("sub-ass-override")
+    }
     playerUpdate.value = PlayerUpdates.SubtitleZoom(clamped)
+  }
+
+  /**
+   * With `sub-ass-override=no`, mpv ignores `sub-scale` for ASS subtitles, so a pinch has
+   * no effect. Switching to `scale` applies the size factor while keeping the script's own
+   * styling (colors, positioning, karaoke), unlike `force`.
+   */
+  private fun allowAssScale(property: String) {
+    if (host.isNativeEngineActive()) return
+    if (PlaybackSession.getPropertyString(property) == "no") {
+      PlaybackSession.setPropertyString(property, "scale")
+    }
   }
 
   fun setPlaybackSpeed(speed: Float) {

@@ -217,7 +217,7 @@ internal fun resolveSecondarySubtitlePosition(
 
 fun isSecondarySubtitleActive(): Boolean = getTrackSelectionId("secondary-sid") > 0
 
-fun subtitleAssOverrideValue(forceAssOverride: Boolean): String = if (forceAssOverride) "force" else "no"
+fun subtitleAssOverrideValue(forceAssOverride: Boolean): String = if (forceAssOverride) "scale" else "no"
 
 fun applySubtitleOverrides(forceAssOverride: Boolean) {
   val overrideValue = subtitleAssOverrideValue(forceAssOverride)
