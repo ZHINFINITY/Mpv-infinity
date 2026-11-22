@@ -107,18 +107,25 @@ fun MediaBadgesRow(
     },
     modifier = modifier.padding(start = 14.dp, top = 8.dp),
   ) { measurables, constraints ->
+    // Constraints can arrive with maxHeight = 0 during intrinsic measurement
+    // (that's how maxIntrinsicWidth probes the layout), so the measuring range
+    // [1, maxHeight] is empty there and coerceIn would throw. Clamp the probe
+    // height to the badge's own height instead: at most badgeHeightPx, at
+    // least 1px, and never above maxHeight when maxHeight is usable.
+    val badgeHeightPx = badgeHeight.roundToPx()
     val gap = badgeGap.roundToPx()
     val spacing = gap * (measurables.size - 1).coerceAtLeast(0)
     fun measureAt(heightPx: Int): List<Placeable> =
       measurables.map { m ->
-        val h = heightPx.coerceIn(1, constraints.maxHeight)
+        val upper = if (constraints.hasBoundedHeight) constraints.maxHeight else badgeHeightPx
+        val h = heightPx.coerceIn(1, upper.coerceAtLeast(1))
         m.measure(Constraints(maxHeight = h))
       }
-    var placeables = measureAt(badgeHeight.roundToPx())
+    var placeables = measureAt(badgeHeightPx)
     val totalWidth: (List<Placeable>) -> Int = { it.sumOf { p -> p.width } + spacing }
     if (constraints.hasBoundedWidth && totalWidth(placeables) > constraints.maxWidth) {
       val scale = constraints.maxWidth.toFloat() / totalWidth(placeables)
-      val shrunk = (badgeHeight.roundToPx() * scale).toInt()
+      val shrunk = (badgeHeightPx * scale).toInt().coerceIn(1, badgeHeightPx)
       placeables = measureAt(shrunk)
     }
     val rowHeight = placeables.maxOfOrNull { it.height } ?: 0
