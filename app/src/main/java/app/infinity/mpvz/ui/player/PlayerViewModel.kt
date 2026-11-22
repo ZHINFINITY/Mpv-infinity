@@ -3293,7 +3293,10 @@ class PlayerViewModel(
         ?: aiPreferences.autoTranslateLanguages.get().split(",").firstOrNull { it.isNotBlank() }?.trim())
         ?: java.util.Locale.getDefault().language.ifBlank { "en" }
     lastEmbeddedCue = cue
-    _embeddedTranslatedSubtitle.value = null
+    // Keep the previous translated line on screen while the new cue translates.
+    // Nulling it here left a blank gap for the full network round trip on every
+    // cue, which read as "translation became slow" (worst with override-ass,
+    // where the hidden original is not even visible as a fallback).
     if (android.os.SystemClock.elapsedRealtime() < embeddedTranslationBackoffUntil) {
       // A recent failure (bad key, quota, offline): keep the original cue visible.
       return

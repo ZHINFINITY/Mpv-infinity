@@ -17,7 +17,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.preferences.AppearancePreferences
@@ -29,8 +28,12 @@ import coil3.compose.AsyncImage
 import org.koin.compose.koinInject
 
 /**
- * Transparent PNG media badges (Elite-Badges) matched from the media title,
- * rendered under the player title.
+ * Transparent PNG media badges (Elite-Badges), matched the way mpvRx does it:
+ * the release-tag patterns run over every title/name source we have (display
+ * title, raw media-title, full path/URL) *and* over a synthetic string derived
+ * from the live mpv stream properties (resolution, codecs, channels, bit depth,
+ * dynamic range). Streaming titles carry no release tags, so without the
+ * property-derived part badges never appear for them.
  */
 @Composable
 fun MediaBadgesRow(
@@ -42,14 +45,43 @@ fun MediaBadgesRow(
   val showMediaBadges by preferences.showMediaBadges.collectAsState()
 
   val rawMediaTitle by PlaybackSession.propString["media-title"].collectAsState()
+  val mediaPath by PlaybackSession.propString["path"].collectAsState()
+  val videoHeight by PlaybackSession.propInt["video-params/h"].collectAsState()
+  val videoCodec by PlaybackSession.propString["video-codec"].collectAsState()
+  val audioCodec by PlaybackSession.propString["audio-codec-name"].collectAsState()
+  val pixFmt by PlaybackSession.propString["video-params/pixelformat"].collectAsState()
+  val primaries by PlaybackSession.propString["video-params/primaries"].collectAsState()
+  val channelCount by PlaybackSession.propInt["audio-params/channel-count"].collectAsState()
 
   var badges by remember { mutableStateOf<List<MediaBadge>>(emptyList()) }
-  LaunchedEffect(mediaTitle, rawMediaTitle, showMediaBadges) {
-    // Badge patterns look for release tags (1080p, HEVC, ...) which only appear in the
-    // original file name; the cleaned display title strips them, so match against both.
+  LaunchedEffect(
+    mediaTitle,
+    rawMediaTitle,
+    mediaPath,
+    videoHeight,
+    videoCodec,
+    audioCodec,
+    pixFmt,
+    primaries,
+    channelCount,
+    showMediaBadges,
+  ) {
     badges =
       if (showMediaBadges) {
-        MediaBadges.matchTitle(context, mediaTitle) + MediaBadges.matchTitle(context, rawMediaTitle)
+        val derived = buildString {
+          videoHeight?.takeIf { it > 0 }?.let { append("${it}p ") }
+          videoCodec?.let { append("$it ") }
+          audioCodec?.let { append("$it ") }
+          when (channelCount) {
+            6 -> append("5.1 ")
+            8 -> append("7.1 ")
+          }
+          pixFmt?.lowercase()?.let { if ("10" in it) append("10bit ") }
+          primaries?.lowercase()?.let { if ("2020" in it) append("hdr ") }
+        }
+        listOf(mediaTitle, rawMediaTitle, mediaPath, derived).flatMap { source ->
+          MediaBadges.matchTitle(context, source)
+        }
       } else {
         emptyList()
       }.distinctBy { it.id }
@@ -65,7 +97,7 @@ fun MediaBadgesRow(
   ) {
     badges.forEach { badge ->
       AsyncImage(
-        model = "file:///android_asset/${badge.assetPath}",
+        model = "file:///android_asset/${badge.assetPath}", // assetPath already includes "badges/"
         contentDescription = badge.name,
         contentScale = ContentScale.FillHeight,
         modifier = Modifier.height(16.dp),
