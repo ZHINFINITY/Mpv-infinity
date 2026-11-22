@@ -182,7 +182,7 @@ class GlassOptionSheetConversionContractTest {
     val expected = mapOf(
       "$pref/SubtitlesPreferencesScreen.kt" to 2, "$pref/FoldersPreferencesScreen.kt" to 2,
       "$pref/GesturePreferencesScreen.kt" to 1, "$pref/ModelSearchDialog.kt" to 1,
-      "$pref/AiIntegrationScreen.kt" to 1, "$pref/NuvioAddonsPreferences.kt" to 1,
+      "$pref/AiIntegrationScreen.kt" to 1,
       "$pref/AudioPreferencesScreen.kt" to 1, "$pref/PlayerControlsPreferencesScreen.kt" to 1,
       "$pref/PlayerPreferencesScreen.kt" to 1, "$pref/components/OptionsDialog.kt" to 1,
       "$pref/components/SettingsPreferenceWrappers.kt" to 2,
