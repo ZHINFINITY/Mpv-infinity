@@ -71,7 +71,9 @@ class SettingsOptionsGlassContract(unittest.TestCase):
                 checked += 1
         # DropdownMenu call sites are centralized in GlassDropdownMenu.kt and
         # therefore are intentionally excluded from this direct-popup count.
-        self.assertGreaterEqual(checked, 23)
+        # Stream Catalogs / Nuvio popups were removed with the feature; the
+        # remaining settings popups still all use the glass surface pattern.
+        self.assertGreaterEqual(checked, 21)
         self.assertIn('Color.Transparent else fallback', (SETTINGS / 'components/SettingsGlass.kt').read_text())
 
 

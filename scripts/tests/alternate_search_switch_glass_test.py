@@ -8,7 +8,7 @@ ROOT = Path(__file__).parents[2]
 SRC = ROOT / "app/src/main/java/app/infinity/mpvz"
 AUDIO = SRC / "ui/browser/audiobooks/AudiobookLibraryScreen.kt"
 NAV = SRC / "ui/browser/navidrome/NavidromeContent.kt"
-SETTINGS = [SRC / "ui/preferences/AboutScreen.kt", SRC / "ui/preferences/CatalogAddonsPreferences.kt", SRC / "ui/preferences/NuvioAddonsPreferences.kt"]
+SETTINGS = [SRC / "ui/preferences/AboutScreen.kt"]
 
 def functions(text):
     # Balanced brace extraction is enough to ensure checks inspect real call scopes.
