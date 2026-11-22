@@ -88,7 +88,7 @@ fun MediaBadgesRow(
   }
 
   if (badges.isEmpty()) return
-  val badgeHeight = 20.dp
+  val badgeHeight = 28.dp
   val badgeGap = 8.dp
   // The badge strip can be wider than the top-bar column it lives in (sized to
   // the title pill), which clipped the last badges. A custom two-pass Layout
