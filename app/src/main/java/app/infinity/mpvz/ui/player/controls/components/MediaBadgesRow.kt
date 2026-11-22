@@ -23,7 +23,7 @@ import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.utils.media.MediaBadge
 import app.infinity.mpvz.utils.media.MediaBadges
-import coil.compose.AsyncImage
+import coil3.compose.AsyncImage
 import org.koin.compose.koinInject
 
 /**
