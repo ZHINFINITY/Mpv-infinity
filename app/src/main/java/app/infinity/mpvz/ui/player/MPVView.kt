@@ -1032,6 +1032,18 @@ class MPVView(
       "secondary-sub-speed" to MPVLib.MpvFormat.MPV_FORMAT_DOUBLE,
       "sub-scale" to MPVLib.MpvFormat.MPV_FORMAT_DOUBLE,
       "secondary-sub-scale" to MPVLib.MpvFormat.MPV_FORMAT_DOUBLE,
+      // Live sub styling, so the translated-subtitle overlay can mirror what
+      // mpv renders (font, colors, outline, weight, size, margins, OSD dims).
+      "sub-font" to MPVLib.MpvFormat.MPV_FORMAT_STRING,
+      "sub-font-size" to MPVLib.MpvFormat.MPV_FORMAT_INT64,
+      "sub-color" to MPVLib.MpvFormat.MPV_FORMAT_STRING,
+      "sub-border-color" to MPVLib.MpvFormat.MPV_FORMAT_STRING,
+      "sub-border-size" to MPVLib.MpvFormat.MPV_FORMAT_DOUBLE,
+      "sub-bold" to MPVLib.MpvFormat.MPV_FORMAT_FLAG,
+      "sub-italic" to MPVLib.MpvFormat.MPV_FORMAT_FLAG,
+      "sub-margin-x" to MPVLib.MpvFormat.MPV_FORMAT_INT64,
+      "osd-width" to MPVLib.MpvFormat.MPV_FORMAT_INT64,
+      "osd-height" to MPVLib.MpvFormat.MPV_FORMAT_INT64,
     )
 
   private fun setupAudioOptions() {

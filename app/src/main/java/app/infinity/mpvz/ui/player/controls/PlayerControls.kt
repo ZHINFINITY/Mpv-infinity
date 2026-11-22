@@ -399,14 +399,23 @@ fun PlayerControls(
   val mpvSubtitleFontSize by PlaybackSession.propInt["sub-font-size"].collectAsState()
   val mpvSubtitleMarginX by PlaybackSession.propInt["sub-margin-x"].collectAsState()
   val mpvSubtitleScale by PlaybackSession.propFloat["sub-scale"].collectAsState()
+  // Live mpv sub styling: the translated overlay must match whatever mpv is
+  // actually rendering right now (user prefs, override-ass mode, in-session
+  // changes), so prefer the properties and fall back to the preferences.
+  val mpvSubColor by PlaybackSession.propString["sub-color"].collectAsState()
+  val mpvSubBorderColor by PlaybackSession.propString["sub-border-color"].collectAsState()
+  val mpvSubBorderSize by PlaybackSession.propFloat["sub-border-size"].collectAsState()
+  val mpvSubBold by PlaybackSession.propBoolean["sub-bold"].collectAsState()
+  val mpvSubItalic by PlaybackSession.propBoolean["sub-italic"].collectAsState()
+  val mpvSubFont by PlaybackSession.propString["sub-font"].collectAsState()
   val mpvOsdWidth by PlaybackSession.propInt["osd-width"].collectAsState()
   val mpvOsdHeight by PlaybackSession.propInt["osd-height"].collectAsState()
   val subtitleFontContext = LocalContext.current
   val translatedSubtitleFontFamily by produceState<androidx.compose.ui.text.font.FontFamily>(
     initialValue = androidx.compose.ui.text.font.FontFamily.SansSerif,
-    key1 = "$subtitleFont:$subtitleBold:$subtitleItalic",
+    key1 = "${mpvSubFont ?: subtitleFont}:$subtitleBold:$subtitleItalic",
   ) {
-    val family = subtitleFont.trim().ifBlank { DEFAULT_SUBTITLE_FONT_FAMILY }
+    val family = (mpvSubFont ?: subtitleFont).trim().ifBlank { DEFAULT_SUBTITLE_FONT_FAMILY }
     val typefaceStyle = when {
       subtitleBold && subtitleItalic -> android.graphics.Typeface.BOLD_ITALIC
       subtitleBold -> android.graphics.Typeface.BOLD
@@ -1108,13 +1117,13 @@ fun PlayerControls(
                         .coerceAtMost(0.86f),
                     ).padding(horizontal = 0.dp),
                 fontSize = translatedFontSize,
-                textColor = Color(subtitleTextColor),
+                textColor = Color(parseMpvColor(mpvSubColor) ?: subtitleTextColor),
                 backgroundColor = Color(subtitleBackgroundColor),
-                outlineColor = Color(subtitleBorderColor),
-                outlineWidth = subtitleBorderSize.toFloat(),
+                outlineColor = Color(parseMpvColor(mpvSubBorderColor) ?: subtitleBorderColor),
+                outlineWidth = (mpvSubBorderSize ?: subtitleBorderSize.toFloat()),
                 shadowOffset = subtitleShadowOffset.toFloat(),
-                bold = subtitleBold,
-                italic = subtitleItalic,
+                bold = mpvSubBold ?: subtitleBold,
+                italic = mpvSubItalic ?: subtitleItalic,
                 fontFamily = translatedSubtitleFontFamily,
                 textAlign = when (subtitleJustification.name.lowercase()) {
                   "left" -> androidx.compose.ui.text.style.TextAlign.Start
@@ -3393,5 +3402,18 @@ private fun OutlinedLabeled(
       text = annotated,
       style = labelStyle,
     )
+  }
+}
+
+/**
+ * Parses an mpv color value ("#AARRGGBB" or "#RRGGBB") into an ARGB int, or
+ * null when it isn't a hex literal (mpv also allows named colors).
+ */
+fun parseMpvColor(value: String?): Int? {
+  val hex = value?.trim()?.removePrefix("#")?.takeIf { it.isNotEmpty() } ?: return null
+  return when (hex.length) {
+    6 -> hex.toLongOrNull(16)?.let { (0xFF000000L or it).toInt() }
+    8 -> hex.toLongOrNull(16)?.let { it.toInt() }
+    else -> null
   }
 }

@@ -3,10 +3,9 @@
  */
 package app.infinity.mpvz.ui.player.controls.components
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.height
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.Placeable
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -18,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
@@ -88,20 +88,46 @@ fun MediaBadgesRow(
   }
 
   if (badges.isEmpty()) return
-  // A plain Row: lazy layouts (SubcomposeLayout) throw when measured with
-  // intrinsics, which the player controls ConstraintLayout does.
-  Row(
-    verticalAlignment = Alignment.CenterVertically,
-    horizontalArrangement = Arrangement.spacedBy(8.dp),
+  val badgeHeight = 16.dp
+  val badgeGap = 8.dp
+  // The badge strip can be wider than the top-bar column it lives in (sized to
+  // the title pill), which clipped the last badges. A custom two-pass Layout
+  // shrinks the badge height until the whole strip fits the given width — and
+  // avoids SubcomposeLayout, whose intrinsic measurement crashes inside the
+  // player controls ConstraintLayout.
+  Layout(
+    content = {
+      badges.forEach { badge ->
+        AsyncImage(
+          model = "file:///android_asset/${badge.assetPath}", // assetPath already includes "badges/"
+          contentDescription = badge.name,
+          contentScale = ContentScale.FillHeight,
+        )
+      }
+    },
     modifier = modifier.padding(start = 14.dp, top = 8.dp),
-  ) {
-    badges.forEach { badge ->
-      AsyncImage(
-        model = "file:///android_asset/${badge.assetPath}", // assetPath already includes "badges/"
-        contentDescription = badge.name,
-        contentScale = ContentScale.FillHeight,
-        modifier = Modifier.height(16.dp),
-      )
+  ) { measurables, constraints ->
+    val gap = badgeGap.roundToPx()
+    val spacing = gap * (measurables.size - 1).coerceAtLeast(0)
+    fun measureAt(heightPx: Int): List<Placeable> =
+      measurables.map { m ->
+        val h = heightPx.coerceIn(1, constraints.maxHeight)
+        m.measure(Constraints(maxHeight = h))
+      }
+    var placeables = measureAt(badgeHeight.roundToPx())
+    val totalWidth: (List<Placeable>) -> Int = { it.sumOf { p -> p.width } + spacing }
+    if (constraints.hasBoundedWidth && totalWidth(placeables) > constraints.maxWidth) {
+      val scale = constraints.maxWidth.toFloat() / totalWidth(placeables)
+      val shrunk = (badgeHeight.roundToPx() * scale).toInt()
+      placeables = measureAt(shrunk)
+    }
+    val rowHeight = placeables.maxOfOrNull { it.height } ?: 0
+    layout(constraints.maxWidth.coerceAtMost(totalWidth(placeables)), rowHeight) {
+      var x = 0
+      placeables.forEach { p ->
+        p.placeRelative(x, (rowHeight - p.height) / 2)
+        x += p.width + gap
+      }
     }
   }
 }
