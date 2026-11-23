@@ -3324,7 +3324,12 @@ class PlayerViewModel(
 
         try {
           val result =
-            subtitleTranslator.translateTrack(media, ffIndex, targetLanguage) { stage ->
+            subtitleTranslator.translateTrack(
+              media,
+              ffIndex,
+              targetLanguage,
+              subtitlesPreferences.font.get().ifBlank { null },
+            ) { stage ->
               _translationStatus.value = stage
             }
 

@@ -38,6 +38,7 @@ class SubtitleTranslator(
     videoPath: String,
     trackFfIndex: Int,
     targetLanguage: String,
+    overrideFontFamily: String? = null,
     onStage: (String) -> Unit,
   ): Result<File> =
     try {
@@ -60,8 +61,12 @@ class SubtitleTranslator(
             translateAss(assContent, targetLanguage) { done ->
               onStage("Translating ${(done * 100).toInt()}%")
             }
+          // Write the user's chosen font into the script styles so the translated track
+          // follows the subtitle settings on both engines (mpv and the libass renderer);
+          // embedded script styles would otherwise always win.
+          val styled = overrideFontFamily?.let { applyStyleFont(translated, it) } ?: translated
           val outFile = File(workDir, "track_${trackFfIndex}_$targetLanguage.translated.ass")
-          outFile.writeText(translated)
+          outFile.writeText(styled)
           return@withContext Result.success(outFile)
         }
 
@@ -166,6 +171,22 @@ class SubtitleTranslator(
    * Translates an ASS subtitle: Dialogue text is cleaned of override blocks, translated as a
    * whole cue and written back into the untouched Dialogue line, so styles and timing survive.
    */
+  /** Rewrites every `Style:` line's Fontname field (2nd field after the name) to [fontFamily]. */
+  private fun applyStyleFont(assContent: String, fontFamily: String): String =
+    assContent.lines().joinToString("\n") { line ->
+      if (!line.startsWith("Style:")) {
+        line
+      } else {
+        val fields = line.split(",".toRegex(), 4).toMutableList()
+        if (fields.size >= 4 && fields[1].trim().isNotEmpty()) {
+          fields[1] = fontFamily
+          fields.joinToString(",")
+        } else {
+          line
+        }
+      }
+    }
+
   suspend fun translateAss(
     content: String,
     targetLanguage: String,
