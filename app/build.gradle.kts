@@ -297,6 +297,8 @@ dependencies {
   implementation(libs.seeker)
   implementation(libs.compose.prefs)
   implementation(libs.markdown.renderer.m3)
+  // ML Kit on-device text recognition: OCR for image-based (PGS) embedded subtitles.
+  implementation("com.google.mlkit:text-recognition:16.0.1")
 
   implementation(libs.accompanist.permissions)
 

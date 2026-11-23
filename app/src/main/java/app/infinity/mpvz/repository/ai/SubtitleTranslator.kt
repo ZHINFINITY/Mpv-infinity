@@ -71,7 +71,30 @@ class SubtitleTranslator(
         srtFile.delete()
         val srtOutput = extract(ffmpeg, videoPath, trackFfIndex, "srt", srtFile)
         val content = if (srtFile.isFile) srtFile.readText() else ""
+        // Last resort for image-based tracks (PGS/DVB): copy the raw bitstream into a Matroska
+        // container (the bundled ffmpeg has no .sup muxer), then OCR the bitmaps and translate
+        // the recognized text through the same cue-level algorithm.
         if (content.isBlank()) {
+          val supFile = File(workDir, "track_$trackFfIndex.mkv")
+          supFile.delete()
+          extract(ffmpeg, videoPath, trackFfIndex, "copy", supFile)
+          val supCues: List<String> =
+            if (supFile.isFile && supFile.length() > 0) {
+              withContext(Dispatchers.Default) {
+                PgsSupDecoder.decodeToCues(supFile).map { cue ->
+                  "${srtTimestamp(cue.startMs)} --> ${srtTimestamp(cue.endMs)}\n${cue.text}\n"
+                }
+              }
+            } else emptyList()
+          if (supCues.isNotEmpty()) {
+            onStage("Translating")
+            val translated = translateSrt(supCues.joinToString("\n"), targetLanguage) { done ->
+              onStage("Translating ${(done * 100).toInt()}%")
+            }
+            val supOut = File(workDir, "track_${trackFfIndex}_$targetLanguage.translated.srt")
+            supOut.writeText(translated)
+            return@withContext Result.success(supOut)
+          }
           throw SubtitleTranslationException(assOutput.ifBlank { srtOutput }.ifBlank {
             "Selected track is not text-based (e.g. image subtitles)"
           })
@@ -92,6 +115,14 @@ class SubtitleTranslator(
         if (e is SubtitleTranslationException) e else SubtitleTranslationException(e.message ?: "Translation failed"),
       )
     }
+
+  private fun srtTimestamp(ms: Long): String {
+    val h = ms / 3_600_000
+    val m = ms % 3_600_000 / 60_000
+    val s = ms % 60_000 / 1000
+    val millis = ms % 1000
+    return "%02d:%02d:%02d,%03d".format(h, m, s, millis)
+  }
 
   /** Returns an empty string on success, otherwise a short user-facing failure reason. */
   private fun extract(
