@@ -22,6 +22,7 @@ import android.util.Log
 import android.util.Size
 import android.widget.RemoteViews
 import androidx.core.graphics.ColorUtils
+import kotlin.math.roundToInt
 import androidx.core.content.ContextCompat
 import app.infinity.mpvz.MainActivity
 import app.infinity.mpvz.R
@@ -182,9 +183,18 @@ class MusicPlayerWidgetProvider : AppWidgetProvider() {
     /** Latest playback position (seconds) pushed by the service before each widget refresh. */
     @Volatile var latestPositionSeconds: Float? = null
 
+    /** Latest track duration (seconds) pushed by the service; null for live/unknown lengths. */
+    @Volatile var latestDurationSeconds: Float? = null
+
     /** Called by the service just before a refresh so the progress bar tracks playback. */
     fun publishPosition(seconds: Double) {
       latestPositionSeconds = seconds.toFloat()
+    }
+
+    /** Position plus duration, so the widget's progress bar can reflect real progress. */
+    fun publishProgress(positionSeconds: Double, durationMs: Long) {
+      latestPositionSeconds = positionSeconds.toFloat()
+      latestDurationSeconds = if (durationMs > 0L) durationMs / 1000f else null
     }
 
     /** Decoded artwork cached across refreshes; artwork changes are rare and decodes are not. */
@@ -311,6 +321,15 @@ class MusicPlayerWidgetProvider : AppWidgetProvider() {
         )
       }
       views.setInt(R.id.widget_button_play_pause, "setColorFilter", accent)
+
+      // Reflect real playback progress when the service published a usable duration.
+      val positionSeconds = latestPositionSeconds
+      val durationSeconds = latestDurationSeconds
+      if (positionSeconds != null && durationSeconds != null && durationSeconds > 0f) {
+        val max = durationSeconds.roundToInt().coerceAtLeast(1)
+        views.setInt(R.id.widget_progress, "setMax", max)
+        views.setInt(R.id.widget_progress, "setProgress", positionSeconds.roundToInt().coerceIn(0, max))
+      }
 
       // No track in the session or resume store: dim the transport so the empty state reads
       // as "tap to open the player" (the root pending intent opens the app).

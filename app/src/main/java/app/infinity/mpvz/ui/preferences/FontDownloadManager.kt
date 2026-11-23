@@ -21,9 +21,9 @@ import java.util.concurrent.ConcurrentHashMap
 object FontDownloadManager {
   private val FONT_URLS =
     mapOf(
-      "Anton" to "https://github.com/google/fonts/raw/main/apache/anton/Anton-Regular.ttf",
-      "OpenSans" to "https://github.com/google/fonts/raw/main/apache/opensans/OpenSans%5Bwdth%2Cwght%5D.ttf",
-      "Roboto" to "https://github.com/google/fonts/raw/main/apache/roboto/Roboto%5Bwdth%2Cwght%5D.ttf",
+      "Anton" to "https://github.com/google/fonts/raw/main/ofl/anton/Anton-Regular.ttf",
+      "OpenSans" to "https://github.com/google/fonts/raw/main/ofl/opensans/OpenSans%5Bwdth%2Cwght%5D.ttf",
+      "Roboto" to "https://github.com/google/fonts/raw/main/ofl/roboto/Roboto%5Bwdth%2Cwght%5D.ttf",
       "NotoSans" to "https://github.com/google/fonts/raw/main/ofl/notosans/NotoSans%5Bwdth%2Cwght%5D.ttf",
       "NotoSansArabic" to "https://github.com/google/fonts/raw/main/ofl/notosansarabic/NotoSansArabic%5Bwdth%2Cwght%5D.ttf",
       "NotoSansJP" to "https://github.com/google/fonts/raw/main/ofl/notosansjp/NotoSansJP%5Bwght%5D.ttf",

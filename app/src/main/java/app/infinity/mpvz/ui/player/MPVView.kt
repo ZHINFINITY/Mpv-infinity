@@ -1067,8 +1067,14 @@ class MPVView(
     PlaybackSession.setOptionString("sub-file-paths", "")
     PlaybackSession.setOptionString("subs-fallback", "no")
 
-    val fontsDirPath = "${context.filesDir.path}/fonts/"
-    PlaybackSession.setOptionString("sub-fonts-dir", fontsDirPath)
+    // Setting `sub-fonts-dir` REPLACES mpv's default (the system fonts dir), so an
+    // empty app fonts dir would leave libass with no fonts at all and force its
+    // broken-metrics builtin (rendering like "Nothinggood…"). Only override it when
+    // the user actually has custom fonts there.
+    val fontsDir = java.io.File(context.filesDir, "fonts")
+    if (fontsDir.isDirectory && fontsDir.listFiles()?.any { it.isFile } == true) {
+      PlaybackSession.setOptionString("sub-fonts-dir", "${fontsDir.path}/")
+    }
     // Auto-detect subtitle encoding
     PlaybackSession.setOptionString("sub-codepage", "auto")
     // Allow embedded fonts from MKV/MP4 containers

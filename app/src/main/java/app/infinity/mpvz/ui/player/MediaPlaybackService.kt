@@ -2320,7 +2320,7 @@ class MediaPlaybackService :
     try {
       val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
       notificationManager.notify(NOTIFICATION_ID, buildNotification())
-      MusicPlayerWidgetProvider.publishPosition(currentPositionSeconds)
+      MusicPlayerWidgetProvider.publishProgress(currentPositionSeconds, sanitizedDurationMs())
       MusicPlayerWidgetProvider.refreshAll(applicationContext)
       lastNotificationUpdateTime = SystemClock.elapsedRealtime()
       lastPublishedPositionSeconds = currentPositionSeconds
