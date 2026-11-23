@@ -552,6 +552,22 @@
             </intent-filter>
         </receiver>
 
+        <!-- Home-screen audio widget: renders track info and play/pause/next/previous transport -->
+        <receiver
+            android:name=".ui.widget.MusicPlayerWidgetProvider"
+            android:exported="false"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="app.infinity.mpvz.action.WIDGET_PREVIOUS" />
+                <action android:name="app.infinity.mpvz.action.WIDGET_PLAY_PAUSE" />
+                <action android:name="app.infinity.mpvz.action.WIDGET_NEXT" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/music_player_widget_info" />
+        </receiver>
+
         <!-- Media scan receiver to detect when new videos are added -->
         <receiver
             android:name=".utils.media.MediaScanReceiver"

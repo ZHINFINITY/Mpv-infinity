@@ -2270,4 +2270,9 @@
   <string name="video_mark_as_last_played">Terakhir diputar</string>
   <string name="video_mark_as_finished">Selesai</string>
   <string name="video_mark_as_none">Tanpa tanda</string>
+  <string name="widget_music_no_media">Tidak ada yang antre</string>
+  <string name="widget_music_open_player_hint">Ketuk untuk membuka pemutar</string>
+  <string name="widget_music_previous" translatable="false">Previous track</string>
+  <string name="widget_music_play_pause" translatable="false">Play or pause</string>
+  <string name="widget_music_next" translatable="false">Next track</string>
 </resources>

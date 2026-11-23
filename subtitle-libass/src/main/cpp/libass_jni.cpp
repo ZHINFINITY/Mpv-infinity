@@ -351,6 +351,12 @@ Java_androidx_media3_subtitle_libass_LibassNative_nativeSetStyle(JNIEnv* env, jc
   for (auto& value : values) pointers.push_back(value.c_str());
   pointers.push_back(nullptr);
   ass_set_style_overrides(state->library, pointers.data());
+  // Overrides are normally consumed when a track is parsed. Tracks here live across style
+  // changes, so re-apply them in place; re-parsing every track from its original bytes
+  // (the previous approach) dropped all streamed events and blocked the render loop.
+  for (auto& track : state->tracks) {
+    if (track.ass) ass_process_force_style(track.ass);
+  }
   return JNI_TRUE;
 #else
   (void)env; (void)fontName; (void)fontSize; (void)primaryColor; (void)outlineColor;

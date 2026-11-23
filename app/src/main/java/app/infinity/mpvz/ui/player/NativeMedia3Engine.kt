@@ -152,6 +152,8 @@ data class NativeTrack(
   val isDefault: Boolean = false,
   val isForced: Boolean = false,
   val hearingImpaired: Boolean = false,
+  /** Absolute stream index inside the container (mpv's ff-index); needed by whole-track translation. */
+  val streamIndex: Int? = null,
 )
 
 internal enum class NativeRestartFrameOutcome { WAITING, RENDERED, ERROR }
@@ -2073,6 +2075,9 @@ class NativeMedia3Engine internal constructor(
             channelCount = format.channelCount.coerceAtLeast(0),
             isDefault = format.selectionFlags and C.SELECTION_FLAG_DEFAULT != 0,
             isForced = format.selectionFlags and C.SELECTION_FLAG_FORCED != 0,
+            // Media3 format ids for Matroska/MP4 streams carry the absolute stream index
+            // (AssMatroskaExtractor formats them); translation maps this to mpv's ff-index.
+            streamIndex = format.id?.toIntOrNull(),
             hearingImpaired = format.roleFlags and C.ROLE_FLAG_DESCRIBES_MUSIC_AND_SOUND != 0,
             selected = if (type == C.TRACK_TYPE_TEXT && selectedNativeSubtitleKey == (groupIndex to trackIndex)) {
               true

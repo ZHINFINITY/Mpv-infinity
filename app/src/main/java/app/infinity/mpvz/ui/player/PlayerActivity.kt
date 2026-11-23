@@ -82,6 +82,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import app.infinity.mpvz.BuildConfig
 import app.infinity.mpvz.R
 import app.infinity.mpvz.catalog.StreamWatchHistory
+import app.infinity.mpvz.ui.widget.MusicPlayerWidgetProvider
 import app.infinity.mpvz.database.entities.PlaybackStateEntity
 import app.infinity.mpvz.database.entities.PlaylistEntity
 import app.infinity.mpvz.database.entities.PlaylistItemEntity
@@ -1625,6 +1626,8 @@ class PlayerActivity :
       ),
     )
     restoreAudioPlaybackSessionIfNeeded()
+    pendingWidgetMediaAction =
+      intent?.getStringExtra(MusicPlayerWidgetProvider.EXTRA_WIDGET_MEDIA_ACTION)
     if (redirectUnselectedTorrentToPicker(intent, finishCurrent = true)) return
     if (!acceptPreparedPlaybackLaunch(intent)) {
       finish()
@@ -1797,9 +1800,9 @@ class PlayerActivity :
         ) { textColor, backgroundColor, borderColor, borderSize, fontSize ->
           listOf(textColor, backgroundColor, borderColor, borderSize, fontSize)
         }.collectLatest { values ->
-          // setStyle re-parses and re-adds every ASS track under the renderer lock, which the
-          // render loop holds during rasterization; collectLatest drops superseded updates so
-          // a slider gesture doesn't queue a style rebuild per frame on the UI thread.
+          // setStyle re-applies overrides to live ASS tracks natively (ass_process_force_style),
+          // which is cheap enough to run per change; collectLatest still drops superseded
+          // updates so a slider gesture doesn't queue a style update per frame.
           nativeEngineOrNull()?.setSubtitleStyle(
             textColor = values[0],
             backgroundColor = values[1],
@@ -2177,6 +2180,13 @@ class PlayerActivity :
         nativeEngineOrNull()?.snapshot?.value?.subtitleTracks?.getOrNull(-id - 1)?.let { track -> nativeEngineOrNull()?.toggleSubtitle(track) }
       }
     }
+    viewModel.setNativeSubtitleVisibilityListener { hidden ->
+      // Translation may temporarily hide the original cue, but must not disable the Media3 text
+      // track. Disabling it breaks normal UTF-8/SRT cue playback after the first cue and also
+      // destroys the user's selected-track state. Only change presentation visibility here; ASS/
+      // SSA and normal Media3 cue pipelines continue rendering through their existing renderers.
+      nativeEngineOrNull()?.setSubtitlePresentationVisible(!hidden)
+    }
     viewModel.setNativeExternalSubtitleToggleListener { id ->
       viewModel.subtitleTracks.value.firstOrNull { it.id == id }?.externalFilename?.let { rawUri ->
         val enabled = nativeEngineOrNull()?.toggleExternalSubtitle(Uri.parse(rawUri))
@@ -2246,6 +2256,20 @@ class PlayerActivity :
     }
     setupSystemBarsAutoHide()
     setupPipHelper()
+
+    lifecycleScope.launch {
+      repeatOnLifecycle(Lifecycle.State.STARTED) {
+        // The engine is built lazily (music never needs it). Returning here used to drop
+        // embedded-cue translation for a video reached later from an audio session.
+        nativeEngineBuilt.first { it }
+        val engine = nativeEngineOrNull() ?: return@repeatOnLifecycle
+        engine.subtitleCueText.collect { cue ->
+          if (isNativeEngineActive()) {
+            viewModel.translateEmbeddedSubtitleCue(cue, native = true)
+          }
+        }
+      }
+    }
 
     lifecycleScope.launch {
       val initError = awaitMpvCorePreparation()
@@ -4296,6 +4320,20 @@ class PlayerActivity :
     if (state.phase !in setOf(PlaybackPhase.LOADING, PlaybackPhase.READY, PlaybackPhase.BACKGROUND)) return false
     val item = state.currentItem ?: PlaybackSession.queue.value.currentItem ?: return false
     return item.isDefinitelyAudioOnly() && item.audiobook == null && !item.requiresTorrentResolution()
+  }
+
+  // Set when the home-screen widget cold-launches playback; applied once playback restarts.
+  private var pendingWidgetMediaAction: String? = null
+
+  private fun consumePendingWidgetMediaAction() {
+    val action = pendingWidgetMediaAction ?: return
+    pendingWidgetMediaAction = null
+    // Values mirror MusicPlayerWidgetProvider.MediaAction names.
+    when (action) {
+      "PLAY_PAUSE" -> if (PlaybackSession.getPropertyBoolean("pause") == true) viewModel.unpause()
+      "NEXT" -> viewModel.handleMediaNext()
+      "PREVIOUS" -> viewModel.handleMediaPrevious()
+    }
   }
 
   private fun restoreAudioPlaybackSessionIfNeeded() {
@@ -6751,6 +6789,8 @@ class PlayerActivity :
           val height = player.height.takeIf { it > 0 }?.toFloat()
           applySubtitlePositions(primaryPosition, width, height)
         }
+        if (value.isBlank()) viewModel.clearEmbeddedSubtitleTranslationCue()
+        else viewModel.translateEmbeddedSubtitleCue(value)
       }
       else -> {
         when (property.substringBeforeLast("/")) {
@@ -6886,6 +6926,7 @@ class PlayerActivity :
         }
         viewModel.onVideoLoadCompleted()
         handleFileLoaded(loadGeneration)
+        consumePendingWidgetMediaAction()
         if (pendingVideoTrackRestoreAfterRebuild && MediaPlaybackService.activityForeground && !isDeviceScreenOffOrLocked()) {
           enableVideoAfterBackground()
         }

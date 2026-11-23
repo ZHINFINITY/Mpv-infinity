@@ -77,20 +77,12 @@ public final class LibassSubtitleRenderer implements AutoCloseable {
     return true;
   }
 
-  /** Applies subtitle-sheet values to libass and refreshes already loaded tracks. */
+  /** Applies subtitle-sheet values to libass; native re-applies them to all live tracks. */
   public synchronized boolean setStyle(String fontName, int fontSize, int primaryColor,
       int outlineColor, int backgroundColor, int borderSize, boolean bold, boolean italic) {
     checkOpen();
-    if (!LibassNative.nativeSetStyle(nativeHandle, fontName, fontSize, primaryColor,
-        outlineColor, backgroundColor, borderSize, bold, italic)) return false;
-    for (Map.Entry<String, byte[]> entry : trackData.entrySet()) {
-      Integer old = tracks.get(entry.getKey());
-      if (old != null) LibassNative.nativeRemoveTrack(nativeHandle, old);
-      int replacement = LibassNative.nativeAddTrack(nativeHandle, entry.getValue());
-      if (replacement < 0) return false;
-      tracks.put(entry.getKey(), replacement);
-    }
-    return true;
+    return LibassNative.nativeSetStyle(nativeHandle, fontName, fontSize, primaryColor,
+        outlineColor, backgroundColor, borderSize, bold, italic);
   }
 
   /** Registers an attached or application-provided font with libass. */

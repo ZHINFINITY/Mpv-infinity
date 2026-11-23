@@ -2270,4 +2270,9 @@
   <string name="video_mark_as_last_played">கடைசியாக இயக்கப்பட்டது</string>
   <string name="video_mark_as_finished">முடிந்தது</string>
   <string name="video_mark_as_none">எதுவுமில்லை</string>
+  <string name="widget_music_no_media">வரிசையில் எதுவுமில்லை</string>
+  <string name="widget_music_open_player_hint">பிளேயரைத் திறக்க தட்டவும்</string>
+  <string name="widget_music_previous" translatable="false">Previous track</string>
+  <string name="widget_music_play_pause" translatable="false">Play or pause</string>
+  <string name="widget_music_next" translatable="false">Next track</string>
 </resources>
