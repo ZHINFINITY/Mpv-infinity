@@ -50,6 +50,7 @@ import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import app.infinity.mpvz.ui.player.LibassSubtitleSurfaceView
+import app.infinity.mpvz.utils.media.FontFamilyName
 import app.infinity.mpvz.preferences.MpvFlowComputeApi
 import androidx.media3.subtitle.libass.LibassSubtitleRenderer
 import io.github.peerless2012.ass.media.AssHandler
@@ -1513,12 +1514,16 @@ class NativeMedia3Engine internal constructor(
       val fontsDirectory = File(appContext.filesDir, "fonts")
       LibassSubtitleRenderer(width, height, fontsDirectory.takeIf { d -> d.isDirectory }?.path).also {
         // Directory-based fontconfig config may not parse, so also register each font file
-        // explicitly with libass; ass_add_font makes every custom family resolvable.
+        // explicitly with libass under its REAL family name (read from the TTF name table):
+        // libass matches `Fontname` against the family, not the file name, so registering
+        // "Anton-Regular" while the settings say "Anton" never resolves.
         fontsDirectory.takeIf { d -> d.isDirectory }?.listFiles()
           ?.filter { file -> file.name.lowercase().endsWith(".ttf") || file.name.lowercase().endsWith(".otf") }
           ?.forEach { file ->
-            runCatching { it.addFont(file.nameWithoutExtension, file.readBytes()) }
-              .onFailure { Log.w(logTag, "custom font registration failed: ${file.name}") }
+            runCatching {
+              val familyName = FontFamilyName.read(file) ?: file.nameWithoutExtension
+              it.addFont(familyName, file.readBytes())
+            }.onFailure { Log.w(logTag, "custom font registration failed: ${file.name}") }
           }
         libassRenderer = it
         libassRendererSize = width to height

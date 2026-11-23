@@ -1796,7 +1796,10 @@ class PlayerActivity :
           subtitlesPreferences.fontSize.changes(),
         ) { textColor, backgroundColor, borderColor, borderSize, fontSize ->
           listOf(textColor, backgroundColor, borderColor, borderSize, fontSize)
-        }.collect { values ->
+        }.collectLatest { values ->
+          // setStyle re-parses and re-adds every ASS track under the renderer lock, which the
+          // render loop holds during rasterization; collectLatest drops superseded updates so
+          // a slider gesture doesn't queue a style rebuild per frame on the UI thread.
           nativeEngineOrNull()?.setSubtitleStyle(
             textColor = values[0],
             backgroundColor = values[1],
