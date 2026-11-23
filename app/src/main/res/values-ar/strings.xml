@@ -649,7 +649,11 @@
   <string name="fonts_loaded">تم تحميل %1$d خطًا</string>
   <string name="reload_fonts">إعادة تحميل الخطوط</string>
   <string name="reload_fonts_summary">إعادة فحص مجلد المصدر المحدد وتحديث قائمة الخطوط</string>
-  <string name="clear_font_directory">مسح مجلد الخطوط</string>
+
+  <string name="download_fonts">تنزيل الخطوط</string>
+  <string name="download_fonts_summary">اجلب مجموعة من خطوط الترجمة الشائعة المرخصة مفتوحة (أنتون وروبوتو ونوتو سانز وغيرها) لاستخدامها كخط الترجمة</string>
+  <string name="download_fonts_done">تم تنزيل %1$d من الخطوط</string>
+  <string name="download_fonts_failed">فشل تنزيل الخطوط، تحقق من اتصالك</string>  <string name="clear_font_directory">مسح مجلد الخطوط</string>
   <string name="reset_to_default_font">إعادة الضبط إلى الخط الافتراضي</string>
   <string name="set_as_default">تعيين كافتراضي</string>
   <string name="notification_channel_name">تشغيل الوسائط</string>

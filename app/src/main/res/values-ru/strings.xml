@@ -649,7 +649,11 @@
   <string name="fonts_loaded">Загружено шрифтов: %1$d</string>
   <string name="reload_fonts">Перезагрузить шрифты</string>
   <string name="reload_fonts_summary">Повторно просканировать выбранную исходную папку и обновить список шрифтов</string>
-  <string name="clear_font_directory">Очистить каталог шрифтов</string>
+
+  <string name="download_fonts">Скачать шрифты</string>
+  <string name="download_fonts_summary">Загружает набор популярных свободно лицензированных шрифтов для субтитров (Anton, Roboto, Noto Sans и другие) для использования как шрифт субтитров</string>
+  <string name="download_fonts_done">Загружено шрифтов: %1$d</string>
+  <string name="download_fonts_failed">Не удалось скачать шрифты, проверьте подключение</string>  <string name="clear_font_directory">Очистить каталог шрифтов</string>
   <string name="reset_to_default_font">Восстановить шрифт по умолчанию</string>
   <string name="set_as_default">Установить по умолчанию</string>
   <string name="notification_channel_name">Воспроизведение мультимедиа</string>

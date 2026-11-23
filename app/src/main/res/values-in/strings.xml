@@ -641,7 +641,11 @@
   <string name="fonts_loaded">%1$d font dimuat</string>
   <string name="reload_fonts">Muat ulang font</string>
   <string name="reload_fonts_summary">Pindai ulang folder sumber yang dipilih dan segarkan daftar font</string>
-  <string name="clear_font_directory">Hapus direktori font</string>
+
+  <string name="download_fonts">Unduh font</string>
+  <string name="download_fonts_summary">Ambil kumpulan font subtitle populer berlisensi terbuka (Anton, Roboto, Noto Sans, dll.) untuk dipakai sebagai font subtitle</string>
+  <string name="download_fonts_done">%1$d font terunduh</string>
+  <string name="download_fonts_failed">Unduhan font gagal, periksa koneksi Anda</string>  <string name="clear_font_directory">Hapus direktori font</string>
   <string name="reset_to_default_font">Setel ulang ke font default</string>
   <string name="set_as_default">Tetapkan sebagai default</string>
   <string name="notification_channel_name">Pemutaran Media</string>

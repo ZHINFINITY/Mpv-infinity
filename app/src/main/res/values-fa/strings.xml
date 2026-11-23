@@ -641,7 +641,11 @@
   <string name="fonts_loaded">%1$dفونت های بارگذاری شده</string>
   <string name="reload_fonts">Reload fonts</string>
   <string name="reload_fonts_summary">پوشه منبع انتخاب شده را انتخاب کرده و لیست فونت را تازه کنید</string>
-  <string name="clear_font_directory">فهرست فونت های واضح</string>
+
+  <string name="download_fonts">دانلود فونت‌ها</string>
+  <string name="download_fonts_summary">دریافت مجموعه‌ای از فونت‌های محبوب زیرنویس با مجوز آزاد (آنتون، روبوتو، نوتو سانس و بیشتر) برای استفاده به‌عنوان فونت زیرنویس</string>
+  <string name="download_fonts_done">%1$d فونت دانلود شد</string>
+  <string name="download_fonts_failed">دانلود فونت ناموفق بود، اتصال خود را بررسی کنید</string>  <string name="clear_font_directory">فهرست فونت های واضح</string>
   <string name="reset_to_default_font">تنظیم مجدد فونت های پیش فرض</string>
   <string name="set_as_default">تنظیم به صورت پیش فرض</string>
   <string name="notification_channel_name">بازی Media Playback</string>

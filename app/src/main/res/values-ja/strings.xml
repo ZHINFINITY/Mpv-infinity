@@ -649,7 +649,11 @@
   <string name="fonts_loaded">%1$d個のフォントを読み込みました</string>
   <string name="reload_fonts">フォントを再読み込み</string>
   <string name="reload_fonts_summary">選択したソースフォルダーを再スキャンし、フォント一覧を更新します</string>
-  <string name="clear_font_directory">フォントディレクトリを消去</string>
+
+  <string name="download_fonts">フォントをダウンロード</string>
+  <string name="download_fonts_summary">人気のオープンライセンス字幕フォント（Anton、Roboto、Noto Sans など）をダウンロードして字幕フォントとして使用できます</string>
+  <string name="download_fonts_done">%1$d 個のフォントをダウンロードしました</string>
+  <string name="download_fonts_failed">フォントのダウンロードに失敗しました。接続を確認してください</string>  <string name="clear_font_directory">フォントディレクトリを消去</string>
   <string name="reset_to_default_font">デフォルトフォントに戻す</string>
   <string name="set_as_default">デフォルトに設定</string>
   <string name="notification_channel_name">メディア再生</string>

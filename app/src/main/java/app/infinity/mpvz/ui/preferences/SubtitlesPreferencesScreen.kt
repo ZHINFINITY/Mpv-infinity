@@ -89,6 +89,7 @@ import app.infinity.mpvz.utils.media.copyFontsFromDirectory
 import app.infinity.mpvz.utils.media.loadCustomFontEntries
 import app.infinity.mpvz.utils.media.resolveSubtitleStorageDirectory
 import com.github.k1rakishou.fsaf.FileManager
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -515,16 +516,66 @@ object SubtitlesPreferencesScreen : Screen {
                 onClick = { reloadFontsFrom(fontsFolder) },
               )
 
-              if (fontsFolder.isNotBlank() || selectedFont.isNotBlank() || customFonts.isNotEmpty()) {
-                PreferenceDivider()
+              PreferenceDivider()
 
-                Preference(
-                  title = {
-                    Text(
-                      stringResource(R.string.clear_font_directory),
-                      color = MaterialTheme.colorScheme.error,
+              val fontDownloadInFlight = rememberSaveable { mutableStateOf(false) }
+              Preference(
+                modifier = Modifier.settingsSearchTarget(R.string.download_fonts),
+                title = { Text(stringResource(R.string.download_fonts)) },
+                summary = {
+                  Text(
+                    stringResource(R.string.download_fonts_summary),
+                    color = MaterialTheme.colorScheme.outline,
+                  )
+                },
+                icon = {
+                  if (fontDownloadInFlight.value) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                  } else {
+                    Icon(
+                      Icons.RoundedFilled.Download,
+                      contentDescription = null,
+                      tint = MaterialTheme.colorScheme.primary,
                     )
-                  },
+                  }
+                },
+                enabled = !fontDownloadInFlight.value,
+                onClick = {
+                  fontDownloadInFlight.value = true
+                  scope.launch {
+                    val downloaded =
+                      runCatching { FontDownloadManager.downloadCuratedFonts(context) }
+                        .onFailure { Log.e("SubtitlesScreen", "Font download failed", it) }
+                        .getOrElse { emptyList() }
+                    if (downloaded.isEmpty()) {
+                      Toast.makeText(
+                        context,
+                        context.getString(R.string.download_fonts_failed),
+                        Toast.LENGTH_SHORT,
+                      ).show()
+                    } else {
+                      Toast.makeText(
+                        context,
+                        context.getString(R.string.download_fonts_done, downloaded.size),
+                        Toast.LENGTH_SHORT,
+                      ).show()
+                      preferences.fontsFolder.set("internal")
+                      fontRefreshKey++
+                    }
+                    fontDownloadInFlight.value = false
+                  }
+                },
+              )
+
+              PreferenceDivider()
+
+              Preference(
+                title = {
+                  Text(
+                    stringResource(R.string.clear_font_directory),
+                    color = MaterialTheme.colorScheme.error,
+                  )
+                },
                   icon = {
                     Icon(
                       Icons.RoundedFilled.Clear,
@@ -539,7 +590,6 @@ object SubtitlesPreferencesScreen : Screen {
                     fontRefreshKey++
                   },
                 )
-              }
             }
           }
 

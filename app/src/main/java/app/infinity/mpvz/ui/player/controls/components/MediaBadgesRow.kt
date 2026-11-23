@@ -24,6 +24,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.ui.player.NativeMediaMetadata
 import app.infinity.mpvz.ui.player.PlaybackSession
 import app.infinity.mpvz.utils.media.MediaBadge
 import app.infinity.mpvz.utils.media.MediaBadges
@@ -48,13 +49,20 @@ fun MediaBadgesRow(
   val showMediaBadges by preferences.showMediaBadges.collectAsState()
 
   val rawMediaTitle by PlaybackSession.propString["media-title"].collectAsState()
+  val videoHeightProp by PlaybackSession.propInt["video-params/h"].collectAsState()
+  val videoCodecProp by PlaybackSession.propString["video-codec"].collectAsState()
+  val audioCodecProp by PlaybackSession.propString["audio-codec-name"].collectAsState()
+  val channelCountProp by PlaybackSession.propInt["audio-params/channel-count"].collectAsState()
+  // Native (Media3) engine never publishes mpv properties; without this fallback the badge row
+  // shows nothing after switching engines.
+  val nativeMetadata by NativeMediaMetadata.snapshot.collectAsState()
   val mediaPath by PlaybackSession.propString["path"].collectAsState()
-  val videoHeight by PlaybackSession.propInt["video-params/h"].collectAsState()
-  val videoCodec by PlaybackSession.propString["video-codec"].collectAsState()
-  val audioCodec by PlaybackSession.propString["audio-codec-name"].collectAsState()
+  val videoHeight = videoHeightProp ?: nativeMetadata.videoHeight
+  val videoCodec = videoCodecProp ?: nativeMetadata.videoCodec
+  val audioCodec = audioCodecProp ?: nativeMetadata.audioCodec
   val pixFmt by PlaybackSession.propString["video-params/pixelformat"].collectAsState()
   val gamma by PlaybackSession.propString["video-params/gamma"].collectAsState()
-  val channelCount by PlaybackSession.propInt["audio-params/channel-count"].collectAsState()
+  val channelCount = channelCountProp ?: nativeMetadata.channelCount
 
   var badges by remember { mutableStateOf<List<MediaBadge>>(emptyList()) }
   LaunchedEffect(

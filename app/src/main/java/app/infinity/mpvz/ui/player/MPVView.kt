@@ -1090,7 +1090,11 @@ class MPVView(
     PlaybackSession.setOptionString("secondary-sub-delay", secondarySubDelay)
     PlaybackSession.setOptionString("secondary-sub-speed", secondarySubSpeed.toString())
 
-    val preferredFont = subtitlesPreferences.font.get().ifBlank { DEFAULT_SUBTITLE_FONT_FAMILY }
+    val preferredFont =
+      app.infinity.mpvz.utils.media.FontFamilyName.resolve(
+        java.io.File("${context.filesDir.path}/fonts/"),
+        subtitlesPreferences.font.get().ifBlank { DEFAULT_SUBTITLE_FONT_FAMILY },
+      )
     PlaybackSession.setOptionString("sub-font", preferredFont)
 
     if (subtitlesPreferences.overrideAssSubs.get()) {

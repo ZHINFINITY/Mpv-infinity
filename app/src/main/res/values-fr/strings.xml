@@ -649,7 +649,11 @@ Suivant : NEXT</string>
   <string name="fonts_loaded">%1$d polices chargées</string>
   <string name="reload_fonts">Recharger les polices</string>
   <string name="reload_fonts_summary">Analyser de nouveau le dossier source sélectionné et actualiser la liste des polices</string>
-  <string name="clear_font_directory">Effacer le répertoire des polices</string>
+
+  <string name="download_fonts">Télécharger des polices</string>
+  <string name="download_fonts_summary">Récupère un ensemble de polices de sous-titres populaires sous licence libre (Anton, Roboto, Noto Sans et plus) à utiliser comme police de sous-titres</string>
+  <string name="download_fonts_done">%1$d polices téléchargées</string>
+  <string name="download_fonts_failed">Échec du téléchargement des polices, vérifiez votre connexion</string>  <string name="clear_font_directory">Effacer le répertoire des polices</string>
   <string name="reset_to_default_font">Rétablir la police par défaut</string>
   <string name="set_as_default">Définir par défaut</string>
   <string name="notification_channel_name">Lecture multimédia</string>

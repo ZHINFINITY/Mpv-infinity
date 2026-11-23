@@ -649,7 +649,11 @@ Próximo: NEXT</string>
   <string name="fonts_loaded">%1$d fontes carregadas</string>
   <string name="reload_fonts">Recarregar fontes</string>
   <string name="reload_fonts_summary">Verificar novamente a pasta de origem selecionada e atualizar a lista de fontes</string>
-  <string name="clear_font_directory">Limpar diretório de fontes</string>
+
+  <string name="download_fonts">Baixar fontes</string>
+  <string name="download_fonts_summary">Baixa um conjunto de fontes de legenda populares de licença aberta (Anton, Roboto, Noto Sans e mais) para usar como fonte das legendas</string>
+  <string name="download_fonts_done">%1$d fontes baixadas</string>
+  <string name="download_fonts_failed">Falha ao baixar fontes, verifique sua conexão</string>  <string name="clear_font_directory">Limpar diretório de fontes</string>
   <string name="reset_to_default_font">Restaurar fonte padrão</string>
   <string name="set_as_default">Definir como padrão</string>
   <string name="notification_channel_name">Reprodução de mídia</string>

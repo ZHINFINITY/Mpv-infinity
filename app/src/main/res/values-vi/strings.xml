@@ -641,7 +641,11 @@
   <string name="fonts_loaded">Đã tải %1$d phông chữ</string>
   <string name="reload_fonts">Tải lại phông chữ</string>
   <string name="reload_fonts_summary">Quét lại thư mục nguồn đã chọn và làm mới danh sách phông chữ</string>
-  <string name="clear_font_directory">Xóa thư mục phông chữ</string>
+
+  <string name="download_fonts">Tải phông chữ</string>
+  <string name="download_fonts_summary">Tải bộ phông chữ phụ đề phổ biến có giấy phép mở (Anton, Roboto, Noto Sans và hơn nữa) để dùng làm phông chữ phụ đề</string>
+  <string name="download_fonts_done">Đã tải %1$d phông chữ</string>
+  <string name="download_fonts_failed">Tải phông chữ thất bại, kiểm tra kết nối của bạn</string>  <string name="clear_font_directory">Xóa thư mục phông chữ</string>
   <string name="reset_to_default_font">Đặt lại về phông chữ mặc định</string>
   <string name="set_as_default">Đặt làm mặc định</string>
   <string name="notification_channel_name">Phát lại phương tiện</string>

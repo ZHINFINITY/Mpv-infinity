@@ -379,6 +379,10 @@ Java_androidx_media3_subtitle_libass_LibassNative_nativeAddTrack(JNIEnv* env, jc
   track.ass = ass_read_memory(state->library, reinterpret_cast<char*>(bytes), size, "utf-8");
   env->ReleaseByteArrayElements(data, bytes, JNI_ABORT);
   if (!track.ass) return -1;
+  // Style overrides (ass_set_style_overrides) are consumed when a track is parsed, and the
+  // app sets them before any track exists; apply them to this track as well so the user's
+  // font/size/colours reach subtitles added after the last setStyle call.
+  ass_process_force_style(track.ass);
 #else
   (void)env;
 #endif

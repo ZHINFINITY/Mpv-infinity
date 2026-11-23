@@ -54,6 +54,10 @@ class MusicPlayerWidgetProvider : AppWidgetProvider() {
     Thread {
       try {
         refreshAllInternal(context, appWidgetManager, appWidgetIds)
+      } catch (t: Throwable) {
+        // A failed refresh must never crash the process: the launcher would then show
+        // "Can't load widget" until the widget is re-added.
+        Log.e(TAG, "Widget update failed", t)
       } finally {
         pendingResult.finish()
       }
@@ -296,7 +300,16 @@ class MusicPlayerWidgetProvider : AppWidgetProvider() {
         views.setViewVisibility(R.id.widget_artwork_placeholder, android.view.View.VISIBLE)
       }
 
-      views.setInt(R.id.widget_progress, "setColorFilter", accent)
+      // ProgressBar has no setColorFilter(int): reflecting it from RemoteViews throws
+      // ActionException at apply time and the launcher shows "Can't load widget". Use the
+      // ColorStateList setter on API 31+, and leave the layout's white tint otherwise.
+      if (android.os.Build.VERSION.SDK_INT >= 31) {
+        views.setColorStateList(
+          R.id.widget_progress,
+          "setProgressTintList",
+          android.content.res.ColorStateList.valueOf(accent),
+        )
+      }
       views.setInt(R.id.widget_button_play_pause, "setColorFilter", accent)
 
       // No track in the session or resume store: dim the transport so the empty state reads

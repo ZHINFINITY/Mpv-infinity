@@ -649,7 +649,11 @@
   <string name="fonts_loaded">已加载 %1$d 种字体</string>
   <string name="reload_fonts">重新加载字体</string>
   <string name="reload_fonts_summary">重新扫描所选来源文件夹并刷新字体列表</string>
-  <string name="clear_font_directory">清除字体目录</string>
+
+  <string name="download_fonts">下载字体</string>
+  <string name="download_fonts_summary">下载一组流行的开放授权字幕字体（Anton、Roboto、Noto Sans 等）用作字幕字体</string>
+  <string name="download_fonts_done">已下载 %1$d 个字体</string>
+  <string name="download_fonts_failed">字体下载失败，请检查网络连接</string>  <string name="clear_font_directory">清除字体目录</string>
   <string name="reset_to_default_font">恢复默认字体</string>
   <string name="set_as_default">设为默认</string>
   <string name="notification_channel_name">媒体播放</string>

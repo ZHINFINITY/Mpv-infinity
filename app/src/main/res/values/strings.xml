@@ -658,6 +658,10 @@
   <string name="fonts_loaded">%1$d fonts loaded</string>
   <string name="reload_fonts">Reload fonts</string>
   <string name="reload_fonts_summary">Rescan the selected source folder and refresh the font list</string>
+  <string name="download_fonts">Download fonts</string>
+  <string name="download_fonts_summary">Fetch a set of popular open-licensed subtitle fonts (Anton, Roboto, Noto Sans and more) for use as the subtitle font</string>
+  <string name="download_fonts_done">Downloaded %1$d fonts</string>
+  <string name="download_fonts_failed">Font download failed, check your connection</string>
   <string name="clear_font_directory">Clear font directory</string>
   <string name="reset_to_default_font">Reset to default font</string>
   <string name="set_as_default">Set as default</string>

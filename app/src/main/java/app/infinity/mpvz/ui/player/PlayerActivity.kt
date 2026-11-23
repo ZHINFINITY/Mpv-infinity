@@ -128,6 +128,7 @@ import app.infinity.mpvz.ui.torrent.TorrentSelectionActivity
 import app.infinity.mpvz.utils.device.VulkanCapabilities
 import app.infinity.mpvz.utils.history.RecentlyPlayedOps
 import app.infinity.mpvz.utils.media.HttpUtils
+import app.infinity.mpvz.utils.media.FontFamilyName
 import app.infinity.mpvz.utils.media.JellyfinSessionReporter
 import app.infinity.mpvz.utils.media.MediaUtils
 import app.infinity.mpvz.utils.media.fileExtension
@@ -7429,7 +7430,10 @@ class PlayerActivity :
     // default font (the "font breaks" report), so always resolve to a concrete family.
     PlaybackSession.setPropertyString(
       "sub-font",
-      font.ifBlank { DEFAULT_SUBTITLE_FONT_FAMILY },
+      FontFamilyName.resolve(
+        java.io.File("${filesDir.path}/fonts/"),
+        font.ifBlank { DEFAULT_SUBTITLE_FONT_FAMILY },
+      ),
     )
     PlaybackSession.setPropertyInt("sub-font-size", fontSize)
     PlaybackSession.setPropertyBoolean("sub-bold", bold)

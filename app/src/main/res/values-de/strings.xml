@@ -649,7 +649,11 @@ Weiter: NEXT</string>
   <string name="fonts_loaded">%1$d Schriftarten geladen</string>
   <string name="reload_fonts">Schriftarten neu laden</string>
   <string name="reload_fonts_summary">Ausgewählten Quellordner erneut scannen und Schriftartenliste aktualisieren</string>
-  <string name="clear_font_directory">Schriftartenverzeichnis leeren</string>
+
+  <string name="download_fonts">Schriftarten herunterladen</string>
+  <string name="download_fonts_summary">Lädt einen Satz beliebter frei lizenzierter Untertitel-Schriftarten (Anton, Roboto, Noto Sans und mehr) zur Verwendung als Untertitelschriftart herunter</string>
+  <string name="download_fonts_done">%1$d Schriftarten heruntergeladen</string>
+  <string name="download_fonts_failed">Schriftart-Download fehlgeschlagen, bitte Verbindung prüfen</string>  <string name="clear_font_directory">Schriftartenverzeichnis leeren</string>
   <string name="reset_to_default_font">Auf Standardschrift zurücksetzen</string>
   <string name="set_as_default">Als Standard festlegen</string>
   <string name="notification_channel_name">Medienwiedergabe</string>

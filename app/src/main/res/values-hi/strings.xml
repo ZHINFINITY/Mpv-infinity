@@ -641,7 +641,11 @@
   <string name="fonts_loaded">%1$d फॉन्ट लोड हुए</string>
   <string name="reload_fonts">फॉन्ट फिर से लोड करें</string>
   <string name="reload_fonts_summary">चुने गए स्रोत फोल्डर को फिर से स्कैन करें और फॉन्ट लिस्ट रिफ्रेश करें</string>
-  <string name="clear_font_directory">फॉन्ट फोल्डर साफ करें</string>
+
+  <string name="download_fonts">फ़ॉन्ट डाउनलोड करें</string>
+  <string name="download_fonts_summary">लोकप्रिय खुले-लाइसेंस वाले सबटाइटल फ़ॉन्ट (Anton, Roboto, Noto Sans और अधिक) डाउनलोड करें ताकि उन्हें सबटाइटल फ़ॉन्ट के रूप में इस्तेमाल करें</string>
+  <string name="download_fonts_done">%1$d फ़ॉन्ट डाउनलोड हुए</string>
+  <string name="download_fonts_failed">फ़ॉन्ट डाउनलोड विफल, अपना कनेक्शन जाँचें</string>  <string name="clear_font_directory">फॉन्ट फोल्डर साफ करें</string>
   <string name="reset_to_default_font">डिफ़ॉल्ट फॉन्ट पर रीसेट करें</string>
   <string name="set_as_default">डिफ़ॉल्ट के रूप में सेट करें</string>
   <string name="notification_channel_name">मीडिया प्लेबैक</string>

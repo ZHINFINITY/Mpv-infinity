@@ -649,7 +649,11 @@ Siguiente: NEXT</string>
   <string name="fonts_loaded">%1$d fuentes cargadas</string>
   <string name="reload_fonts">Recargar fuentes</string>
   <string name="reload_fonts_summary">Volver a analizar la carpeta de origen seleccionada y actualizar la lista de fuentes</string>
-  <string name="clear_font_directory">Borrar directorio de fuentes</string>
+
+  <string name="download_fonts">Descargar fuentes</string>
+  <string name="download_fonts_summary">Descarga un conjunto de fuentes de subtítulos populares de licencia libre (Anton, Roboto, Noto Sans y más) para usarlas como fuente de subtítulos</string>
+  <string name="download_fonts_done">Se descargaron %1$d fuentes</string>
+  <string name="download_fonts_failed">Error al descargar fuentes, comprueba tu conexión</string>  <string name="clear_font_directory">Borrar directorio de fuentes</string>
   <string name="reset_to_default_font">Restablecer fuente predeterminada</string>
   <string name="set_as_default">Establecer como predeterminado</string>
   <string name="notification_channel_name">Reproducción multimedia</string>

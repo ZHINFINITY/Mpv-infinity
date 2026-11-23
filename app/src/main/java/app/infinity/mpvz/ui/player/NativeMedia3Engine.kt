@@ -596,6 +596,7 @@ class NativeMedia3Engine internal constructor(
       decoderReuseEvaluation: androidx.media3.exoplayer.DecoderReuseEvaluation?,
     ) {
       currentVideoFormat = format
+      NativeMediaMetadata.publish(currentVideoFormat, currentAudioFormat)
       if (BuildConfig.DEBUG) {
         val colorInfo = format.colorInfo
         val flowSink = media3FlowSink
@@ -625,6 +626,7 @@ class NativeMedia3Engine internal constructor(
       decoderReuseEvaluation: androidx.media3.exoplayer.DecoderReuseEvaluation?,
     ) {
       currentAudioFormat = format
+      NativeMediaMetadata.publish(currentVideoFormat, currentAudioFormat)
       publishSnapshot()
     }
 
@@ -977,6 +979,7 @@ class NativeMedia3Engine internal constructor(
       currentVideoFormat = null
       currentAudioFormat = null
       currentVideoSize = null
+      NativeMediaMetadata.clear()
       resetVideoFrameCounterBaseline()
       frameProcessingOffsetTotalUs = 0L
       frameProcessingSampleCount = 0L
@@ -1260,6 +1263,12 @@ class NativeMedia3Engine internal constructor(
       .clearOverridesOfType(C.TRACK_TYPE_TEXT)
       .addOverride(TrackSelectionOverride(match.first.mediaTrackGroup, match.second))
       .build()
+    // Remember the external track as the desired selection: the setMediaItem/prepare in
+    // addExternalSubtitle fires further onTracksChanged events, and without this
+    // restoreSelectedNativeSubtitle would re-apply the previously selected embedded track,
+    // dropping the freshly added (e.g. translated) one.
+    selectedNativeSubtitleSelection = subtitleSelectionFor(match.first, match.second)
+    selectedNativeSubtitleKey = player.currentTracks.groups.indexOf(match.first) to match.second
     pendingExternalSelectionId = null
     publishSnapshot()
   }
@@ -1367,6 +1376,9 @@ class NativeMedia3Engine internal constructor(
   private fun restoreSelectedNativeSubtitle(tracks: Tracks) {
     val wanted = selectedNativeSubtitleSelection ?: return
     if (restoringNativeSubtitleSelection) return
+    // An external selection is waiting to be applied; restoring an older selection here would
+    // race it and put the embedded track back on top.
+    if (pendingExternalSelectionId != null) return
     val match = tracks.groups
       .asSequence()
       .filter { it.type == C.TRACK_TYPE_TEXT }
@@ -1604,6 +1616,7 @@ class NativeMedia3Engine internal constructor(
     currentVideoFormat = null
     currentAudioFormat = null
     currentVideoSize = null
+    NativeMediaMetadata.clear()
     resetVideoFrameCounterBaseline()
     frameProcessingOffsetTotalUs = 0L
     frameProcessingSampleCount = 0L
@@ -1992,6 +2005,7 @@ class NativeMedia3Engine internal constructor(
     currentVideoFormat = null
     currentVideoSize = null
     videoDecoderName = null
+    NativeMediaMetadata.clear()
     _subtitleCueText.value = ""
     selectedNativeSubtitleKey = null
     selectedNativeSubtitleSelection = null

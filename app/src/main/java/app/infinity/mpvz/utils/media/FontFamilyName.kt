@@ -59,7 +59,6 @@ object FontFamilyName {
 
   private fun readU16(bytes: ByteArray, off: Int): Int =
     ((bytes[off].toInt() and 0xFF) shl 8) or (bytes[off + 1].toInt() and 0xFF)
-
   private fun readU32(bytes: ByteArray, off: Int): Long =
     ((bytes[off].toLong() and 0xFF) shl 24) or
       ((bytes[off + 1].toLong() and 0xFF) shl 16) or
@@ -73,5 +72,37 @@ object FontFamilyName {
       if (n < 0) return
       read += n
     }
+  }
+
+  @Volatile private var familyByFile: Map<String, String> = emptyMap()
+
+  /**
+   * Resolves a stored font preference (which may be a file name like "Anton-Regular" or a
+   * real family name) to the family name inside the TTF. mpv's libass matches `sub-font`
+   * against family names only; an unresolved value makes fontconfig fall back to an
+   * arbitrary font, which renders with wrong metrics (e.g. collapsed spaces) once
+   * `sub-ass-override` re-styles the subs.
+   */
+  @android.annotation.SuppressLint("DiscouragedApi")
+  fun resolve(fontsDir: java.io.File?, preferred: String): String {
+    val wanted = preferred.trim()
+    if (wanted.isEmpty() || fontsDir == null || !fontsDir.isDirectory) return wanted
+    val cached = familyByFile
+    val map =
+      if (cached.isNotEmpty()) cached
+      else {
+        val built =
+          fontsDir
+            .listFiles { f -> f.isFile && f.extension.lowercase() in setOf("ttf", "otf") }
+            .orEmpty()
+            .mapNotNull { f -> read(f)?.let { family -> f.name.lowercase() to family } }
+            .toMap()
+        familyByFile = built
+        built
+      }
+    map[wanted.lowercase()]?.let { return it }
+    map["${wanted.lowercase()}.ttf"]?.let { return it }
+    map["${wanted.lowercase()}.otf"]?.let { return it }
+    return wanted
   }
 }
