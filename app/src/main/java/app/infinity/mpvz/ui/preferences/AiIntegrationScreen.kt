@@ -1096,6 +1096,7 @@ val apiKeyInfo =
                       Text(
                         when (translationProvider) {
                           app.infinity.mpvz.repository.ai.SubtitleTranslationProvider.GOOGLE -> "Free Google Translate endpoint; no API key required"
+                          app.infinity.mpvz.repository.ai.SubtitleTranslationProvider.ZANGETSU -> "Zangetsu-style free Google endpoint (dict-chrome-ex); no API key required"
                           app.infinity.mpvz.repository.ai.SubtitleTranslationProvider.DEEPL -> "DeepL API with your key (free keys ending in :fx use the free host)"
                           app.infinity.mpvz.repository.ai.SubtitleTranslationProvider.GEMINI -> "Google Gemini API with your key"
                           app.infinity.mpvz.repository.ai.SubtitleTranslationProvider.OPENAI_COMPATIBLE ->
