@@ -1507,7 +1507,19 @@ class NativeMedia3Engine internal constructor(
       return it
     }
     return runCatching {
-      LibassSubtitleRenderer(width, height, null).also {
+      // Register the user's custom fonts folder (same dir the mpv engine points sub-fonts-dir
+      // at) so libass can resolve custom families named in style overrides; without it a font
+      // picked in the subtitle settings silently falls back to the default.
+      val fontsDirectory = File(appContext.filesDir, "fonts")
+      LibassSubtitleRenderer(width, height, fontsDirectory.takeIf { d -> d.isDirectory }?.path).also {
+        // Directory-based fontconfig config may not parse, so also register each font file
+        // explicitly with libass; ass_add_font makes every custom family resolvable.
+        fontsDirectory.takeIf { d -> d.isDirectory }?.listFiles()
+          ?.filter { file -> file.name.lowercase().endsWith(".ttf") || file.name.lowercase().endsWith(".otf") }
+          ?.forEach { file ->
+            runCatching { it.addFont(file.nameWithoutExtension, file.readBytes()) }
+              .onFailure { Log.w(logTag, "custom font registration failed: ${file.name}") }
+          }
         libassRenderer = it
         libassRendererSize = width to height
         view.setRenderer(it)
