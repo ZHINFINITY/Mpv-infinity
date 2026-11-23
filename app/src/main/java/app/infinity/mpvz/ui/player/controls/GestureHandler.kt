@@ -173,6 +173,11 @@ fun GestureHandler(
   }
 
   fun getSubtitlePosition(lane: SubtitleLane, width: Float, height: Float): Int {
+    // The translated overlay is positioned from the primary `sub-pos`, so a drag on it
+    // must read the primary position; `secondary-sub-pos` never moves the overlay.
+    if (lane == SubtitleLane.Secondary && translationOverlayActive && !viewModel.isNativeEngineActive()) {
+      return PlaybackSession.getPropertyInt("sub-pos") ?: subtitlesPreferences.subPos.get()
+    }
     if (lane == SubtitleLane.Secondary && !viewModel.isNativeEngineActive()) {
       val primaryPosition = PlaybackSession.getPropertyInt("sub-pos") ?: subtitlesPreferences.subPos.get()
       return PlaybackSession.getPropertyInt("secondary-sub-pos")

@@ -5291,7 +5291,11 @@ class PlayerViewModel(
 
   internal fun changeSubtitlePositionTo(position: Int, lane: SubtitleLane = SubtitleLane.Primary) {
     val newPosition = clampSubtitlePosition(position)
-    if (lane == SubtitleLane.Secondary && !host.isNativeEngineActive()) {
+    // The translated overlay is constrained from `sub-pos` in PlayerControls, so a drag on
+    // it must write the primary position; `secondary-sub-pos` would not move it.
+    val effectiveLane =
+      if (lane == SubtitleLane.Secondary && embeddedTranslatedSubtitle.value?.isNotBlank() == true) SubtitleLane.Primary else lane
+    if (effectiveLane == SubtitleLane.Secondary && !host.isNativeEngineActive()) {
       subtitlesPreferences.secondarySubPos.set(newPosition)
       PlaybackSession.setPropertyInt("secondary-sub-pos", newPosition)
       allowAssPosition("secondary-sub-ass-override")
@@ -5306,6 +5310,7 @@ class PlayerViewModel(
     }
     allowAssPosition("sub-ass-override")
     syncSubtitleLayout(newPosition)
+    allowAssPosition("sub-ass-override")
     playerUpdate.value = PlayerUpdates.ShowText(appContext.getString(R.string.subtitle_position_update, newPosition))
   }
 
