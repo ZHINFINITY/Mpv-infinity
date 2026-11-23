@@ -483,12 +483,7 @@ fun SubtitlesSheet(
                 onRemove = { onRemoveSubtitle(track.id) },
                 onTranslate = {
                   if (translationEnabled) {
-                    if (configuredLanguages.size == 1) {
-                      val langName = codeToName[configuredLanguages.first()] ?: configuredLanguages.first()
-                      onTranslateSubtitle(track, langName)
-                    } else {
-                      showLanguagePicker = track
-                    }
+                    showLanguagePicker = track
                   }
                 },
                 translationEnabled = translationEnabled,

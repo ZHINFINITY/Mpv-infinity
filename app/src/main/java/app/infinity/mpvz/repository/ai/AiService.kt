@@ -12,6 +12,13 @@ import android.util.Log
 import app.infinity.mpvz.preferences.AiPreferences
 import app.infinity.mpvz.preferences.AiProvider
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -37,6 +44,13 @@ class AiService(
 ) {
   companion object {
     private const val TAG = "AiService"
+
+    /**
+     * Concurrent requests used when translating a whole subtitle file. A strictly sequential loop
+     * made one HTTP round-trip per cue, which took minutes on a feature film; a bounded pool keeps
+     * the free Google endpoints from rate-limiting while cutting the wait to a fraction.
+     */
+    private const val TRANSLATION_CONCURRENCY = 4
   }
 
   private val clients: Map<AiProvider, AiClient> =
@@ -407,10 +421,8 @@ class AiService(
           Result.success(content)
         } else {
           val translated =
-            chunks.mapIndexed { index, chunk ->
-              val value = translateProviderChunk(translator, chunk, targetLanguage, fmt)
-              onProgress(SubtitleTranslationProgress((index + 1).toFloat() / chunks.size, index + 1, chunks.size))
-              value
+            translateInParallel(chunks, onProgress) { chunk ->
+              translateProviderChunk(translator, chunk, targetLanguage, fmt)
             }
           Result.success(
             if (fmt in setOf("srt", "vtt", "sbv", "srv1", "srv2", "srv3")) translated.joinToString("\n\n") else translated.joinToString("\n"),
@@ -456,11 +468,17 @@ class AiService(
     targetLanguage: String,
     onProgress: (SubtitleTranslationProgress) -> Unit,
   ): Result<String> {
+    data class DialogueLine(
+      val lineIdx: Int,
+      val prefix: String,
+      val leadingTags: String,
+      val body: String,
+    )
+
     val lines = content.lines().toMutableList()
-    val dialogue = lines.indices.filter { lines[it].startsWith("Dialogue:", ignoreCase = true) }
-    if (dialogue.isEmpty()) return Result.success(content)
-    dialogue.forEachIndexed { n, index ->
-      val line = lines[index]
+    val dialogue = mutableListOf<DialogueLine>()
+    lines.forEachIndexed { index, line ->
+      if (!line.startsWith("Dialogue:", ignoreCase = true)) return@forEachIndexed
       var pos = -1
       var count = 0
       while (count < 9) {
@@ -473,13 +491,48 @@ class AiService(
         val leadingTags = Regex("^(\\{[^}]*\\})+").find(text)?.value.orEmpty()
         val body = text.removePrefix(leadingTags)
         if (body.isNotBlank()) {
-          val translated = translateProviderText(translator, body.replace("\\N", "\n"), targetLanguage)
-          lines[index] = line.substring(0, pos + 1) + leadingTags + translated.trim().replace("\n", "\\N")
+          dialogue.add(DialogueLine(index, line.substring(0, pos + 1), leadingTags, body))
         }
       }
-      onProgress(SubtitleTranslationProgress((n + 1).toFloat() / dialogue.size, n + 1, dialogue.size))
+    }
+    if (dialogue.isEmpty()) return Result.success(content)
+    val translated =
+      translateInParallel(dialogue, onProgress) { line ->
+        translateProviderText(translator, line.body.replace("\\N", "\n"), targetLanguage).trim().replace("\n", "\\N")
+      }
+    dialogue.forEachIndexed { n, line ->
+      lines[line.lineIdx] = line.prefix + line.leadingTags + translated[n]
     }
     return Result.success(lines.joinToString("\n"))
+  }
+
+  /**
+   * Translates [items] with up to [TRANSLATION_CONCURRENCY] requests in flight, preserving item
+   * order in the result and reporting progress by completed count. The first failure cancels the
+   * remaining requests and rethrows, matching the previous sequential behaviour.
+   */
+  private suspend fun <T> translateInParallel(
+    items: List<T>,
+    onProgress: (SubtitleTranslationProgress) -> Unit,
+    translate: suspend (T) -> String,
+  ): List<String> {
+    if (items.isEmpty()) return emptyList()
+    val semaphore = Semaphore(TRANSLATION_CONCURRENCY)
+    val mutex = Mutex()
+    var completed = 0
+    return coroutineScope {
+      items
+        .map { item ->
+          async {
+            semaphore.withPermit {
+              val value = translate(item)
+              val done = mutex.withLock { ++completed }
+              onProgress(SubtitleTranslationProgress(done.toFloat() / items.size, done, items.size))
+              value
+            }
+          }
+        }.awaitAll()
+    }
   }
 
   /**
