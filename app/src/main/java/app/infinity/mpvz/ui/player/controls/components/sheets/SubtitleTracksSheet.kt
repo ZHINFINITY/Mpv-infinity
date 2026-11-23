@@ -29,6 +29,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -336,6 +337,20 @@ fun SubtitlesSheet(
               Icon(Icons.RoundedFilled.Subtitles, "Generate subtitles")
             }
           }
+          if (aiEnabled && tracks.any { it.external != true }) {
+            IconButton(onClick = onToggleTranslation) {
+              Icon(
+                Icons.RoundedFilled.Translate,
+                "Translate embedded subtitles",
+                tint =
+                  if (translationEnabled) {
+                    MaterialTheme.colorScheme.primary
+                  } else {
+                    LocalContentColor.current
+                  },
+              )
+            }
+          }
           IconButton(onClick = onOpenSubtitleSettings) {
             Icon(Icons.RoundedFilled.Palette, null)
           }
@@ -445,8 +460,10 @@ fun SubtitlesSheet(
               style = MaterialTheme.typography.labelLarge,
               color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small)) {
-              configuredLanguages.take(2).forEach { code ->
+            androidx.compose.foundation.layout.FlowRow(
+              horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small),
+            ) {
+              configuredLanguages.forEach { code ->
                 GlassChip(
                   selected = embeddedTranslationLanguage.equals(code, ignoreCase = true),
                   onClick = { onEmbeddedTranslationLanguageChange(code) },
