@@ -1557,6 +1557,10 @@
   <string name="ui_search_language">Bahasa penelusuran…</string>
   <string name="ui_no_languages_found">Tidak ada bahasa yang ditemukan</string>
   <string name="ui_cancel_translation">Batalkan terjemahan</string>
+  <string name="ui_translate_embedded_subtitles">Terjemahkan subtitle bawaan</string>
+  <string name="toast_could_not_find_current_video_file">Tidak dapat menemukan berkas video saat ini</string>
+  <string name="toast_could_not_locate_track_in_file">Tidak dapat menemukan trek ini di dalam berkas</string>
+  <string name="toast_translation_failed">Penerjemahan gagal: %1$s</string>
   <string name="ui_translate">Menerjemahkan</string>
   <string name="ui_pan_zoom">Geser &amp; Perbesar</string>
   <string name="ui_decrease_zoom">Kurangi zoom</string>

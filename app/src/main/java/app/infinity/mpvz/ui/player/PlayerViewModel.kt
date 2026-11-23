@@ -3459,7 +3459,7 @@ class PlayerViewModel(
               }
             }.onFailure { error ->
               withContext(Dispatchers.Main) {
-                showToast("Translation failed: ${error.message}")
+                showToast(appContext.getString(R.string.toast_translation_failed, error.message))
               }
             }
         } catch (e: Exception) {
@@ -3488,12 +3488,12 @@ class PlayerViewModel(
   ) {
     val ffIndex = track.ffIndex?.toInt()
     if (ffIndex == null || ffIndex < 0) {
-      showToast("Could not locate this track in the file")
+      showToast(appContext.getString(R.string.toast_could_not_locate_track_in_file))
       return
     }
     val media = host.currentMediaLookupHint()?.takeIf { it.isNotBlank() }?.let { resolveLocalMediaPath(it) }
     if (media == null) {
-      showToast("Could not find current video file")
+      showToast(appContext.getString(R.string.toast_could_not_find_current_video_file))
       return
     }
 
@@ -3523,7 +3523,7 @@ class PlayerViewModel(
               }
             }.onFailure { error ->
               withContext(Dispatchers.Main) {
-                showToast("Translation failed: ${error.message}")
+                showToast(appContext.getString(R.string.toast_translation_failed, error.message))
               }
             }
         } catch (e: Exception) {

@@ -1569,6 +1569,10 @@
   <string name="ui_search_language">Wyszukaj język…</string>
   <string name="ui_no_languages_found">Nie znaleziono języków</string>
   <string name="ui_cancel_translation">Anuluj tłumaczenie</string>
+  <string name="ui_translate_embedded_subtitles">Przetłumacz wbudowane napisy</string>
+  <string name="toast_could_not_find_current_video_file">Nie można znaleźć bieżącego pliku wideo</string>
+  <string name="toast_could_not_locate_track_in_file">Nie można znaleźć tej ścieżki w pliku</string>
+  <string name="toast_translation_failed">Tłumaczenie nie powiodło się: %1$s</string>
   <string name="ui_translate">Tłumacz</string>
   <string name="ui_pan_zoom">Pan &amp; Powiększenie</string>
   <string name="ui_decrease_zoom">Zmniejsz powiększenie</string>

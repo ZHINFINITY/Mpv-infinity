@@ -1639,6 +1639,10 @@
   <string name="ui_search_language">Search language…</string>
   <string name="ui_no_languages_found">No languages found</string>
   <string name="ui_cancel_translation">Cancel translation</string>
+  <string name="ui_translate_embedded_subtitles">Translate embedded subtitles</string>
+  <string name="toast_could_not_find_current_video_file">Could not find current video file</string>
+  <string name="toast_could_not_locate_track_in_file">Could not locate this track in the file</string>
+  <string name="toast_translation_failed">Translation failed: %1$s</string>
   <string name="ui_translate">Translate</string>
   <string name="ui_pan_zoom">Pan &amp; Zoom</string>
   <string name="ui_decrease_zoom">Decrease zoom</string>

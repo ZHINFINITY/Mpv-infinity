@@ -341,7 +341,11 @@ fun SubtitlesSheet(
           if (aiEnabled && tracks.any { it.external != true } && configuredLanguages.isNotEmpty()) {
             IconButton(
               onClick = {
-                val embedded = tracks.firstOrNull { it.external != true && it.id != -1 }
+                // Translate the track the user actually selected; fall back to the
+                // first embedded track only when nothing is selected.
+                val embedded =
+                  tracks.firstOrNull { it.external != true && it.id != -1 && isSubtitleSelected(it.id) }
+                    ?: tracks.firstOrNull { it.external != true && it.id != -1 }
                 val lang = embeddedTranslationLanguage.ifBlank {
                   configuredLanguages.firstOrNull() ?: ""
                 }
@@ -353,7 +357,7 @@ fun SubtitlesSheet(
             ) {
               Icon(
                 Icons.RoundedFilled.Translate,
-                "Translate embedded subtitles",
+                stringResource(R.string.ui_translate_embedded_subtitles),
                 tint = if (isTranslating) MaterialTheme.colorScheme.primary else LocalContentColor.current,
               )
             }
@@ -366,19 +370,6 @@ fun SubtitlesSheet(
           }
         },
       )
-      if (translationEnabled && configuredLanguages.isNotEmpty()) {
-        Text(
-          text =
-            "Translation language: " +
-              configuredLanguages.joinToString(", ") { codeToName[it] ?: it.uppercase() },
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.outline,
-          modifier = Modifier.padding(horizontal = MaterialTheme.spacing.medium),
-          maxLines = 1,
-          overflow = TextOverflow.Ellipsis,
-        )
-      }
-
       if (aiEnabled && isTranslating) {
         Column(
           modifier =
@@ -448,35 +439,25 @@ fun SubtitlesSheet(
         }
       }
 
-      if (aiEnabled) {
-        Row(
-          modifier = Modifier.playerSheetSettingRow(active = translationEnabled),
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.medium),
+      if (aiEnabled && tracks.any { it.external != true } && configuredLanguages.isNotEmpty()) {
+        Column(
+          modifier = Modifier.fillMaxWidth().padding(horizontal = MaterialTheme.spacing.medium),
+          verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small),
         ) {
-          Text("Translate embedded subtitles", modifier = Modifier.weight(1f))
-          GlassSwitch(checked = translationEnabled, onCheckedChange = { onToggleTranslation() })
-        }
-        if (tracks.any { it.external != true } && translationEnabled && configuredLanguages.isNotEmpty()) {
-          Column(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = MaterialTheme.spacing.medium),
-            verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small),
+          Text(
+            "Translation language",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+          androidx.compose.foundation.layout.FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small),
           ) {
-            Text(
-              "Translation language",
-              style = MaterialTheme.typography.labelLarge,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            androidx.compose.foundation.layout.FlowRow(
-              horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small),
-            ) {
-              configuredLanguages.forEach { code ->
-                GlassChip(
-                  selected = embeddedTranslationLanguage.equals(code, ignoreCase = true),
-                  onClick = { onEmbeddedTranslationLanguageChange(code) },
-                  label = { Text(codeToName[code.lowercase()] ?: code.uppercase()) },
-                )
-              }
+            configuredLanguages.forEach { code ->
+              GlassChip(
+                selected = embeddedTranslationLanguage.equals(code, ignoreCase = true),
+                onClick = { onEmbeddedTranslationLanguageChange(code) },
+                label = { Text(codeToName[code.lowercase()] ?: code.uppercase()) },
+              )
             }
           }
         }

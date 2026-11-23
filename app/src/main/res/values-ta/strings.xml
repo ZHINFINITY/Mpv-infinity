@@ -1557,6 +1557,10 @@
   <string name="ui_search_language">மொழியைத் தேடு…</string>
   <string name="ui_no_languages_found">மொழிகள் எதுவும் கிடைக்கவில்லை</string>
   <string name="ui_cancel_translation">மொழிபெயர்ப்பை ரத்து செய்</string>
+  <string name="ui_translate_embedded_subtitles">உட்பொதிந்த வசனங்களை மொழிபெயர்</string>
+  <string name="toast_could_not_find_current_video_file">தற்போதைய வீடியோ கோப்பைக் கண்டறிய முடியவில்லை</string>
+  <string name="toast_could_not_locate_track_in_file">இந்த வசன தடம் கோப்பில் கண்டறிய முடியவில்லை</string>
+  <string name="toast_translation_failed">மொழிபெயர்ப்பு தோல்வி: %1$s</string>
   <string name="ui_translate">மொழிபெயர்</string>
   <string name="ui_pan_zoom">நகர்த்தி பெரிதாக்கு</string>
   <string name="ui_decrease_zoom">பெரிதாக்கலைக் குறை</string>

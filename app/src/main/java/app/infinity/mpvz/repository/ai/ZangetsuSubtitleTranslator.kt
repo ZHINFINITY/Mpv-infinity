@@ -10,6 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -117,18 +118,39 @@ class ZangetsuSubtitleTranslator(
     val results = HashMap<Int, String>(tasks.size)
     var completed = 0
     val total = unique.size
+    // Bounded concurrency: firing every line at once trips the free endpoint's
+    // rate limit and lines come back untranslated. 4 at a time with retries.
+    val gate = kotlinx.coroutines.sync.Semaphore(4)
 
     coroutineScope {
       unique.values
         .map { task ->
           async {
-            val cached = synchronized(cache) { cache[task.key] }
-            val translated =
-              cached ?: translator.translate(task.original, targetLanguage).getOrElse { task.original }
-            if (cached == null) synchronized(cache) { cache[task.key] = translated }
-            synchronized(results) { results[task.lineIdx] = translated }
-            val done = synchronized(unique) { ++completed }
-            onProgress(done.toFloat() / total)
+            gate.acquire()
+            try {
+              val cached = synchronized(cache) { cache[task.key] }
+              if (cached != null) {
+                synchronized(results) { results[task.lineIdx] = cached }
+              } else {
+                var translated: String? = null
+                for (attempt in 0 until 4) {
+                  val result = translator.translate(task.original, targetLanguage)
+                  if (result.isSuccess) {
+                    translated = result.getOrThrow()
+                    break
+                  }
+                  if (attempt < 3) delay(500L * (1L shl attempt))
+                }
+                translated?.let { value ->
+                  synchronized(cache) { cache[task.key] = value }
+                  synchronized(results) { results[task.lineIdx] = value }
+                }
+              }
+              val done = synchronized(unique) { ++completed }
+              onProgress(done.toFloat() / total)
+            } finally {
+              gate.release()
+            }
           }
         }.awaitAll()
     }

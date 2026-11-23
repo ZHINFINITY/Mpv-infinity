@@ -1557,6 +1557,10 @@
   <string name="ui_search_language">Tìm kiếm ngôn ngữ…</string>
   <string name="ui_no_languages_found">Không tìm thấy ngôn ngữ nào</string>
   <string name="ui_cancel_translation">Hủy dịch</string>
+  <string name="ui_translate_embedded_subtitles">Dịch phụ đề nhúng</string>
+  <string name="toast_could_not_find_current_video_file">Không tìm thấy tệp video hiện tại</string>
+  <string name="toast_could_not_locate_track_in_file">Không tìm thấy track này trong tệp</string>
+  <string name="toast_translation_failed">Dịch thất bại: %1$s</string>
   <string name="ui_translate">Dịch</string>
   <string name="ui_pan_zoom">Xoay &amp; Thu phóng</string>
   <string name="ui_decrease_zoom">Giảm thu phóng</string>
