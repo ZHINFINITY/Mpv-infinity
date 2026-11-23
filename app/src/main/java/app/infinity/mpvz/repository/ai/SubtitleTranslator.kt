@@ -49,12 +49,20 @@ class SubtitleTranslator(
           throw SubtitleTranslationException("Built-in ffmpeg is unavailable")
         }
         val workDir = File(appContext.cacheDir, "subtitle_translation").apply { mkdirs() }
+        // Media3's MKV extractor reports the container's 1-based track number as the format id,
+        // while ffmpeg needs the 0-based subtitle-stream index; resolve the real index with
+        // ffprobe so every extraction stage below maps the requested track correctly.
+        val streamIndex = resolveFfSubtitleStreamIndex(
+          appContext.applicationInfo.nativeLibraryDir.let(::File),
+          videoPath,
+          trackFfIndex,
+        )
 
         // Preferred path: ASS output preserves the source styles, so the translated
         // subtitles render at the original size with the original positioning.
-        val assFile = File(workDir, "track_${trackFfIndex}_$targetLanguage.ass")
+        val assFile = File(workDir, "track_${streamIndex}_$targetLanguage.ass")
         assFile.delete()
-        val assOutput = extract(ffmpeg, videoPath, trackFfIndex, "ass", assFile)
+        val assOutput = extract(ffmpeg, videoPath, streamIndex, "ass", assFile)
         val assContent = if (assFile.isFile) assFile.readText() else ""
         if (assContent.contains("Dialogue:")) {
           val translated =
@@ -65,24 +73,24 @@ class SubtitleTranslator(
           // follows the subtitle settings on both engines (mpv and the libass renderer);
           // embedded script styles would otherwise always win.
           val styled = overrideFontFamily?.let { applyStyleFont(translated, it) } ?: translated
-          val outFile = File(workDir, "track_${trackFfIndex}_$targetLanguage.translated.ass")
+          val outFile = File(workDir, "track_${streamIndex}_$targetLanguage.translated.ass")
           outFile.writeText(styled)
           return@withContext Result.success(outFile)
         }
 
         // Fallback: text-based tracks that do not convert to ASS (or an extraction
         // failure) go through the SRT path with the same cue-level algorithm.
-        val srtFile = File(workDir, "track_${trackFfIndex}_$targetLanguage.srt")
+        val srtFile = File(workDir, "track_${streamIndex}_$targetLanguage.srt")
         srtFile.delete()
-        val srtOutput = extract(ffmpeg, videoPath, trackFfIndex, "srt", srtFile)
+        val srtOutput = extract(ffmpeg, videoPath, streamIndex, "srt", srtFile)
         val content = if (srtFile.isFile) srtFile.readText() else ""
         // Last resort for image-based tracks (PGS/DVB): copy the raw bitstream into a Matroska
         // container (the bundled ffmpeg has no .sup muxer), then OCR the bitmaps and translate
         // the recognized text through the same cue-level algorithm.
         if (content.isBlank()) {
-          val supFile = File(workDir, "track_$trackFfIndex.mkv")
+          val supFile = File(workDir, "track_$streamIndex.mkv")
           supFile.delete()
-          extract(ffmpeg, videoPath, trackFfIndex, "copy", supFile)
+          extract(ffmpeg, videoPath, streamIndex, "copy", supFile)
           val supCues: List<String> =
             if (supFile.isFile && supFile.length() > 0) {
               withContext(Dispatchers.Default) {
@@ -96,7 +104,7 @@ class SubtitleTranslator(
             val translated = translateSrt(supCues.joinToString("\n"), targetLanguage) { done ->
               onStage("Translating ${(done * 100).toInt()}%")
             }
-            val supOut = File(workDir, "track_${trackFfIndex}_$targetLanguage.translated.srt")
+            val supOut = File(workDir, "track_${streamIndex}_$targetLanguage.translated.srt")
             supOut.writeText(translated)
             return@withContext Result.success(supOut)
           }
@@ -109,7 +117,7 @@ class SubtitleTranslator(
         val translated = translateSrt(content, targetLanguage) { done ->
           onStage("Translating ${(done * 100).toInt()}%")
         }
-        val outFile = File(workDir, "track_${trackFfIndex}_$targetLanguage.translated.srt")
+        val outFile = File(workDir, "track_${streamIndex}_$targetLanguage.translated.srt")
         outFile.writeText(translated)
         Result.success(outFile)
       }
@@ -127,6 +135,43 @@ class SubtitleTranslator(
     val s = ms % 60_000 / 1000
     val millis = ms % 1000
     return "%02d:%02d:%02d,%03d".format(h, m, s, millis)
+  }
+
+  /**
+   * Maps the caller's track identifier to a real ffmpeg subtitle-stream index. mpv tracks pass
+   * a true 0-based stream index, while native (Media3) tracks pass the MKV 1-based track number
+   * from the format id, which is usually off by one from the ffmpeg index. ffprobe lists the
+   * file's streams: an exact subtitle-stream match is used as-is; otherwise the closest
+   * subtitle stream at or before the requested position is picked.
+   */
+  private fun resolveFfSubtitleStreamIndex(nativeDir: File, videoPath: String, requested: Int): Int {
+    val ffprobe = File(nativeDir, "libffprobe_exec.so")
+    if (!ffprobe.isFile || !ffprobe.canExecute() || requested < 0) return requested
+    return runCatching {
+      val process = ProcessBuilder(
+        listOf(
+          ffprobe.absolutePath,
+          "-v", "error",
+          "-show_entries", "stream=index,codec_type",
+          "-of", "csv=p=0",
+          videoPath,
+        ),
+      ).redirectErrorStream(true).start()
+      val lines = process.inputStream.readBytes().decodeToString().lineSequence()
+        .filter { it.isNotBlank() }.toList()
+      if (process.waitFor() != 0) return requested
+      val subtitleIndices = lines.mapNotNull { line ->
+        val parts = line.split(",")
+        if (parts.size >= 2 && parts[1] == "subtitle") parts[0].toIntOrNull() else null
+      }
+      when {
+        requested in subtitleIndices -> requested
+        // MKV track number: the matching ffmpeg index sits at or before it.
+        else -> subtitleIndices.lastOrNull { it <= requested }
+          ?: subtitleIndices.firstOrNull()
+          ?: requested
+      }
+    }.getOrDefault(requested)
   }
 
   /** Returns an empty string on success, otherwise a short user-facing failure reason. */

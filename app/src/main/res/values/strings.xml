@@ -2371,4 +2371,5 @@
   <string name="video_mark_as_last_played">Last Played</string>
   <string name="video_mark_as_finished">Finished</string>
   <string name="video_mark_as_none">None</string>
+  <string name="toast_translation_cue_fallback">Falling back to line-by-line translation (%1$s)</string>
 </resources>

@@ -2271,4 +2271,5 @@
   <string name="widget_music_previous" translatable="false">Previous track</string>
   <string name="widget_music_play_pause" translatable="false">Play or pause</string>
   <string name="widget_music_next" translatable="false">Next track</string>
+  <string name="toast_translation_cue_fallback">लाइन-दर-लाइन अनुवाद पर लौट रहे हैं (%1$s)</string>
 </resources>

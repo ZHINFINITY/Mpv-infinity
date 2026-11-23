@@ -11,10 +11,17 @@ import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
+import android.content.ContentResolver
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.Uri
+import android.os.Bundle
 import android.util.Log
+import android.util.Size
 import android.widget.RemoteViews
+import androidx.core.graphics.ColorUtils
 import androidx.core.content.ContextCompat
 import app.infinity.mpvz.MainActivity
 import app.infinity.mpvz.R
@@ -28,9 +35,13 @@ import app.infinity.mpvz.ui.player.PlayerActivity
 
 /**
  * Home-screen widget for the audio player. Shows the current (or last persisted) track and offers
- * previous / play-pause / next buttons. Buttons work while the app process is dead: the transport
- * broadcast either reuses the live playback service (same actions the media notification uses) or
- * cold-launches [PlayerActivity] with the persisted resume snapshot and a pending media action.
+ * previous / play-pause / next buttons, rendered as one of three size-aware layouts: the wide
+ * 4x2 with rounded artwork and the full transport row, a tall variant for portrait footprints,
+ * and the compact single-row layout for small cells. A tint derived from the track's artwork
+ * colors the progress bar and play button so the widget follows the music. Buttons work while
+ * the app process is dead: the transport broadcast either reuses the live playback service (same
+ * actions the media notification uses) or cold-launches [PlayerActivity] with the persisted
+ * resume snapshot and a pending media action.
  */
 class MusicPlayerWidgetProvider : AppWidgetProvider() {
 
@@ -47,6 +58,16 @@ class MusicPlayerWidgetProvider : AppWidgetProvider() {
         pendingResult.finish()
       }
     }.start()
+  }
+
+  override fun onAppWidgetOptionsChanged(
+    context: Context,
+    appWidgetManager: AppWidgetManager,
+    appWidgetId: Int,
+    newOptions: Bundle?,
+  ) {
+    // Resizing is how the user moves between the wide / tall / compact layouts.
+    refreshAllInternal(context, appWidgetManager, intArrayOf(appWidgetId))
   }
 
   override fun onReceive(context: Context, intent: Intent) {
@@ -130,72 +151,8 @@ class MusicPlayerWidgetProvider : AppWidgetProvider() {
       )
     }
 
-  private fun buildRemoteViews(context: Context): RemoteViews {
-    val appContext = context.applicationContext
-    val item = if (PlaybackSession.isInitialized) {
-      PlaybackSession.state.value.currentItem
-    } else {
-      runCatching { AudioPlaybackResumeStore.load(appContext) }.getOrNull()?.currentItem
-    }
-    val paused = if (PlaybackSession.isInitialized) {
-      PlaybackSession.state.value.paused
-    } else {
-      true
-    }
-
-    val views = RemoteViews(appContext.packageName, R.layout.widget_music_player)
-    views.setTextViewText(
-      R.id.widget_track_title,
-      item?.title ?: appContext.getString(R.string.widget_music_no_media),
-    )
-    views.setTextViewText(
-      R.id.widget_track_artist,
-      item?.artist ?: appContext.getString(R.string.widget_music_open_player_hint),
-    )
-    views.setImageViewResource(
-      R.id.widget_button_play_pause,
-      if (paused) R.drawable.materialsymbols_ic_play_arrow_rounded
-      else R.drawable.materialsymbols_ic_pause_rounded,
-    )
-
-    val openPlayer = openPlayerPendingIntent(appContext)
-    views.setOnClickPendingIntent(R.id.widget_music_player_root, openPlayer)
-    views.setOnClickPendingIntent(
-      R.id.widget_button_previous,
-      transportPendingIntent(appContext, ACTION_PREVIOUS, REQUEST_CODE_PREVIOUS),
-    )
-    views.setOnClickPendingIntent(
-      R.id.widget_button_play_pause,
-      transportPendingIntent(appContext, ACTION_PLAY_PAUSE, REQUEST_CODE_PLAY_PAUSE),
-    )
-    views.setOnClickPendingIntent(
-      R.id.widget_button_next,
-      transportPendingIntent(appContext, ACTION_NEXT, REQUEST_CODE_NEXT),
-    )
-    return views
-  }
-
-  private fun transportPendingIntent(context: Context, action: String, requestCode: Int): PendingIntent =
-    PendingIntent.getBroadcast(
-      context,
-      requestCode,
-      Intent(context, MusicPlayerWidgetProvider::class.java).setAction(action),
-      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-    )
-
-  private fun openPlayerPendingIntent(context: Context): PendingIntent {
-    val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)
-      ?: Intent(context, MainActivity::class.java)
-    return PendingIntent.getActivity(
-      context,
-      REQUEST_CODE_OPEN_PLAYER,
-      intent,
-      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-    )
-  }
-
   companion object {
-    private const val TAG = "MusicPlayerWidget"
+    const val TAG = "MusicPlayerWidget"
 
     const val ACTION_PREVIOUS = "app.infinity.mpvz.action.WIDGET_PREVIOUS"
     const val ACTION_PLAY_PAUSE = "app.infinity.mpvz.action.WIDGET_PLAY_PAUSE"
@@ -204,10 +161,31 @@ class MusicPlayerWidgetProvider : AppWidgetProvider() {
     /** Extra set on the cold-resume [PlayerActivity] launch so it applies the widget action once playing. */
     const val EXTRA_WIDGET_MEDIA_ACTION = "app.infinity.mpvz.extra.WIDGET_MEDIA_ACTION"
 
-    private const val REQUEST_CODE_OPEN_PLAYER = 4200
-    private const val REQUEST_CODE_PREVIOUS = 4201
-    private const val REQUEST_CODE_PLAY_PAUSE = 4202
-    private const val REQUEST_CODE_NEXT = 4203
+    const val REQUEST_CODE_OPEN_PLAYER = 4200
+    const val REQUEST_CODE_PREVIOUS = 4201
+    const val REQUEST_CODE_PLAY_PAUSE = 4202
+    const val REQUEST_CODE_NEXT = 4203
+
+    /** Wide layout from this dp width up; below it the tall layout; small cells go compact. */
+    const val WIDE_MIN_WIDTH = 320
+
+    /** Below this dp width the widget renders the compact single-row layout. */
+    const val COMPACT_MAX_WIDTH = 180
+
+    /** Default palette seed when the track has no decodable artwork. */
+    const val DEFAULT_SEED = 0xFF2B2536.toInt()
+
+    /** Latest playback position (seconds) pushed by the service before each widget refresh. */
+    @Volatile var latestPositionSeconds: Float? = null
+
+    /** Called by the service just before a refresh so the progress bar tracks playback. */
+    fun publishPosition(seconds: Double) {
+      latestPositionSeconds = seconds.toFloat()
+    }
+
+    /** Decoded artwork cached across refreshes; artwork changes are rare and decodes are not. */
+    @Volatile private var cachedArtworkUri: String? = null
+    @Volatile private var cachedArtwork: Bitmap? = null
 
     fun refreshAll(context: Context) {
       refreshAllInternal(context.applicationContext)
@@ -221,10 +199,147 @@ class MusicPlayerWidgetProvider : AppWidgetProvider() {
       ),
     ) {
       if (appWidgetIds.isEmpty()) return
-      runCatching {
-        val views = MusicPlayerWidgetProvider().buildRemoteViews(context)
-        manager.updateAppWidget(appWidgetIds, views)
-      }.onFailure { Log.w(TAG, "Widget refresh failed", it) }
+      val appContext = context.applicationContext
+      val item = if (PlaybackSession.isInitialized) {
+        PlaybackSession.state.value.currentItem
+      } else {
+        runCatching { AudioPlaybackResumeStore.load(appContext) }.getOrNull()?.currentItem
+      }
+      val paused = if (PlaybackSession.isInitialized) {
+        PlaybackSession.state.value.paused
+      } else {
+        true
+      }
+      val artwork = decodeArtwork(appContext.contentResolver, item?.artworkUri)
+      val accent = accentColor(artwork)
+      for (id in appWidgetIds) {
+        runCatching {
+          val options = manager.getAppWidgetOptions(id)
+          val width = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 250)
+          val height = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 110)
+          manager.updateAppWidget(
+            id,
+            buildRemoteViews(appContext, item, paused, artwork, accent, width, height),
+          )
+        }.onFailure { Log.w(TAG, "Widget refresh failed", it) }
+      }
+    }
+
+    private fun decodeArtwork(resolver: ContentResolver, artworkUri: String?): Bitmap? {
+      val uri = artworkUri?.takeIf { it.isNotBlank() } ?: return null
+      cachedArtworkUri?.let { cachedUri ->
+        if (cachedUri == uri) return cachedArtwork
+      }
+      val bitmap = runCatching {
+        val raw = Uri.parse(uri)
+        if (raw.scheme == "content") {
+          resolver.loadThumbnail(raw, Size(384, 384), null)
+        } else {
+          resolver.openInputStream(raw)?.use { stream ->
+            BitmapFactory.decodeStream(stream)
+          }
+        }
+      }.onFailure { Log.w(TAG, "Widget artwork decode failed", it) }.getOrNull()
+      cachedArtworkUri = uri
+      cachedArtwork = bitmap
+      return bitmap
+    }
+
+    /** Artwork-derived accent (light, low-saturation) for the progress bar and play button. */
+    private fun accentColor(artwork: Bitmap?): Int {
+      val seed = artwork?.let { art ->
+        val scaled = Bitmap.createScaledBitmap(art, 1, 1, false)
+        scaled.getPixel(0, 0).also { if (scaled !== art) scaled.recycle() }
+      } ?: DEFAULT_SEED
+      val hsl = FloatArray(3)
+      ColorUtils.colorToHSL(seed, hsl)
+      hsl[1] = hsl[1].coerceIn(0f, 0.5f)
+      hsl[2] = 0.82f
+      return ColorUtils.HSLToColor(hsl)
+    }
+
+    /** Picks the layout for the widget's current cell size and fills it. */
+    fun buildRemoteViews(
+      context: Context,
+      item: PlaybackItem?,
+      paused: Boolean,
+      artwork: Bitmap?,
+      accent: Int,
+      widthDp: Int,
+      @Suppress("UNUSED_PARAMETER") heightDp: Int,
+    ): RemoteViews {
+      val layoutRes = when {
+        widthDp < COMPACT_MAX_WIDTH -> R.layout.widget_music_player
+        widthDp >= WIDE_MIN_WIDTH -> R.layout.widget_music_wide
+        else -> R.layout.widget_music_tall
+      }
+      val views = RemoteViews(context.packageName, layoutRes)
+
+      views.setTextViewText(
+        R.id.widget_track_title,
+        item?.title ?: context.getString(R.string.widget_music_no_media),
+      )
+      views.setTextViewText(
+        R.id.widget_track_artist,
+        item?.artist ?: context.getString(R.string.widget_music_open_player_hint),
+      )
+      views.setImageViewResource(
+        R.id.widget_button_play_pause,
+        if (paused) R.drawable.materialsymbols_ic_play_arrow_rounded
+        else R.drawable.materialsymbols_ic_pause_rounded,
+      )
+
+      if (artwork != null) {
+        views.setViewVisibility(R.id.widget_artwork_placeholder, android.view.View.GONE)
+        views.setImageViewBitmap(R.id.widget_artwork, artwork)
+      } else {
+        views.setViewVisibility(R.id.widget_artwork_placeholder, android.view.View.VISIBLE)
+      }
+
+      views.setInt(R.id.widget_progress, "setColorFilter", accent)
+      views.setInt(R.id.widget_button_play_pause, "setColorFilter", accent)
+
+      // No track in the session or resume store: dim the transport so the empty state reads
+      // as "tap to open the player" (the root pending intent opens the app).
+      val transportAlpha = if (item == null) 100 else 255
+      views.setInt(R.id.widget_button_previous, "setImageAlpha", transportAlpha)
+      views.setInt(R.id.widget_button_play_pause, "setImageAlpha", transportAlpha)
+      views.setInt(R.id.widget_button_next, "setImageAlpha", transportAlpha)
+
+      val openPlayer = openPlayerPendingIntent(context)
+      views.setOnClickPendingIntent(R.id.widget_music_player_root, openPlayer)
+      views.setOnClickPendingIntent(
+        R.id.widget_button_previous,
+        transportPendingIntent(context, ACTION_PREVIOUS, REQUEST_CODE_PREVIOUS),
+      )
+      views.setOnClickPendingIntent(
+        R.id.widget_button_play_pause,
+        transportPendingIntent(context, ACTION_PLAY_PAUSE, REQUEST_CODE_PLAY_PAUSE),
+      )
+      views.setOnClickPendingIntent(
+        R.id.widget_button_next,
+        transportPendingIntent(context, ACTION_NEXT, REQUEST_CODE_NEXT),
+      )
+      return views
+    }
+
+    private fun transportPendingIntent(context: Context, action: String, requestCode: Int): PendingIntent =
+      PendingIntent.getBroadcast(
+        context,
+        requestCode,
+        Intent(context, MusicPlayerWidgetProvider::class.java).setAction(action),
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+      )
+
+    private fun openPlayerPendingIntent(context: Context): PendingIntent {
+      val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)
+        ?: Intent(context, MainActivity::class.java)
+      return PendingIntent.getActivity(
+        context,
+        REQUEST_CODE_OPEN_PLAYER,
+        intent,
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+      )
     }
   }
 }

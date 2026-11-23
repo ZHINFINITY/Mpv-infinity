@@ -3276,6 +3276,12 @@ class PlayerViewModel(
     nativeSubtitleHiddenForTranslation = false
   }
 
+  /** Whole-track translation failed (e.g. image-based subtitles): let per-cue translation take over. */
+  fun enableEmbeddedCueTranslationFallback() {
+    embeddedTranslationBackoffUntil = 0L
+    lastEmbeddedCue = ""
+  }
+
   fun translateEmbeddedSubtitleCue(rawCue: String, native: Boolean = false) {
     val cue = rawCue.trim()
     if (cue.isBlank()) {
@@ -3515,7 +3521,11 @@ class PlayerViewModel(
               }
             }.onFailure { error ->
               withContext(Dispatchers.Main) {
-                showToast(appContext.getString(R.string.toast_translation_failed, error.message))
+                // Whole-track extraction can fail for image-based formats (PGS/DVB bitmaps)
+                // that ffmpeg cannot convert: fall back to cue-level translation of the text
+                // the engine surfaces, on both engines, instead of only toasting the error.
+                enableEmbeddedCueTranslationFallback()
+                showToast(appContext.getString(R.string.toast_translation_cue_fallback, error.message ?: ""))
               }
             }
         } catch (e: Exception) {

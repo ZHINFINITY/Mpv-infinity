@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 4x2: rounded artwork beside title, progress and the full transport row. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+  android:id="@+id/widget_music_player_root"
+  android:layout_width="match_parent"
+  android:layout_height="match_parent"
+  android:background="@drawable/widget_music_player_background">
+
+  <LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:padding="12dp">
+
+    <FrameLayout
+      android:id="@+id/widget_artwork_container"
+      android:layout_width="wrap_content"
+      android:layout_height="match_parent">
+
+      <ImageView
+        android:id="@+id/widget_artwork_placeholder"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@drawable/widget_music_artwork_background"
+        android:contentDescription="@null"
+        android:scaleType="center"
+        android:src="@drawable/materialsymbols_ic_music_note_rounded"
+        android:tint="#66FFFFFF" />
+
+      <ImageView
+        android:id="@+id/widget_artwork"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:contentDescription="@null"
+        android:scaleType="centerCrop"
+        android:visibility="gone" />
+    </FrameLayout>
+
+    <LinearLayout
+      android:layout_width="0dp"
+      android:layout_height="wrap_content"
+      android:layout_marginStart="16dp"
+      android:layout_weight="1"
+      android:orientation="vertical">
+
+      <TextView
+        android:id="@+id/widget_track_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:ellipsize="end"
+        android:singleLine="true"
+        android:textColor="@android:color/white"
+        android:textSize="18sp"
+        android:textStyle="bold" />
+
+      <TextView
+        android:id="@+id/widget_track_artist"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:ellipsize="end"
+        android:singleLine="true"
+        android:textColor="#B3FFFFFF"
+        android:textSize="14sp" />
+
+      <ProgressBar
+        android:id="@+id/widget_progress"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:backgroundTint="#33FFFFFF"
+        android:indeterminate="false"
+        android:max="1000"
+        android:progress="0"
+        android:progressTint="#FFFFFF" />
+
+      <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <ImageView
+          android:id="@+id/widget_button_previous"
+          android:layout_width="48dp"
+          android:layout_height="48dp"
+          android:background="@drawable/widget_music_button_background"
+          android:contentDescription="@string/widget_music_previous"
+          android:padding="12dp"
+          android:scaleType="fitCenter"
+          android:src="@drawable/materialsymbols_ic_skip_previous_rounded"
+          android:tint="#FFFFFF" />
+
+        <ImageView
+          android:id="@+id/widget_button_play_pause"
+          android:layout_width="52dp"
+          android:layout_height="52dp"
+          android:layout_marginStart="8dp"
+          android:layout_marginEnd="8dp"
+          android:background="@drawable/widget_music_button_background"
+          android:contentDescription="@string/widget_music_play_pause"
+          android:padding="12dp"
+          android:scaleType="fitCenter"
+          android:src="@drawable/materialsymbols_ic_play_arrow_rounded"
+          android:tint="#FFFFFF" />
+
+        <ImageView
+          android:id="@+id/widget_button_next"
+          android:layout_width="48dp"
+          android:layout_height="48dp"
+          android:background="@drawable/widget_music_button_background"
+          android:contentDescription="@string/widget_music_next"
+          android:padding="12dp"
+          android:scaleType="fitCenter"
+          android:src="@drawable/materialsymbols_ic_skip_next_rounded"
+          android:tint="#FFFFFF" />
+      </LinearLayout>
+    </LinearLayout>
+  </LinearLayout>
+</FrameLayout>

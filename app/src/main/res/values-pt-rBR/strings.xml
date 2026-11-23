@@ -2286,4 +2286,5 @@ Reinicie o aplicativo para que todas as alterações entrem em vigor.</string>
   <string name="widget_music_previous" translatable="false">Previous track</string>
   <string name="widget_music_play_pause" translatable="false">Play or pause</string>
   <string name="widget_music_next" translatable="false">Next track</string>
+  <string name="toast_translation_cue_fallback">Voltando à tradução linha por linha (%1$s)</string>
 </resources>

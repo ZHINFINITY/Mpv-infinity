@@ -110,6 +110,7 @@ import app.infinity.mpvz.preferences.InterpolationRuntimeApplyPolicy
 import app.infinity.mpvz.preferences.MpvConfigControlledFeatures
 import app.infinity.mpvz.preferences.MpvConfigOverridePolicy
 import app.infinity.mpvz.preferences.PlayerPreferences
+import app.infinity.mpvz.preferences.DEFAULT_SUBTITLE_FONT_FAMILY
 import app.infinity.mpvz.preferences.SubtitlesPreferences
 import app.infinity.mpvz.preferences.VideoSortType
 import app.infinity.mpvz.repository.MediaFileRepository
@@ -7424,7 +7425,12 @@ class PlayerActivity :
 
     // MPV uses shared typography options for both tracks. Secondary-specific font/color/outline
     // properties are not exposed by this engine; don't send unsupported writes that return -3.
-    PlaybackSession.setPropertyString("sub-font", font)
+    // A blank family would make sub-ass-override=force render everything in libass's built-in
+    // default font (the "font breaks" report), so always resolve to a concrete family.
+    PlaybackSession.setPropertyString(
+      "sub-font",
+      font.ifBlank { DEFAULT_SUBTITLE_FONT_FAMILY },
+    )
     PlaybackSession.setPropertyInt("sub-font-size", fontSize)
     PlaybackSession.setPropertyBoolean("sub-bold", bold)
     PlaybackSession.setPropertyBoolean("sub-italic", italic)
