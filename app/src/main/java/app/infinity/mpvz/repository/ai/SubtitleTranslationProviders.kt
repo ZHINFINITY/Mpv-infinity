@@ -21,6 +21,7 @@ import java.util.Locale
 /** The subtitle translation providers offered in Settings > AI Integration. */
 enum class SubtitleTranslationProvider(val label: String) {
   GOOGLE("Google Translate"),
+  ZANGETSU("Zangetsu"),
   OPENAI_COMPATIBLE("OpenAI-compatible"),
   DEEPL("DeepL"),
   GEMINI("Gemini"),
@@ -84,6 +85,7 @@ object SubtitleTranslationProviders {
   fun defaultEndpoint(provider: SubtitleTranslationProvider, apiKey: String = ""): String =
     when (provider) {
       SubtitleTranslationProvider.GOOGLE -> GOOGLE_FREE_ENDPOINT
+      SubtitleTranslationProvider.ZANGETSU -> GOOGLE_FREE_ENDPOINT
       SubtitleTranslationProvider.DEEPL -> if (isDeeplFreeKey(apiKey)) DEEPL_FREE_ENDPOINT else DEEPL_PRO_ENDPOINT
       SubtitleTranslationProvider.GEMINI -> GEMINI_BASE_ENDPOINT
       SubtitleTranslationProvider.OPENAI_COMPATIBLE -> ""
@@ -209,6 +211,19 @@ object SubtitleTranslationProviders {
     val separator = if (url.contains('?')) "&" else "?"
     return TranslationHttpRequest(
       "$url${separator}client=gtx&sl=auto&tl=${enc(target)}&dt=t&q=${enc(text)}",
+      mapOf("Accept" to "application/json"),
+      null,
+    )
+  }
+
+  /** Zangetsu's variant of the free Google endpoint: same host and parser, the dict-chrome-ex client. */
+  fun zangetsuRequest(text: String, language: String, endpoint: String): TranslationHttpRequest {
+    val target = googleLanguage(language)
+    val url = endpoint.trim()
+    requireHttpUrl(url, "Zangetsu")
+    val separator = if (url.contains('?')) "&" else "?"
+    return TranslationHttpRequest(
+      "$url${separator}client=dict-chrome-ex&sl=auto&tl=${enc(target)}&dt=t&q=${enc(text)}",
       mapOf("Accept" to "application/json"),
       null,
     )
