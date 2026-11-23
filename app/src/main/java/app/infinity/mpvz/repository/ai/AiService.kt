@@ -526,8 +526,10 @@ class AiService(
           async {
             semaphore.withPermit {
               val value = translate(item)
-              val done = mutex.withLock { ++completed }
-              onProgress(SubtitleTranslationProgress(done.toFloat() / items.size, done, items.size))
+              mutex.withLock {
+                ++completed
+                onProgress(SubtitleTranslationProgress(completed.toFloat() / items.size, completed, items.size))
+              }
               value
             }
           }
