@@ -85,12 +85,21 @@ internal fun getSubtitleHitboxBounds(
       2
     }
 
-  // Subtitle text grows upward from the sub-pos anchor point.
-  // Lower bound: small region below the anchor (padding for touch imprecision)
-  val lowerBound = -50f * scaleMultiplier
-  // Upper bound: covers the full estimated subtitle height + padding
+  // Subtitle text grows upward from the sub-pos anchor point (bottom-anchored primary
+  // subs). Secondary subs are top-anchored in mpv, so their text grows downward; give
+  // the secondary lane a symmetric hitbox so touches above and below the anchor both hit.
   val estimatedSubtitleHeight = lineHeightPx * estimatedLines
-  val upperBound = (estimatedSubtitleHeight + 80f * scaleMultiplier).coerceAtLeast(200f * scaleMultiplier)
+  val lowerBound: Float
+  val upperBound: Float
+  if (isSecondary) {
+    lowerBound = -(estimatedSubtitleHeight + 80f * scaleMultiplier).coerceAtLeast(200f * scaleMultiplier)
+    upperBound = -lowerBound
+  } else {
+    // Lower bound: small region below the anchor (padding for touch imprecision)
+    lowerBound = -50f * scaleMultiplier
+    // Upper bound: covers the full estimated subtitle height + padding
+    upperBound = (estimatedSubtitleHeight + 80f * scaleMultiplier).coerceAtLeast(200f * scaleMultiplier)
+  }
 
   return Pair(lowerBound, upperBound)
 }

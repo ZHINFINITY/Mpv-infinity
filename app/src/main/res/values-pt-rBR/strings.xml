@@ -38,6 +38,9 @@
   <string name="pref_appearance_hide_player_buttons_background_summary">Ocultar o fundo de todos os botões de controle do player</string>
   <string name="pref_appearance_force_dark_player_buttons_background_title">Sempre usar fundos escuros nos botões do player</string>
   <string name="pref_appearance_force_dark_player_buttons_background_summary">Manter os fundos dos botões de controle do player escuros nos temas claro, escuro e automático</string>
+  <string name="pref_appearance_category_player">Player</string>
+  <string name="pref_appearance_media_badges_title">Emblemas de mídia</string>
+  <string name="pref_appearance_media_badges_summary">Mostrar emblemas transparentes de formato (fonte, resolução, codec, áudio) sob o título do player</string>
   <string name="pref_appearance_category_file_browser">Navegador de arquivos</string>
   <string name="pref_appearance_category_thumbnails">Miniaturas</string>
   <string name="pref_appearance_show_unplayed_old_video_label_title">Mostrar rótulo para novos vídeos não reproduzidos</string>

@@ -38,6 +38,9 @@
   <string name="pref_appearance_hide_player_buttons_background_summary">மறை பின்னணி இன் அனைத்தும் பிளேயர் கட்டுப்பாடு பொத்தான்கள்</string>
   <string name="pref_appearance_force_dark_player_buttons_background_title">Always பயன்படுத்து இருள் பிளேயர் பொத்தான் backgrounds</string>
   <string name="pref_appearance_force_dark_player_buttons_background_summary">வைத்திரு பிளேயர் கட்டுப்பாடு பொத்தான் backgrounds இருள் இல் ஒளி, இருள், மற்றும் தானியங்கி themes</string>
+  <string name="pref_appearance_category_player">பிளேயர்</string>
+  <string name="pref_appearance_media_badges_title">மீடியா பேட்ஜ்கள்</string>
+  <string name="pref_appearance_media_badges_summary">பிளேயர் தலைப்பின் கீழ் வெளிப்படையான வடிவ பேட்ஜ்களை (மூல, தெளிவுத்திறன், கோடெக், ஆடியோ) காட்டு</string>
   <string name="pref_appearance_category_file_browser">கோப்பு Browser</string>
   <string name="pref_appearance_category_thumbnails">சிறுபடங்கள்</string>
   <string name="pref_appearance_show_unplayed_old_video_label_title">காட்டு label க்காக புதிய unplayed வீடியோக்கள்</string>

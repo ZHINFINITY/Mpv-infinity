@@ -10,6 +10,9 @@ class SubtitlePositioningPolicyTest {
   @Test
   fun secondarySubtitleActivationRespectsTheAssOverridePreference() {
     assertEquals("no", subtitleAssOverrideValue(forceAssOverride = false))
+    // The explicit "Override ASS/SSA subtitles" preference forces general styling
+    // (sub-font etc.) onto ASS scripts with "force"; gesture escalation uses the
+    // milder "scale"/"yes" values to preserve script styling.
     assertEquals("force", subtitleAssOverrideValue(forceAssOverride = true))
   }
 

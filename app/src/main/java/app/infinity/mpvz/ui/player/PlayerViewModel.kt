@@ -3293,7 +3293,10 @@ class PlayerViewModel(
         ?: aiPreferences.autoTranslateLanguages.get().split(",").firstOrNull { it.isNotBlank() }?.trim())
         ?: java.util.Locale.getDefault().language.ifBlank { "en" }
     lastEmbeddedCue = cue
-    _embeddedTranslatedSubtitle.value = null
+    // Keep the previous translated line on screen while the new cue translates.
+    // Nulling it here left a blank gap for the full network round trip on every
+    // cue, which read as "translation became slow" (worst with override-ass,
+    // where the hidden original is not even visible as a fallback).
     if (android.os.SystemClock.elapsedRealtime() < embeddedTranslationBackoffUntil) {
       // A recent failure (bad key, quota, offline): keep the original cue visible.
       return
@@ -3446,6 +3449,10 @@ class PlayerViewModel(
 
               withContext(Dispatchers.Main) {
                 addSubtitle(savedUri, select = true)
+                // A freshly added track renders with mpv's default scale; re-apply the
+                // user's pinch zoom so translated subs match the original sizing.
+                val savedScale = subtitlesPreferences.subScale.get()
+                if (savedScale != 1f) setSubtitleScale(savedScale)
                 showToast("Translation complete: $newFileName")
               }
             }.onFailure { error ->
@@ -5284,9 +5291,14 @@ class PlayerViewModel(
 
   internal fun changeSubtitlePositionTo(position: Int, lane: SubtitleLane = SubtitleLane.Primary) {
     val newPosition = clampSubtitlePosition(position)
-    if (lane == SubtitleLane.Secondary && !host.isNativeEngineActive()) {
+    // The translated overlay is constrained from `sub-pos` in PlayerControls, so a drag on
+    // it must write the primary position; `secondary-sub-pos` would not move it.
+    val effectiveLane =
+      if (lane == SubtitleLane.Secondary && embeddedTranslatedSubtitle.value?.isNotBlank() == true) SubtitleLane.Primary else lane
+    if (effectiveLane == SubtitleLane.Secondary && !host.isNativeEngineActive()) {
       subtitlesPreferences.secondarySubPos.set(newPosition)
       PlaybackSession.setPropertyInt("secondary-sub-pos", newPosition)
+      allowAssPosition("secondary-sub-ass-override")
       playerUpdate.value = PlayerUpdates.ShowText(appContext.getString(R.string.subtitle_position_update, newPosition))
       return
     }
@@ -5296,20 +5308,54 @@ class PlayerViewModel(
       playerUpdate.value = PlayerUpdates.ShowText(appContext.getString(R.string.subtitle_position_update, newPosition))
       return
     }
+    allowAssPosition("sub-ass-override")
     syncSubtitleLayout(newPosition)
+    allowAssPosition("sub-ass-override")
     playerUpdate.value = PlayerUpdates.ShowText(appContext.getString(R.string.subtitle_position_update, newPosition))
   }
 
   internal fun setSubtitleScale(scale: Float, lane: SubtitleLane = SubtitleLane.Primary) {
     val clamped = scale.coerceIn(0.1f, 5f)
-    if (lane == SubtitleLane.Secondary && !host.isNativeEngineActive()) {
+    if (lane == SubtitleLane.Secondary) {
       PlaybackSession.setPropertyFloat("secondary-sub-scale", clamped)
+      allowAssScale("secondary-sub-ass-override")
+      subtitlesPreferences.secondarySubScale.set(clamped)
       playerUpdate.value = PlayerUpdates.SubtitleZoom(clamped)
       return
     }
     if (host.isNativeEngineActive()) host.nativeSetSubtitleScale(clamped)
-    else PlaybackSession.setPropertyFloat("sub-scale", clamped)
+    else {
+      PlaybackSession.setPropertyFloat("sub-scale", clamped)
+      allowAssScale("sub-ass-override")
+    }
     playerUpdate.value = PlayerUpdates.SubtitleZoom(clamped)
+  }
+
+  /**
+   * With `sub-ass-override=no`, mpv ignores `sub-scale` for ASS subtitles, so a pinch has
+   * no effect. `scale` applies the size factor while keeping the script's own styling
+   * (colors, positioning, karaoke), unlike `force`. `yes` alone does not scale ASS subs,
+   * so escalate `no`/`yes` to `scale`, but never downgrade `force` (the user's styling
+   * preference), which already implies scaling.
+   */
+  private fun allowAssScale(property: String) {
+    if (host.isNativeEngineActive()) return
+    val current = PlaybackSession.getPropertyString(property)
+    if (current != "scale" && current != "force") {
+      PlaybackSession.setPropertyString(property, "scale")
+    }
+  }
+
+  /**
+   * With `sub-ass-override=no`, mpv ignores `sub-pos` for ASS subtitles, so a drag has
+   * no effect. `yes` applies position overrides while keeping the script's own styling
+   * (colors, scale, karaoke), unlike `force` which replaces the styling entirely.
+   */
+  private fun allowAssPosition(property: String) {
+    if (host.isNativeEngineActive()) return
+    if (PlaybackSession.getPropertyString(property) == "no") {
+      PlaybackSession.setPropertyString(property, "yes")
+    }
   }
 
   fun setPlaybackSpeed(speed: Float) {

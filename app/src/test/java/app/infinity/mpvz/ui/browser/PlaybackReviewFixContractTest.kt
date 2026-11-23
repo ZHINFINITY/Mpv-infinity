@@ -20,12 +20,14 @@ class PlaybackReviewFixContractTest {
   private fun read(path: String) = File(root, path).readText()
 
   @Test
-  fun gridAndListExposeAccessibleCardMarkAsOutsideSelectionMode() {
+  fun gridAndListUseSwipeOnlyMarkAsWithoutThreeDotMenu() {
     val screen = read("app/src/main/java/app/infinity/mpvz/ui/browser/videolist/VideoListScreen.kt")
     val card = read("app/src/main/java/app/infinity/mpvz/ui/browser/cards/VideoCard.kt")
 
-    assertEquals(2, Regex("onMarkAsClick =").findAll(screen).count())
-    assertEquals(2, Regex("""if \(selectionManager\.isInSelectionMode\) null""").findAll(screen).count())
+    // The 3-dot mark-as menu was removed in favor of swipe-only mark-as
+    // (commit 23a52905); the card keeps its accessible mark-as description.
+    assertEquals(0, Regex("onMarkAsClick =").findAll(screen).count())
+    assertEquals(0, Regex("""if \(selectionManager\.isInSelectionMode\) null""").findAll(screen).count())
     assertTrue(card.contains("contentDescription = stringResource(R.string.video_mark_as_action)"))
   }
 
