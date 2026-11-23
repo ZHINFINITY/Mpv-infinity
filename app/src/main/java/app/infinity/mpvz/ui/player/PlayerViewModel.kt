@@ -5333,12 +5333,15 @@ class PlayerViewModel(
 
   /**
    * With `sub-ass-override=no`, mpv ignores `sub-scale` for ASS subtitles, so a pinch has
-   * no effect. Switching to `scale` applies the size factor while keeping the script's own
-   * styling (colors, positioning, karaoke), unlike `force`.
+   * no effect. `scale` applies the size factor while keeping the script's own styling
+   * (colors, positioning, karaoke), unlike `force`. `yes` alone does not scale ASS subs,
+   * so escalate `no`/`yes` to `scale`, but never downgrade `force` (the user's styling
+   * preference), which already implies scaling.
    */
   private fun allowAssScale(property: String) {
     if (host.isNativeEngineActive()) return
-    if (PlaybackSession.getPropertyString(property) == "no") {
+    val current = PlaybackSession.getPropertyString(property)
+    if (current != "scale" && current != "force") {
       PlaybackSession.setPropertyString(property, "scale")
     }
   }
