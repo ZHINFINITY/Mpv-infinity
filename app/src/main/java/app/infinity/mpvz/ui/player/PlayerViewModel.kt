@@ -3491,8 +3491,8 @@ class PlayerViewModel(
       showToast("Could not locate this track in the file")
       return
     }
-    val media = host.currentMediaLookupHint()?.takeIf { it.isNotBlank() }
-    if (media == null || !media.startsWith("/")) {
+    val media = host.currentMediaLookupHint()?.takeIf { it.isNotBlank() }?.let { resolveLocalMediaPath(it) }
+    if (media == null) {
       showToast("Could not find current video file")
       return
     }
@@ -3620,6 +3620,22 @@ class PlayerViewModel(
   private fun currentVideoUriForSubtitleGeneration(): Uri? {
     val media = host.currentMediaLookupHint()?.takeIf { it.isNotBlank() } ?: return null
     return if (media.startsWith("/")) File(media).toUri() else Uri.parse(media)
+  }
+
+  private fun resolveLocalMediaPath(media: String): String? {
+    if (media.startsWith("/")) return media
+    val uri = runCatching { Uri.parse(media) }.getOrNull() ?: return null
+    if (uri.scheme != "content") return null
+    return runCatching {
+      appContext.contentResolver
+        .query(uri, arrayOf(android.provider.MediaStore.MediaColumns.DATA), null, null, null)
+        ?.use { cursor ->
+          val column = cursor.getColumnIndexOrThrow(android.provider.MediaStore.MediaColumns.DATA)
+          cursor.moveToFirst()
+          val path = cursor.getString(column)
+          if (path != null && File(path).exists()) path else null
+        }
+    }.getOrNull()
   }
 
   fun startRealtimeSubtitles(language: String) {
