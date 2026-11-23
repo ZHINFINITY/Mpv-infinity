@@ -2174,13 +2174,6 @@ class PlayerActivity :
         nativeEngineOrNull()?.snapshot?.value?.subtitleTracks?.getOrNull(-id - 1)?.let { track -> nativeEngineOrNull()?.toggleSubtitle(track) }
       }
     }
-    viewModel.setNativeSubtitleVisibilityListener { hidden ->
-      // Translation may temporarily hide the original cue, but must not disable the Media3 text
-      // track. Disabling it breaks normal UTF-8/SRT cue playback after the first cue and also
-      // destroys the user's selected-track state. Only change presentation visibility here; ASS/
-      // SSA and normal Media3 cue pipelines continue rendering through their existing renderers.
-      nativeEngineOrNull()?.setSubtitlePresentationVisible(!hidden)
-    }
     viewModel.setNativeExternalSubtitleToggleListener { id ->
       viewModel.subtitleTracks.value.firstOrNull { it.id == id }?.externalFilename?.let { rawUri ->
         val enabled = nativeEngineOrNull()?.toggleExternalSubtitle(Uri.parse(rawUri))
@@ -2244,19 +2237,6 @@ class PlayerActivity :
                 if (requestedOrientation != targetOrientation) requestedOrientation = targetOrientation
               }
             }
-          }
-        }
-      }
-    }
-    lifecycleScope.launch {
-      repeatOnLifecycle(Lifecycle.State.STARTED) {
-        // The engine is built lazily (music never needs it). Returning here used to drop
-        // embedded-cue translation for a video reached later from an audio session.
-        nativeEngineBuilt.first { it }
-        val engine = nativeEngineOrNull() ?: return@repeatOnLifecycle
-        engine.subtitleCueText.collect { cue ->
-          if (isNativeEngineActive()) {
-            viewModel.translateEmbeddedSubtitleCue(cue, native = true)
           }
         }
       }
@@ -6768,8 +6748,6 @@ class PlayerActivity :
           val height = player.height.takeIf { it > 0 }?.toFloat()
           applySubtitlePositions(primaryPosition, width, height)
         }
-        if (value.isBlank()) viewModel.clearEmbeddedSubtitleTranslationCue()
-        else viewModel.translateEmbeddedSubtitleCue(value)
       }
       else -> {
         when (property.substringBeforeLast("/")) {

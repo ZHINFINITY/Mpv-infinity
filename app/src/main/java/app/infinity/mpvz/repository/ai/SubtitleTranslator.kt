@@ -15,12 +15,11 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
- * Zangetsu-style whole-track subtitle translation, after Zangetsu's
- * lib/core/playback/subtitle_translate_service.dart: the embedded track is extracted
- * to SRT, cues are deduped, unique lines are translated with bounded concurrency,
+ * Whole-track subtitle translation: the embedded track is extracted to SRT,
+ * cues are deduped, unique lines are translated with bounded concurrency,
  * every result is cached, and a complete translated SRT is rebuilt.
  */
-class ZangetsuSubtitleTranslator(
+class SubtitleTranslator(
   private val appContext: Context,
   private val translator: EmbeddedSubtitleTranslator,
 ) {
@@ -40,7 +39,7 @@ class ZangetsuSubtitleTranslator(
         if (!ffmpeg.isFile || !ffmpeg.canExecute()) {
           throw SubtitleTranslationException("Built-in ffmpeg is unavailable")
         }
-        val workDir = File(appContext.cacheDir, "zangetsu_translation").apply { mkdirs() }
+        val workDir = File(appContext.cacheDir, "subtitle_translation").apply { mkdirs() }
         val extracted = File(workDir, "track_${trackFfIndex}_$targetLanguage.srt")
         extracted.delete()
         val process = ProcessBuilder(
@@ -81,7 +80,7 @@ class ZangetsuSubtitleTranslator(
       )
     }
 
-  /** Zangetsu's algorithm: parse SRT cues, dedupe text lines, translate each unique text once. */
+  /** The algorithm: parse SRT cues, dedupe text lines, translate each unique text once. */
   suspend fun translateSrt(
     content: String,
     targetLanguage: String,

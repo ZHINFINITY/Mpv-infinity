@@ -20,7 +20,7 @@ import app.infinity.mpvz.repository.ai.AiService
 import app.infinity.mpvz.repository.ai.AnthropicClient
 import app.infinity.mpvz.repository.ai.EmbeddedSubtitleTranslator
 import app.infinity.mpvz.repository.ai.GroqClient
-import app.infinity.mpvz.repository.ai.ZangetsuSubtitleTranslator
+import app.infinity.mpvz.repository.ai.SubtitleTranslator
 import app.infinity.mpvz.repository.ai.GroqSpeechClient
 import app.infinity.mpvz.repository.ai.OpenAiClient
 import app.infinity.mpvz.repository.ai.OpenCodeClient
@@ -75,7 +75,7 @@ val domainModule =
     single { SubtitleGenerationService(androidContext(), get(), get(), get(), get(), get()) }
     single { RealtimeSubtitleService(androidContext(), get(), get(), get(), get(), get()) }
     single { EmbeddedSubtitleTranslator(get(), get(), get()) }
-    single { ZangetsuSubtitleTranslator(androidContext(), get()) }
+    single { SubtitleTranslator(androidContext(), get()) }
     single {
       AiService(
         androidContext(),

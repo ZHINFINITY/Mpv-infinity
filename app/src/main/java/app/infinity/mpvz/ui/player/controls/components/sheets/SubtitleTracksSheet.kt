@@ -82,14 +82,12 @@ fun SubtitlesSheet(
   onOpenOnlineSearch: () -> Unit,
   onDismissRequest: () -> Unit,
   onTranslateSubtitle: (TrackNode, String) -> Unit,
-  onZangetsuTranslateSubtitle: (TrackNode, String) -> Unit = { _, _ -> },
+  onTranslateEmbeddedSubtitle: (TrackNode, String) -> Unit = { _, _ -> },
   onGenerateSubtitle: () -> Unit,
   onCancelTranslation: () -> Unit,
   isTranslating: Boolean,
   translationProgress: Float,
   translationStatus: String,
-  translationEnabled: Boolean,
-  onToggleTranslation: () -> Unit = {},
   isGeneratingSubtitles: Boolean,
   subtitleGenerationProgress: Float,
   subtitleGenerationStatus: String,
@@ -350,7 +348,7 @@ fun SubtitlesSheet(
                   configuredLanguages.firstOrNull() ?: ""
                 }
                 if (embedded != null && lang.isNotBlank() && !isTranslating) {
-                  onZangetsuTranslateSubtitle(embedded, lang)
+                  onTranslateEmbeddedSubtitle(embedded, lang)
                 }
               },
               enabled = !isTranslating,
@@ -486,12 +484,7 @@ fun SubtitlesSheet(
                 isExternal = track.external == true,
                 onToggle = { onToggleSubtitle(track.id) },
                 onRemove = { onRemoveSubtitle(track.id) },
-                onTranslate = {
-                  if (translationEnabled) {
-                    showLanguagePicker = track
-                  }
-                },
-                translationEnabled = translationEnabled,
+                onTranslate = { showLanguagePicker = track },
                 isCurrentlyTranslating = track.id == translatingTrackId,
               )
             }
@@ -546,14 +539,13 @@ fun SubtitleTrackRow(
   onToggle: () -> Unit,
   onRemove: () -> Unit,
   onTranslate: () -> Unit,
-  translationEnabled: Boolean,
   isCurrentlyTranslating: Boolean = false,
   modifier: Modifier = Modifier,
 ) {
   TrackSheetRow(track, isSelected, onToggle, checkbox = true, secondaryIndicator = selectionIndicator, modifier = modifier, trailing = {
     if (isCurrentlyTranslating) androidx.compose.material3.CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
     if (isExternal) {
-      if (translationEnabled) IconButton(onClick = onTranslate) { Icon(Icons.RoundedFilled.Translate, stringResource(R.string.ui_translate)) }
+      IconButton(onClick = onTranslate) { Icon(Icons.RoundedFilled.Translate, stringResource(R.string.ui_translate)) }
       IconButton(onClick = onRemove) { Icon(Icons.RoundedFilled.Delete, null) }
     }
   })

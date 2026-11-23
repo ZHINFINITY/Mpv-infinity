@@ -98,9 +98,6 @@ class AiPreferences(
   val automaticSubtitleFontFallback =
     preferenceStore.getBoolean("ai_automatic_subtitle_font_fallback", true)
 
-  val playerSubtitleTranslationEnabled =
-    preferenceStore.getBoolean("ai_player_subtitle_translation_enabled", false)
-
   // Real-time subtitle generation (speech-to-text while playing)
   val realtimeSubsEnabled = preferenceStore.getBoolean("ai_realtime_subs_enabled", true)
   val subtitleTranslationFirstTime = preferenceStore.getBoolean("ai_subtitle_translation_first_time", true)

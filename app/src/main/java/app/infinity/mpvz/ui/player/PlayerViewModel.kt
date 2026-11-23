@@ -60,7 +60,7 @@ import app.infinity.mpvz.repository.IntroDbLookupRequest
 import app.infinity.mpvz.repository.IntroDbRepository
 import app.infinity.mpvz.repository.ai.EmbeddedSubtitleTranslator
 import app.infinity.mpvz.repository.ai.SubtitleGenerationService
-import app.infinity.mpvz.repository.ai.ZangetsuSubtitleTranslator
+import app.infinity.mpvz.repository.ai.SubtitleTranslator
 import app.infinity.mpvz.repository.subtitle.OnlineSubtitle
 import app.infinity.mpvz.repository.subtitle.OnlineSubtitleOrchestrator
 import app.infinity.mpvz.repository.subtitle.OnlineSubtitleSearchMode
@@ -228,7 +228,7 @@ class PlayerViewModel(
   private val playbackStateDao: app.infinity.mpvz.database.dao.PlaybackStateDao by inject()
   private val aiService: app.infinity.mpvz.repository.ai.AiService by inject()
   private val embeddedSubtitleTranslator: EmbeddedSubtitleTranslator by inject()
-  private val zangetsuSubtitleTranslator: ZangetsuSubtitleTranslator by inject()
+  private val subtitleTranslator: SubtitleTranslator by inject()
   private val subtitleGenerationService: SubtitleGenerationService by inject()
   private val realtimeSubtitleService: app.infinity.mpvz.repository.ai.RealtimeSubtitleService by inject()
   private val wyzieRepository: WyzieSearchRepository by inject()
@@ -324,15 +324,6 @@ class PlayerViewModel(
 
   private val _translationStatus = MutableStateFlow("")
   val translationStatus: StateFlow<String> = _translationStatus.asStateFlow()
-  private val _embeddedTranslatedSubtitle = MutableStateFlow<String?>(null)
-  val embeddedTranslatedSubtitle: StateFlow<String?> = _embeddedTranslatedSubtitle.asStateFlow()
-  private var embeddedCueTranslationJob: Job? = null
-  private var embeddedTranslationRequestId = 0L
-  private var lastEmbeddedCue = ""
-  /** After a provider failure, show original cues for a while instead of retrying every cue. */
-  private var embeddedTranslationBackoffUntil = 0L
-  private var nativeSubtitleHiddenForTranslation = false
-  private var nativeSubtitleVisibilityListener: ((Boolean) -> Unit)? = null
 
   private val _isGeneratingSubtitles = MutableStateFlow(false)
   val isGeneratingSubtitles: StateFlow<Boolean> = _isGeneratingSubtitles.asStateFlow()
@@ -763,27 +754,6 @@ class PlayerViewModel(
 
   fun clearNativeExternalSubtitles() {
     nativeExternalSubtitleTracks.value = emptyList()
-  }
-
-  fun setNativeSubtitleVisibilityListener(listener: ((Boolean) -> Unit)?) {
-    nativeSubtitleVisibilityListener = listener
-  }
-
-  /** Re-applies the translation visibility state after switching playback engines. */
-  fun syncNativeSubtitleVisibility() {
-    // The listener parameter is `hidden`, not `visible`. Passing the inverse here hid Native's
-    // SubtitleView on every MPV -> Native handoff when translation was not active.
-    nativeSubtitleVisibilityListener?.invoke(nativeSubtitleHiddenForTranslation)
-  }
-
-  /** Clears the old MPV translation before Native starts emitting its own subtitle cues. */
-  fun prepareNativeEngineHandoffForTranslation() {
-    if (!aiPreferences.playerSubtitleTranslationEnabled.get()) return
-    clearEmbeddedSubtitleTranslationCue(native = true)
-    if (!nativeSubtitleHiddenForTranslation) {
-      nativeSubtitleVisibilityListener?.invoke(true)
-      nativeSubtitleHiddenForTranslation = true
-    }
   }
 
   fun setNativeAudioToggleListener(listener: ((Int) -> Unit)?) {
@@ -3241,160 +3211,6 @@ class PlayerViewModel(
 
   private var translationJob: Job? = null
 
-  fun clearEmbeddedSubtitleTranslationCue(native: Boolean = false) {
-    embeddedTranslationRequestId += 1L
-    embeddedCueTranslationJob?.cancel()
-    embeddedCueTranslationJob = null
-    lastEmbeddedCue = ""
-    _embeddedTranslatedSubtitle.value = null
-
-    // A blank cue is emitted while changing tracks and while seeking. When translation
-    // is enabled, keep text subtitles hidden during that gap; the next non-empty cue
-    // below starts a fresh request. Restoring visibility here causes the original cue
-    // to flash/show while the translated overlay is empty.
-    if (aiPreferences.playerSubtitleTranslationEnabled.get()) {
-      if (native) {
-        nativeSubtitleVisibilityListener?.invoke(true)
-      } else {
-        PlaybackSession.setPropertyBoolean("sub-visibility", false)
-      }
-      nativeSubtitleHiddenForTranslation = true
-    } else {
-      if (native) nativeSubtitleVisibilityListener?.invoke(false)
-      else PlaybackSession.setPropertyBoolean("sub-visibility", true)
-      nativeSubtitleHiddenForTranslation = false
-    }
-  }
-
-  fun resetEmbeddedSubtitleTranslation() {
-    embeddedTranslationRequestId += 1L
-    embeddedTranslationBackoffUntil = 0L
-    embeddedCueTranslationJob?.cancel()
-    embeddedCueTranslationJob = null
-    lastEmbeddedCue = ""
-    _translationStatus.value = ""
-    _embeddedTranslatedSubtitle.value = null
-    // Always restore both subtitle renderers. The hidden flag can be false when the
-    // translation request is cancelled before its result arrives, but either renderer may
-    // already have been hidden by the translation handoff.
-    PlaybackSession.setPropertyBoolean("sub-visibility", true)
-    nativeSubtitleVisibilityListener?.invoke(false)
-    nativeSubtitleHiddenForTranslation = false
-  }
-
-  fun translateEmbeddedSubtitleCue(rawCue: String, native: Boolean = false) {
-    val cue = rawCue.trim()
-    if (cue.isBlank()) {
-      if (aiPreferences.playerSubtitleTranslationEnabled.get()) clearEmbeddedSubtitleTranslationCue(native)
-      else resetEmbeddedSubtitleTranslation()
-      return
-    }
-    if (cue == lastEmbeddedCue || !aiPreferences.playerSubtitleTranslationEnabled.get()) return
-    val target =
-      (aiPreferences.embeddedSubtitleTargetLanguage.get().trim().takeIf { it.isNotBlank() }
-        ?: aiPreferences.autoTranslateLanguages.get().split(",").firstOrNull { it.isNotBlank() }?.trim())
-        ?: java.util.Locale.getDefault().language.ifBlank { "en" }
-    lastEmbeddedCue = cue
-    // Keep the previous translated line on screen while the new cue translates.
-    // Nulling it here left a blank gap for the full network round trip on every
-    // cue, which read as "translation became slow" (worst with override-ass,
-    // where the hidden original is not even visible as a fallback).
-    if (android.os.SystemClock.elapsedRealtime() < embeddedTranslationBackoffUntil) {
-      // A recent failure (bad key, quota, offline): keep the original cue visible.
-      return
-    }
-    // Suppress the original text cue immediately. This prevents the embedded subtitle
-    // from appearing while the translation request is in flight; image-based subtitles
-    // never enter this method and therefore retain their existing rendering behavior.
-    if (native) {
-      nativeSubtitleVisibilityListener?.invoke(true)
-    } else {
-      PlaybackSession.setPropertyBoolean("sub-visibility", false)
-    }
-    nativeSubtitleHiddenForTranslation = true
-    val requestId = ++embeddedTranslationRequestId
-    // A superseded cue's request is discarded by requestId anyway; cancel it so it stops using
-    // a worker and the network instead of running on in the background.
-    embeddedCueTranslationJob?.cancel()
-    embeddedCueTranslationJob = viewModelScope.launch(Dispatchers.IO) {
-      _translationStatus.value = "Translating embedded subtitle…"
-      // Each provider uses its own endpoint/key; only an unconfigured OpenAI-compatible option
-      // borrows the AI assistant provider. Nothing silently falls back to free Google.
-      val result =
-        if (!embeddedSubtitleTranslator.usesAssistantFallback()) {
-          embeddedSubtitleTranslator.translate(cue, target)
-        } else {
-          aiService.generateWithAi(
-            cue,
-            app.infinity.mpvz.repository.ai.AiTask.TRANSLATE,
-            "Translate only into $target. Return only the translated subtitle text; preserve line breaks and do not add commentary.",
-          )
-        }
-      result.onSuccess { translated ->
-        withContext(Dispatchers.Main.immediate) {
-          if (requestId == embeddedTranslationRequestId && cue == lastEmbeddedCue) {
-            val cleanedTranslation = translated.trim().takeIf { it.isNotBlank() }
-            if (cleanedTranslation != null && !translationMatchesOriginal(cue, cleanedTranslation, target)) {
-              if (native && !nativeSubtitleHiddenForTranslation) {
-                nativeSubtitleVisibilityListener?.invoke(true)
-                nativeSubtitleHiddenForTranslation = true
-              }
-              if (!native && !nativeSubtitleHiddenForTranslation) {
-                PlaybackSession.setPropertyBoolean("sub-visibility", false)
-                nativeSubtitleHiddenForTranslation = true
-              }
-              _embeddedTranslatedSubtitle.value = cleanedTranslation
-            } else {
-              // Keep the native subtitle visible when it is already in the requested language.
-              // This preserves the original font, outline, position, and line layout exactly.
-              _embeddedTranslatedSubtitle.value = null
-              if (native && nativeSubtitleHiddenForTranslation) {
-                nativeSubtitleVisibilityListener?.invoke(false)
-                nativeSubtitleHiddenForTranslation = false
-              }
-              if (!native && nativeSubtitleHiddenForTranslation) {
-                PlaybackSession.setPropertyBoolean("sub-visibility", true)
-                nativeSubtitleHiddenForTranslation = false
-              }
-            }
-          }
-          if (requestId == embeddedTranslationRequestId) _translationStatus.value = ""
-        }
-      }.onFailure { failure ->
-        // A cancelled request (player closed, cue replaced) is not a provider failure: no
-        // backoff, toast or subtitle restore, and nothing may outlive viewModelScope.
-        if (failure is kotlin.coroutines.cancellation.CancellationException) throw failure
-        if (requestId == embeddedTranslationRequestId) {
-          withContext(Dispatchers.Main.immediate) {
-            _embeddedTranslatedSubtitle.value = null
-            // Never leave the viewer without subtitles: restore the original cue.
-            if (native) nativeSubtitleVisibilityListener?.invoke(false)
-            else PlaybackSession.setPropertyBoolean("sub-visibility", true)
-            nativeSubtitleHiddenForTranslation = false
-            embeddedTranslationBackoffUntil =
-              android.os.SystemClock.elapsedRealtime() +
-                app.infinity.mpvz.repository.ai.SubtitleTranslationFailurePolicy.BACKOFF_MS
-            val message = app.infinity.mpvz.repository.ai.SubtitleTranslationFailurePolicy.statusMessage(failure)
-            _translationStatus.value = message
-            // Embedded cues have no status row; a toast (at most once per backoff) shows why.
-            showToast(message)
-            viewModelScope.launch {
-              delay(app.infinity.mpvz.repository.ai.SubtitleTranslationFailurePolicy.STATUS_VISIBLE_MS)
-              if (_translationStatus.value == message) _translationStatus.value = ""
-            }
-          }
-        }
-      }
-    }
-  }
-
-  private fun translationMatchesOriginal(original: String, translated: String, target: String): Boolean {
-    fun normalized(value: String) = value.trim().split(Regex("\\s+")).joinToString(" ")
-    if (normalized(original).equals(normalized(translated), ignoreCase = true)) return true
-    val language = target.trim().lowercase().substringBefore('-').substringBefore('_')
-    return language in setOf("ar", "ara") && original.any { it in '\u0600'..'\u06ff' }
-  }
-
   fun translateSubtitle(
     track: TrackNode,
     targetLanguage: String,
@@ -3478,7 +3294,7 @@ class PlayerViewModel(
   }
 
   /**
-   * Zangetsu-style whole-track translation for embedded subtitles: the track is
+   * Whole-track translation for embedded subtitles: the track is
    * extracted with the bundled ffmpeg, then translated as a whole file (deduped,
    * cached, concurrent) and loaded as a new subtitle track.
    */
@@ -3508,7 +3324,7 @@ class PlayerViewModel(
 
         try {
           val result =
-            zangetsuSubtitleTranslator.translateTrack(media, ffIndex, targetLanguage) { stage ->
+            subtitleTranslator.translateTrack(media, ffIndex, targetLanguage) { stage ->
               _translationStatus.value = stage
             }
 
@@ -3856,10 +3672,6 @@ class PlayerViewModel(
 
   fun setMediaTitle(mediaTitle: String) {
     if (currentMediaTitle != mediaTitle) {
-      // A translated cue and the hidden-renderer flag belong to the previous media item.
-      // Clear both before the next file starts so its first subtitle can trigger a fresh
-      // translation request and the original renderer is not left hidden by stale state.
-      resetEmbeddedSubtitleTranslation()
       currentMediaTitle = mediaTitle
       lastAutoSelectedMediaTitle = null
       introLookupJob?.cancel()
@@ -5375,10 +5187,7 @@ class PlayerViewModel(
 
   internal fun changeSubtitlePositionTo(position: Int, lane: SubtitleLane = SubtitleLane.Primary) {
     val newPosition = clampSubtitlePosition(position)
-    // The translated overlay is constrained from `sub-pos` in PlayerControls, so a drag on
-    // it must write the primary position; `secondary-sub-pos` would not move it.
-    val effectiveLane =
-      if (lane == SubtitleLane.Secondary && embeddedTranslatedSubtitle.value?.isNotBlank() == true) SubtitleLane.Primary else lane
+    val effectiveLane = lane
     if (effectiveLane == SubtitleLane.Secondary && !host.isNativeEngineActive()) {
       subtitlesPreferences.secondarySubPos.set(newPosition)
       PlaybackSession.setPropertyInt("secondary-sub-pos", newPosition)
@@ -7600,7 +7409,6 @@ class PlayerViewModel(
     // automatic scope cancellation happens after onCleared(), and a dispatcher worker that is
     // still unwinding can otherwise retain this ViewModel (observed in LeakCanary).
     hostReference.clear()
-    nativeSubtitleVisibilityListener = null
     if (!hostedInBrowser) {
       realtimeSubtitleService.stop()
     }
@@ -7608,7 +7416,6 @@ class PlayerViewModel(
     subtitleSearchJob = null
     mediaSearchJob?.cancel()
     mediaSearchJob = null
-    embeddedCueTranslationJob?.cancel()
     realtimeSubsJob?.cancel()
     playlistMetadataJob?.cancel()
     introLookupJob?.cancel()
@@ -7630,10 +7437,6 @@ class PlayerViewModel(
     frameNavigationCollapseJob?.cancel()
     translationJob?.cancel()
     viewModelScope.cancel()
-    if (nativeSubtitleHiddenForTranslation) {
-      PlaybackSession.setPropertyBoolean("sub-visibility", true)
-      nativeSubtitleHiddenForTranslation = false
-    }
     // Deterministic cleanup of resources that previously relied on GC.
     // viewModelScope is auto-cancelled by ViewModel, but the following
     // resources are not coroutine-scoped and need explicit release.

@@ -133,8 +133,6 @@ fun GestureHandler(
   val videoZoomState by PlaybackSession.propDouble["video-zoom"].collectAsState()
   val videoPanYState by PlaybackSession.propDouble["video-pan-y"].collectAsState()
   val subUseMarginsState by PlaybackSession.propString["sub-use-margins"].collectAsState()
-  val embeddedTranslatedSubtitle by viewModel.embeddedTranslatedSubtitle.collectAsState()
-  val translationOverlayActive = embeddedTranslatedSubtitle?.isNotBlank() == true
 
   fun getSubtitleScreenY(
     subPos: Int,
@@ -173,11 +171,6 @@ fun GestureHandler(
   }
 
   fun getSubtitlePosition(lane: SubtitleLane, width: Float, height: Float): Int {
-    // The translated overlay is positioned from the primary `sub-pos`, so a drag on it
-    // must read the primary position; `secondary-sub-pos` never moves the overlay.
-    if (lane == SubtitleLane.Secondary && translationOverlayActive && !viewModel.isNativeEngineActive()) {
-      return PlaybackSession.getPropertyInt("sub-pos") ?: subtitlesPreferences.subPos.get()
-    }
     if (lane == SubtitleLane.Secondary && !viewModel.isNativeEngineActive()) {
       val primaryPosition = PlaybackSession.getPropertyInt("sub-pos") ?: subtitlesPreferences.subPos.get()
       return PlaybackSession.getPropertyInt("secondary-sub-pos")
@@ -189,7 +182,7 @@ fun GestureHandler(
   }
 
   fun getSubtitleScale(lane: SubtitleLane): Float =
-    if (lane == SubtitleLane.Secondary && (!viewModel.isNativeEngineActive() || translationOverlayActive)) {
+    if (lane == SubtitleLane.Secondary && !viewModel.isNativeEngineActive()) {
       PlaybackSession.getPropertyFloat("secondary-sub-scale")
         ?: subtitlesPreferences.secondarySubScale.get().takeIf { it > 0f }
         ?: subtitlesPreferences.subScale.get()
@@ -209,23 +202,13 @@ fun GestureHandler(
     val active =
       when {
         lane == SubtitleLane.Secondary ->
-          translationOverlayActive ||
-            (!viewModel.isNativeEngineActive() && getTrackSelectionId("secondary-sid") > 0)
-        translationOverlayActive -> false
+          !viewModel.isNativeEngineActive() && getTrackSelectionId("secondary-sid") > 0
         viewModel.isNativeEngineActive() -> subtitleTracks.any { it.isSelected }
         else -> getTrackSelectionId("sid") > 0
       }
     if (!active) return false to Float.POSITIVE_INFINITY
 
-    // The translated overlay is positioned from the primary `sub-pos` (see the
-    // translatedSubtitle constraints in PlayerControls), so its touch anchor must
-    // use the primary position — not `secondary-sub-pos`, which can diverge.
-    val anchorPosition =
-      if (lane == SubtitleLane.Secondary && translationOverlayActive) {
-        getSubtitlePosition(SubtitleLane.Primary, width, height)
-      } else {
-        getSubtitlePosition(lane, width, height)
-      }
+    val anchorPosition = getSubtitlePosition(lane, width, height)
     val anchorY = getSubtitleScreenY(anchorPosition, width, height, lane)
     val within =
       isWithinSubtitleTouchBounds(
@@ -1110,7 +1093,6 @@ fun GestureHandler(
           panAndZoomEnabled,
           areControlsLocked,
           isVerticalGestureActive,
-          translationOverlayActive,
         ) {
           if ((!pinchToZoomGesture && !pinchToZoomSubtitles && !panAndZoomEnabled) ||
             areControlsLocked ||
