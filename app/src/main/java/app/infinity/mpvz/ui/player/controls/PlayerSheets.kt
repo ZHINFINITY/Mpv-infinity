@@ -215,6 +215,7 @@ fun PlayerSheets(
         onOpenOnlineSearch = { onShowSheet(Sheets.OnlineSubtitleSearch) },
         onDismissRequest = onDismissRequest,
         onTranslateSubtitle = { track, lang -> viewModel.translateSubtitle(track, lang) },
+        onZangetsuTranslateSubtitle = { track, lang -> viewModel.translateEmbeddedSubtitleWholeTrack(track, lang) },
         onGenerateSubtitle = { viewModel.generateSubtitles("", "") },
         onCancelTranslation = { viewModel.cancelTranslation() },
         isTranslating = isTranslating,

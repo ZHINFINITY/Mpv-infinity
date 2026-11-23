@@ -60,6 +60,7 @@ import app.infinity.mpvz.repository.IntroDbLookupRequest
 import app.infinity.mpvz.repository.IntroDbRepository
 import app.infinity.mpvz.repository.ai.EmbeddedSubtitleTranslator
 import app.infinity.mpvz.repository.ai.SubtitleGenerationService
+import app.infinity.mpvz.repository.ai.ZangetsuSubtitleTranslator
 import app.infinity.mpvz.repository.subtitle.OnlineSubtitle
 import app.infinity.mpvz.repository.subtitle.OnlineSubtitleOrchestrator
 import app.infinity.mpvz.repository.subtitle.OnlineSubtitleSearchMode
@@ -227,6 +228,7 @@ class PlayerViewModel(
   private val playbackStateDao: app.infinity.mpvz.database.dao.PlaybackStateDao by inject()
   private val aiService: app.infinity.mpvz.repository.ai.AiService by inject()
   private val embeddedSubtitleTranslator: EmbeddedSubtitleTranslator by inject()
+  private val zangetsuSubtitleTranslator: ZangetsuSubtitleTranslator by inject()
   private val subtitleGenerationService: SubtitleGenerationService by inject()
   private val realtimeSubtitleService: app.infinity.mpvz.repository.ai.RealtimeSubtitleService by inject()
   private val wyzieRepository: WyzieSearchRepository by inject()
@@ -3470,6 +3472,72 @@ class PlayerViewModel(
           _translatingTrackName.value = ""
           _translationProgress.value = 0f
           _translationStatus.value = ""
+          translationJob = null
+        }
+      }
+  }
+
+  /**
+   * Zangetsu-style whole-track translation for embedded subtitles: the track is
+   * extracted with the bundled ffmpeg, then translated as a whole file (deduped,
+   * cached, concurrent) and loaded as a new subtitle track.
+   */
+  fun translateEmbeddedSubtitleWholeTrack(
+    track: TrackNode,
+    targetLanguage: String,
+  ) {
+    val ffIndex = track.ffIndex?.toInt()
+    if (ffIndex == null || ffIndex < 0) {
+      showToast("Could not locate this track in the file")
+      return
+    }
+    val media = host.currentMediaLookupHint()?.takeIf { it.isNotBlank() }
+    if (media == null || !media.startsWith("/")) {
+      showToast("Could not find current video file")
+      return
+    }
+
+    translationJob?.cancel()
+    translationJob =
+      viewModelScope.launch(Dispatchers.IO) {
+        _isTranslatingSub.value = true
+        _translatingTrackId.value = track.id
+        _translatingTrackName.value = track.title ?: "embedded"
+        _translationProgress.value = 0f
+        _translationStatus.value = "Extracting subtitles"
+
+        try {
+          val result =
+            zangetsuSubtitleTranslator.translateTrack(media, ffIndex, targetLanguage) { stage ->
+              _translationStatus.value = stage
+            }
+
+          result
+            .onSuccess { translatedFile ->
+              _translationStatus.value = "Loading translated track"
+              withContext(Dispatchers.Main) {
+                addSubtitle(translatedFile.toUri(), select = true)
+                val savedScale = subtitlesPreferences.subScale.get()
+                if (savedScale != 1f) setSubtitleScale(savedScale)
+                showToast("Translation complete")
+              }
+            }.onFailure { error ->
+              withContext(Dispatchers.Main) {
+                showToast("Translation failed: ${error.message}")
+              }
+            }
+        } catch (e: Exception) {
+          withContext(Dispatchers.Main) {
+            showToast("Error: ${e.message}")
+          }
+        } finally {
+          withContext(Dispatchers.Main) {
+            _isTranslatingSub.value = false
+            _translatingTrackId.value = null
+            _translatingTrackName.value = ""
+            _translationProgress.value = 0f
+            _translationStatus.value = ""
+          }
           translationJob = null
         }
       }

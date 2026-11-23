@@ -82,6 +82,7 @@ fun SubtitlesSheet(
   onOpenOnlineSearch: () -> Unit,
   onDismissRequest: () -> Unit,
   onTranslateSubtitle: (TrackNode, String) -> Unit,
+  onZangetsuTranslateSubtitle: (TrackNode, String) -> Unit = { _, _ -> },
   onGenerateSubtitle: () -> Unit,
   onCancelTranslation: () -> Unit,
   isTranslating: Boolean,
@@ -237,6 +238,56 @@ fun SubtitlesSheet(
 
   var langSearch by remember { mutableStateOf("") }
   var showLanguagePicker by remember { androidx.compose.runtime.mutableStateOf<TrackNode?>(null) }
+  var zangetsuLanguagePicker by remember { androidx.compose.runtime.mutableStateOf<TrackNode?>(null) }
+
+  if (zangetsuLanguagePicker != null) {
+    val zangetsuLanguages =
+      remember(configuredLanguages) { configuredLanguages.mapNotNull { codeToName[it] } }
+    androidx.compose.material3.AlertDialog(
+      modifier = Modifier.playerGlassOverlay(),
+      containerColor = androidx.compose.ui.graphics.Color.Transparent,
+      tonalElevation = 0.dp,
+      onDismissRequest = { zangetsuLanguagePicker = null },
+      title = { Text("Translate with Zangetsu") },
+      text = {
+        Column(verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small)) {
+          Text("Pick a target language (from AI settings)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+          LazyColumn(modifier = Modifier.height(280.dp)) {
+            items(zangetsuLanguages, key = { it }) { lang ->
+              Text(
+                text = lang,
+                modifier =
+                  Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                      onZangetsuTranslateSubtitle(zangetsuLanguagePicker!!, lang)
+                      zangetsuLanguagePicker = null
+                    }.padding(MaterialTheme.spacing.medium),
+              )
+            }
+            if (zangetsuLanguages.isEmpty()) {
+              item {
+                Text(
+                  "No languages selected in AI settings",
+                  color = MaterialTheme.colorScheme.outline,
+                  modifier = Modifier.padding(MaterialTheme.spacing.medium),
+                )
+              }
+            }
+          }
+        }
+      },
+      confirmButton = {
+        Text(
+          text = androidx.compose.ui.res.stringResource(android.R.string.cancel),
+          modifier =
+            Modifier
+              .clickable { zangetsuLanguagePicker = null }
+              .padding(MaterialTheme.spacing.medium),
+        )
+      },
+    )
+  }
 
   if (showLanguagePicker != null) {
     val languagesToShow =
@@ -349,6 +400,16 @@ fun SubtitlesSheet(
                     LocalContentColor.current
                   },
               )
+            }
+          }
+          if (aiEnabled && tracks.any { it.external != true } && configuredLanguages.isNotEmpty()) {
+            IconButton(
+              onClick = {
+                val embedded = tracks.firstOrNull { it.external != true && it.id != -1 }
+                if (embedded != null) zangetsuLanguagePicker = embedded
+              },
+            ) {
+              Icon(Icons.RoundedFilled.Translate, "Zangetsu translate embedded subtitles")
             }
           }
           IconButton(onClick = onOpenSubtitleSettings) {
