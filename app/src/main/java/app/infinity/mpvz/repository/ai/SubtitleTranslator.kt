@@ -32,7 +32,7 @@ class SubtitleTranslator(
   /** Cross-call cache: repeated lines and re-opens translate instantly. Keyed by "<target> <text>". */
   private val cache = HashMap<String, String>()
 
-  private data class CueTask(val lineIdxs: List<Int>, val key: String, val text: String)
+  private data class CueTask(val lineIdxs: MutableList<Int>, val key: String, val text: String)
 
   suspend fun translateTrack(
     videoPath: String,
@@ -244,7 +244,7 @@ class SubtitleTranslator(
       if (!line.startsWith("Dialogue:")) return@forEachIndexed
       val plain = dialogueText(line)
       if (plain.isEmpty()) return@forEachIndexed
-      tasks.add(CueTask(listOf(idx), "$targetLanguage:${plain.lowercase()}", plain))
+      tasks.add(CueTask(mutableListOf(idx), "$targetLanguage:${plain.lowercase()}", plain))
     }
     if (tasks.isEmpty()) throw SubtitleTranslationException("No text cues found to translate")
 
@@ -286,7 +286,7 @@ class SubtitleTranslator(
         val clean = body.joinToString("\n").replace(TAG_REGEX, "").replace(ASS_BLOCK_REGEX, "").trim()
         if (clean.isNotEmpty()) {
           val idxs = (j - body.size until j).filter { lines[it].isNotBlank() }
-          tasks.add(CueTask(idxs, "$targetLanguage:${clean.lowercase()}", clean))
+          tasks.add(CueTask(idxs.toMutableList(), "$targetLanguage:${clean.lowercase()}", clean))
         }
         i = j
       } else {
@@ -296,16 +296,19 @@ class SubtitleTranslator(
     if (tasks.isEmpty()) throw SubtitleTranslationException("No SRT cues found to translate")
 
     val unique = LinkedHashMap<String, CueTask>()
-    tasks.forEach { task -> unique.putIfAbsent(task.key, task) }
+    tasks.forEach { task ->
+      // Merge repeats into the first task so every occurrence gets the translation.
+      val existing = unique[task.key]
+      if (existing == null) unique[task.key] = task else existing.lineIdxs.addAll(task.lineIdxs)
+    }
     val results = HashMap<Int, String>(tasks.size)
     translateUnique(unique, results, targetLanguage, onProgress)
 
     val out = lines.toMutableList()
     tasks.forEach { task ->
       val replacement = results[task.lineIdxs.first()] ?: return@forEach
-      // Index/timestamp lines stay untouched; the first cue line carries the translation.
-      out[task.lineIdxs.first()] = replacement
-      task.lineIdxs.drop(1).forEach { out[it] = "" }
+      // Index/timestamp lines stay untouched; every repeated cue carries the translation.
+      task.lineIdxs.forEach { out[it] = replacement }
     }
     return out.joinToString("\n")
   }
@@ -331,7 +334,7 @@ class SubtitleTranslator(
             try {
               val cached = synchronized(cache) { cache[task.key] }
               if (cached != null) {
-                synchronized(results) { results[task.lineIdxs.first()] = cached }
+                synchronized(results) { task.lineIdxs.forEach { results[it] = cached } }
               } else {
                 var translated: String? = null
                 for (attempt in 0 until 2) {
@@ -352,7 +355,7 @@ class SubtitleTranslator(
                 // text, so the track is never lost and no cue is left empty.
                 translated?.let { value ->
                   synchronized(cache) { cache[task.key] = value }
-                  synchronized(results) { results[task.lineIdxs.first()] = value }
+                  synchronized(results) { task.lineIdxs.forEach { results[it] = value } }
                 }
               }
               val done = synchronized(unique) { ++completed }
