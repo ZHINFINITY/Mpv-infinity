@@ -71,8 +71,16 @@ class MusicPlayerWidgetProvider : AppWidgetProvider() {
     appWidgetId: Int,
     newOptions: Bundle?,
   ) {
-    // Resizing is how the user moves between the wide / tall / compact layouts.
-    refreshAllInternal(context, appWidgetManager, intArrayOf(appWidgetId))
+    // Resizing is how the user moves between the wide / tall / compact layouts. Decode and
+    // build off the main thread so a resize never janks the launcher.
+    val pendingResult = goAsync()
+    Thread {
+      try {
+        refreshAllInternal(context, appWidgetManager, intArrayOf(appWidgetId))
+      } finally {
+        pendingResult.finish()
+      }
+    }.start()
   }
 
   override fun onReceive(context: Context, intent: Intent) {
@@ -174,6 +182,9 @@ class MusicPlayerWidgetProvider : AppWidgetProvider() {
     /** Wide layout from this dp width up; below it the tall layout; small cells go compact. */
     const val WIDE_MIN_WIDTH = 320
 
+    /** Below this height the tall layout's stacked artwork would squash; use a row layout. */
+    const val TALL_MIN_HEIGHT = 180
+
     /** Below this dp width the widget renders the compact single-row layout. */
     const val COMPACT_MAX_WIDTH = 180
 
@@ -202,7 +213,10 @@ class MusicPlayerWidgetProvider : AppWidgetProvider() {
     @Volatile private var cachedArtwork: Bitmap? = null
 
     fun refreshAll(context: Context) {
-      refreshAllInternal(context.applicationContext)
+      // The service calls this on its main thread; artwork (often a remote cover URL) must
+      // decode off it, and the widget update itself is asynchronous anyway.
+      val appContext = context.applicationContext
+      Thread { refreshAllInternal(appContext) }.start()
     }
 
     private fun refreshAllInternal(
@@ -224,7 +238,7 @@ class MusicPlayerWidgetProvider : AppWidgetProvider() {
       } else {
         true
       }
-      val artwork = decodeArtwork(appContext.contentResolver, item?.artworkUri)
+      val artwork = decodeArtwork(appContext, item?.artworkUri)
       val accent = accentColor(artwork)
       for (id in appWidgetIds) {
         runCatching {
@@ -239,21 +253,18 @@ class MusicPlayerWidgetProvider : AppWidgetProvider() {
       }
     }
 
-    private fun decodeArtwork(resolver: ContentResolver, artworkUri: String?): Bitmap? {
+    private fun decodeArtwork(context: Context, artworkUri: String?): Bitmap? {
       val uri = artworkUri?.takeIf { it.isNotBlank() } ?: return null
       cachedArtworkUri?.let { cachedUri ->
         if (cachedUri == uri) return cachedArtwork
       }
-      val bitmap = runCatching {
-        val raw = Uri.parse(uri)
-        if (raw.scheme == "content") {
-          resolver.loadThumbnail(raw, Size(384, 384), null)
-        } else {
-          resolver.openInputStream(raw)?.use { stream ->
-            BitmapFactory.decodeStream(stream)
-          }
-        }
-      }.onFailure { Log.w(TAG, "Widget artwork decode failed", it) }.getOrNull()
+      // EmbeddedArtworkResolver handles file/content/http(s) (streams expose remote cover
+      // URLs, which ContentResolver cannot open) and keeps its own memory cache.
+      val bitmap =
+        app.infinity.mpvz.domain.thumbnail.EmbeddedArtworkResolver.decodeArtworkUri(
+          context.applicationContext,
+          uri,
+        )
       cachedArtworkUri = uri
       cachedArtwork = bitmap
       return bitmap
@@ -282,9 +293,12 @@ class MusicPlayerWidgetProvider : AppWidgetProvider() {
       widthDp: Int,
       @Suppress("UNUSED_PARAMETER") heightDp: Int,
     ): RemoteViews {
+      // Layout choice uses width and height: a wide-but-short cell cannot fit the tall
+      // layout's stacked artwork without squashing it, so fall back to the compact row.
       val layoutRes = when {
         widthDp < COMPACT_MAX_WIDTH -> R.layout.widget_music_player
-        widthDp >= WIDE_MIN_WIDTH -> R.layout.widget_music_wide
+        widthDp >= WIDE_MIN_WIDTH && heightDp >= WIDE_MIN_WIDTH -> R.layout.widget_music_wide
+        widthDp >= WIDE_MIN_WIDTH && heightDp < TALL_MIN_HEIGHT -> R.layout.widget_music_player
         else -> R.layout.widget_music_tall
       }
       val views = RemoteViews(context.packageName, layoutRes)

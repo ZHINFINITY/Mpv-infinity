@@ -542,27 +542,29 @@ object SubtitlesPreferencesScreen : Screen {
                 enabled = !fontDownloadInFlight.value,
                 onClick = {
                   fontDownloadInFlight.value = true
-                  scope.launch {
+                  scope.launch(Dispatchers.IO) {
                     val downloaded =
                       runCatching { FontDownloadManager.downloadCuratedFonts(context) }
                         .onFailure { Log.e("SubtitlesScreen", "Font download failed", it) }
                         .getOrElse { emptyList() }
-                    if (downloaded.isEmpty()) {
-                      Toast.makeText(
-                        context,
-                        context.getString(R.string.download_fonts_failed),
-                        Toast.LENGTH_SHORT,
-                      ).show()
-                    } else {
-                      Toast.makeText(
-                        context,
-                        context.getString(R.string.download_fonts_done, downloaded.size),
-                        Toast.LENGTH_SHORT,
-                      ).show()
-                      preferences.fontsFolder.set("internal")
-                      fontRefreshKey++
+                    withContext(Dispatchers.Main) {
+                      if (downloaded.isEmpty()) {
+                        Toast.makeText(
+                          context,
+                          context.getString(R.string.download_fonts_failed),
+                          Toast.LENGTH_SHORT,
+                        ).show()
+                      } else {
+                        Toast.makeText(
+                          context,
+                          context.getString(R.string.download_fonts_done, downloaded.size),
+                          Toast.LENGTH_SHORT,
+                        ).show()
+                        preferences.fontsFolder.set("internal")
+                        fontRefreshKey++
+                      }
+                      fontDownloadInFlight.value = false
                     }
-                    fontDownloadInFlight.value = false
                   }
                 },
               )
