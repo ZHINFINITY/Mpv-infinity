@@ -103,12 +103,14 @@ class PlayerLifecyclePolicyTest {
   }
 
   @Test
-  fun longBackgroundRebuildWaitsFifteenMinutesAndSkipsMusic() {
-    val fifteen = PlayerLifecyclePolicy.LONG_BACKGROUND_REBUILD_THRESHOLD_MS
-    assertEquals(900_000L, fifteen)
-    assertFalse(PlayerLifecyclePolicy.shouldRebuildRendererAfterBackground(fifteen - 1, isAudioMedia = false))
-    assertTrue(PlayerLifecyclePolicy.shouldRebuildRendererAfterBackground(fifteen, isAudioMedia = false))
-    assertFalse(PlayerLifecyclePolicy.shouldRebuildRendererAfterBackground(fifteen, isAudioMedia = true))
+  fun longBackgroundRebuildWaitsFiveMinutesAndSkipsMusic() {
+    val threshold = PlayerLifecyclePolicy.LONG_BACKGROUND_REBUILD_THRESHOLD_MS
+    // Lowered from 15 min: users hit a black video after ~20 min backgrounded because
+    // OEM Surface teardown happens well before 15 minutes.
+    assertEquals(300_000L, threshold)
+    assertFalse(PlayerLifecyclePolicy.shouldRebuildRendererAfterBackground(threshold - 1, isAudioMedia = false))
+    assertTrue(PlayerLifecyclePolicy.shouldRebuildRendererAfterBackground(threshold, isAudioMedia = false))
+    assertFalse(PlayerLifecyclePolicy.shouldRebuildRendererAfterBackground(threshold, isAudioMedia = true))
     assertTrue(PlayerLifecyclePolicy.shouldWaitForSurfaceBeforeRebuild(surfaceReady = false))
     assertFalse(PlayerLifecyclePolicy.shouldWaitForSurfaceBeforeRebuild(surfaceReady = true))
   }

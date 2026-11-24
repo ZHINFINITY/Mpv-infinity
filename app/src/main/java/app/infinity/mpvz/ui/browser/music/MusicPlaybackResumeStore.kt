@@ -242,5 +242,9 @@ internal fun isMusicPlaybackUriAccessible(context: Context, uri: Uri): Boolean =
     "content" ->
       runCatching { context.contentResolver.openFileDescriptor(uri, "r")?.use { true } ?: false }
         .getOrDefault(false)
+    // Remote streams (Jellyfin/Navidrome) are always re-fetchable; treating them as
+    // inaccessible dropped every track on process-death restore, leaving a stuck,
+    // artless player. Authentication failures surface when playback actually retries.
+    "http", "https" -> true
     else -> false
   }

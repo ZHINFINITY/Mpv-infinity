@@ -355,7 +355,7 @@ data class VideoListScreen(
       val observer =
         LifecycleEventObserver { _, event ->
           if (event == Lifecycle.Event.ON_RESUME) {
-            viewModel.refresh()
+            viewModel.softRefresh()
           }
         }
       lifecycleOwner.lifecycle.addObserver(observer)

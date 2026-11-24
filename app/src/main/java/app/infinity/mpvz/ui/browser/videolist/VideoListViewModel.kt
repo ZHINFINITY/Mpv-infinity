@@ -273,6 +273,21 @@ class VideoListViewModel(
     }
   }
 
+  /**
+   * Light refresh for lifecycle resume: re-queries MediaStore without clearing caches or
+   * forcing a filesystem rescan, so returning to a folder (from the player, app switcher,
+   * or a fresh open) keeps the existing list and thumbnails visible instead of flashing
+   * empty and re-deriving everything.
+   */
+  fun softRefresh() {
+    if (_videos.value.isEmpty()) {
+      // Nothing to keep on screen; a cold load is the right amount of work.
+      loadVideos()
+      return
+    }
+    loadVideos(forceFileSystemCheck = false)
+  }
+
   override fun refresh() {
     Log.d(tag, "Hard refreshing video list for bucket: $bucketId")
 

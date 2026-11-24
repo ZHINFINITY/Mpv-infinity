@@ -34,6 +34,7 @@ import `is`.xyz.mpv.FastThumbnails
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
@@ -106,6 +107,7 @@ class ThumbnailRepository(
   )
   private val localMetadataCache = ConcurrentHashMap<String, ResolvedMetadata>()
   private val repositoryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+  private val rotationCache = ConcurrentHashMap<String, Deferred<Int>>()
   private val thumbnailRequests = ThumbnailRequestCoalescer<String, Bitmap?>(repositoryScope, ThumbnailCachePolicy.MaxConcurrentRequests)
   private val maxConcurrentFolders = 3
   private val localGenerationParallelism = resolveLocalGenerationParallelism()
@@ -642,7 +644,7 @@ class ThumbnailRepository(
             targetVideo.path,
             position,
             dimension,
-            useHwDec = false,
+            useHwDec = true,
           )
         } catch (cancellation: CancellationException) {
           lastSolidBitmap?.takeUnless { it.isRecycled }?.recycle()
@@ -670,8 +672,24 @@ class ThumbnailRepository(
   ): Bitmap {
     val rotation =
       try {
-        app.infinity.mpvz.utils.media.MediaInfoOps
-          .getRotation(context, video.uri, video.displayName)
+        // MediaInfo opens and parses the container header again for every generated frame;
+        // on a USB/external drive that is a second disk wake per thumbnail. Rotation is
+        // constant per source, so probe it once and reuse the result.
+        rotationCache.getOrPut(video.uri.toString()) {
+          repositoryScope.async {
+            runCatching {
+              app.infinity.mpvz.utils.media.MediaInfoOps
+                .getRotation(context, video.uri, video.displayName)
+            }.getOrDefault(0)
+          }
+        }.also { pendingRotation ->
+          val rotation = pendingRotation.await()
+          // A failed probe (0 on error) isn't a real answer: don't pin it, so a
+          // later thumbnail request re-probes once the source is readable again.
+          if (rotation != 0) rotationCache[video.uri.toString()] = pendingRotation
+          else rotationCache.remove(video.uri.toString(), pendingRotation)
+          rotation
+        }.await()
       } catch (cancellation: CancellationException) {
         bitmap.takeUnless { it.isRecycled }?.recycle()
         throw cancellation
@@ -1665,7 +1683,7 @@ class ThumbnailRepository(
         path,
         10.0,
         maxOf(widthPx, heightPx).coerceAtMost(thumbnailMaxSize()),
-        useHwDec = false,
+        useHwDec = true,
       )
     } catch (cancellation: CancellationException) {
       throw cancellation

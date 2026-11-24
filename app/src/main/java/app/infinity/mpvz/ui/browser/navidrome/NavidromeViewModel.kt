@@ -31,6 +31,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -88,6 +89,7 @@ class NavidromeViewModel(
   @Volatile private var albumLoadRequestId = 0L
   private var albumLoadServerId: Long? = null
   private var loadedAlbumsForServerId: Long? = null
+  @Volatile private var pendingSelectionId: Long? = null
 
   private val _uiState = MutableStateFlow(
     NavidromeUiState(
@@ -104,12 +106,27 @@ class NavidromeViewModel(
         val current = _uiState.value
         val currentActive = current.activeServer
         val newest = servers.firstOrNull()
-        val newActive = if (currentActive != null && servers.any { it.id == currentActive.id }) {
-          servers.first { it.id == currentActive.id }
-            .takeIf { newest == null || newest.id == it.id || newest.lastConnected >= currentActive.lastConnected }
-            ?: newest
-        } else {
-          newest
+        // A quick-switch button writes the new lastConnected asynchronously (IO). Until that
+        // DB write lands, this collector still sees the old rows; the pendingSelectionId
+        // guard keeps it from reverting the UI to the previous server in that window.
+        val newActive = when {
+          pendingSelectionId != null -> {
+            val pending = servers.firstOrNull { it.id == pendingSelectionId }
+            if (pending != null) {
+              pendingSelectionId = null
+              pending
+            } else {
+              // Pending server was deleted before its row landed; fall back to the
+              // normal selection path instead of latching onto a missing ID.
+              pendingSelectionId = null
+              null
+            }
+          }
+          currentActive != null && servers.any { it.id == currentActive.id } ->
+            servers.first { it.id == currentActive.id }
+              .takeIf { newest == null || newest.id == it.id || newest.lastConnected >= currentActive.lastConnected }
+              ?: newest
+          else -> newest
         }
         activateServer(newActive, servers = servers)
       }
@@ -128,6 +145,7 @@ class NavidromeViewModel(
 
   fun selectServer(server: NavidromeServer) {
     val selected = server.copy(lastConnected = System.currentTimeMillis())
+    pendingSelectionId = selected.id
     activateServer(selected, forceLoad = true)
     viewModelScope.launch(Dispatchers.IO) { navidromeRepository.updateServer(selected) }
   }
@@ -188,12 +206,19 @@ class NavidromeViewModel(
     }
   }
 
+  private var searchJob: Job? = null
+
   private fun performSearch(query: String) {
     val server = _uiState.value.activeServer ?: return
-    viewModelScope.launch(Dispatchers.IO) {
-      val result = navidromeRepository.search(server, query).getOrNull()
-      _uiState.update { it.copy(searchResult = result) }
-    }
+    searchJob?.cancel()
+    searchJob =
+      viewModelScope.launch(Dispatchers.IO) {
+        delay(300)
+        val result = navidromeRepository.search(server, query).getOrNull()
+        if (query == _uiState.value.searchQuery) {
+          _uiState.update { it.copy(searchResult = result) }
+        }
+      }
   }
 
   fun refresh() {

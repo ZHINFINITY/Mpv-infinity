@@ -421,6 +421,8 @@ object VideoScanUtils : KoinComponent {
  * Handles file type detection
  */
 object FileTypeUtils {
+  @Volatile
+  var appContext: android.content.Context? = null
   // Video file extensions
   val VIDEO_EXTENSIONS =
     setOf(
@@ -524,8 +526,16 @@ object FileTypeUtils {
     options: MediaScanOptions,
   ): Boolean = isVideoFile(file) || (options.includeAudio && isAudioFile(file))
 
-  fun getDurationMs(file: File): Long =
-    runCatching {
+  /**
+   * Duration for folder scans. MediaMetadataRetriever opens and parses the file header, which
+   * costs hundreds of ms per file on external/USB drives (slow random reads spin the drive up
+   * per probe) — the main cause of "folder loads forever" on USB. MediaStore already has the
+   * duration for indexed files, so query it first and only fall back to the retriever for
+   * files MediaStore has not indexed.
+   */
+  fun getDurationMs(file: File): Long {
+    queryMediaStoreDuration(file)?.let { return it }
+    return runCatching {
       MediaMetadataRetriever().use { retriever ->
         retriever.setDataSource(file.absolutePath)
         retriever
@@ -534,6 +544,38 @@ object FileTypeUtils {
           ?: 0L
       }
     }.getOrDefault(0L)
+  }
+
+  private val mediaStoreDurationCache = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+  private fun queryMediaStoreDuration(file: File): Long? {
+    val context = appContext ?: return null
+    val path = file.absolutePath
+    mediaStoreDurationCache[path]?.let { return it }
+    val projection = arrayOf(MediaStore.Audio.Media.DURATION, MediaStore.Audio.Media.DATA)
+    return runCatching {
+      context.applicationContext.contentResolver.query(
+        MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+        projection,
+        "${MediaStore.Audio.Media.DATA} = ?",
+        arrayOf(path),
+        null,
+      )?.use { cursor ->
+        val idx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
+        if (cursor.moveToFirst() && !cursor.isNull(idx)) {
+          val duration = cursor.getLong(idx)
+          if (duration > 0L) {
+            mediaStoreDurationCache[path] = duration
+            duration
+          } else {
+            null
+          }
+        } else {
+          null
+        }
+      }
+    }.getOrNull()
+  }
 
   /**
    * Gets MIME type from file extension

@@ -266,6 +266,8 @@ internal object PlayerLifecyclePolicy {
   /**
    * After a long screen-off or background interval, OEM decoders (especially ColorOS/Realme)
    * keep the session alive but drop the video Surface. Rebuild instead of showing a black frame.
+   * 5 minutes: users reported black video after ~20 minutes in the background with the old
+   * 15-minute threshold never reached before the OEM Surface teardown.
    */
   fun shouldRebuildRendererAfterBackground(
     stoppedForMs: Long,
@@ -351,5 +353,5 @@ internal object PlayerLifecyclePolicy {
     return !backgroundPlaybackEnabled
   }
 
-  const val LONG_BACKGROUND_REBUILD_THRESHOLD_MS = 900_000L
+  const val LONG_BACKGROUND_REBUILD_THRESHOLD_MS = 300_000L
 }

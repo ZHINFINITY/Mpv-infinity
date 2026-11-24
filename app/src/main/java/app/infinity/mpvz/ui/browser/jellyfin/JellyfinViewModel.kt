@@ -40,6 +40,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -730,31 +731,40 @@ class JellyfinViewModel(
       _uiState.update { it.copy(isLoading = false, isMusicLoading = true) }
 
       val jumpBackDeferred = async {
-        val playedTracks = jellyfinRepository.getItems(
-          server = server,
-          parentId = library.id,
-          includeItemTypes = "Audio",
-          sortBy = JellyfinSortBy.DATE_PLAYED,
-          sortOrder = JellyfinSortOrder.DESCENDING,
-          limit = 30,
-        ).getOrNull()?.items.orEmpty()
+        // Three independent queries, fetched concurrently.
+        val playedDeferred = async {
+          jellyfinRepository.getItems(
+            server = server,
+            parentId = library.id,
+            includeItemTypes = "Audio",
+            sortBy = JellyfinSortBy.DATE_PLAYED,
+            sortOrder = JellyfinSortOrder.DESCENDING,
+            limit = 30,
+          ).getOrNull()?.items.orEmpty()
+        }
+        val addedDeferred = async {
+          jellyfinRepository.getItems(
+            server = server,
+            parentId = library.id,
+            includeItemTypes = "Audio",
+            sortBy = JellyfinSortBy.DATE_ADDED,
+            sortOrder = JellyfinSortOrder.DESCENDING,
+            limit = 30,
+          ).getOrNull()?.items.orEmpty()
+        }
+        val randomDeferred = async {
+          jellyfinRepository.getItems(
+            server = server,
+            parentId = library.id,
+            includeItemTypes = "Audio",
+            sortBy = JellyfinSortBy.RANDOM,
+            limit = 30,
+          ).getOrNull()?.items.orEmpty()
+        }
 
-        val addedTracks = jellyfinRepository.getItems(
-          server = server,
-          parentId = library.id,
-          includeItemTypes = "Audio",
-          sortBy = JellyfinSortBy.DATE_ADDED,
-          sortOrder = JellyfinSortOrder.DESCENDING,
-          limit = 30,
-        ).getOrNull()?.items.orEmpty()
-
-        val randomTracks = jellyfinRepository.getItems(
-          server = server,
-          parentId = library.id,
-          includeItemTypes = "Audio",
-          sortBy = JellyfinSortBy.RANDOM,
-          limit = 30,
-        ).getOrNull()?.items.orEmpty()
+        val playedTracks = playedDeferred.await()
+        val addedTracks = addedDeferred.await()
+        val randomTracks = randomDeferred.await()
 
         val uniquePlayed = playedTracks.distinctBy { it.id }
         val playedIds = uniquePlayed.map { it.id }.toSet()
@@ -832,23 +842,38 @@ class JellyfinViewModel(
         listOf(favoritesVirtualPlaylist) + serverPlaylists.filter { !it.name.equals("Favorites", ignoreCase = true) }
       }
 
-      val jumpBackIn = jumpBackDeferred.await()
-      val recentAlbums = recentlyPlayedAlbumsDeferred.await()
-      val artistsToExplore = artistsToExploreDeferred.await()
-      val favorites = favoritesDeferred.await()
-      val playlists = playlistsDeferred.await()
-
+      // Publish each section as soon as its request lands — the dashboard previously
+      // stayed empty until ALL five finished, the main "loading feels slow" complaint.
+      listOf(jumpBackDeferred, recentlyPlayedAlbumsDeferred, artistsToExploreDeferred, favoritesDeferred, playlistsDeferred)
+        .forEach { deferred ->
+          launch {
+            val (field, value) =
+              when (deferred) {
+                jumpBackDeferred -> "jump" to deferred.await()
+                recentlyPlayedAlbumsDeferred -> "albums" to deferred.await()
+                artistsToExploreDeferred -> "artists" to deferred.await()
+                favoritesDeferred -> "favorites" to deferred.await()
+                else -> "playlists" to deferred.await()
+              }
+            _uiState.update { current ->
+              when (field) {
+                "jump" -> current.copy(musicJumpBackIn = value as List<JellyfinItem>)
+                "albums" -> current.copy(musicRecentlyPlayedAlbums = value as List<JellyfinItem>)
+                "artists" -> current.copy(musicArtistsToExplore = value as List<JellyfinItem>)
+                "favorites" -> current.copy(musicFavorites = value as List<JellyfinItem>)
+                else -> current.copy(musicPlaylists = value as List<JellyfinItem>)
+              }
+            }
+          }
+        }
+      // Still await everything so error propagation stays unchanged, then drop the spinner.
+      jumpBackDeferred.await()
+      recentlyPlayedAlbumsDeferred.await()
+      artistsToExploreDeferred.await()
+      favoritesDeferred.await()
+      playlistsDeferred.await()
       loadedMusicHomeLibraryId = library.id
-      _uiState.update {
-        it.copy(
-          musicFavorites = favorites,
-          musicPlaylists = playlists,
-          musicJumpBackIn = jumpBackIn,
-          musicRecentlyPlayedAlbums = recentAlbums,
-          musicArtistsToExplore = artistsToExplore,
-          isMusicLoading = false,
-        )
-      }
+      _uiState.update { it.copy(isMusicLoading = false) }
     }
   }
 
@@ -907,56 +932,67 @@ class JellyfinViewModel(
           _uiState.update { it.copy(musicPlaylists = combinedPlaylists, isLoading = false) }
         }
         JellyfinMusicTab.ARTISTS -> {
-          val libraryItemsArtists = jellyfinRepository.getItems(
-            server = server,
-            parentId = library.id,
-            includeItemTypes = "MusicArtist,Artist,AlbumArtist",
-            sortBy = JellyfinSortBy.NAME,
-            limit = 500,
-          ).getOrNull()?.items.orEmpty()
+          // All six probes run in parallel; the serial chain was the slowest screen on
+          // remote servers (6 × 500-item round trips back-to-back).
+          coroutineScope {
+            val libraryItemsDeferred = async {
+              jellyfinRepository.getItems(
+                server = server,
+                parentId = library.id,
+                includeItemTypes = "MusicArtist,Artist,AlbumArtist",
+                sortBy = JellyfinSortBy.NAME,
+                limit = 500,
+              ).getOrNull()?.items.orEmpty()
+            }
+            val rootItemsDeferred = async {
+              jellyfinRepository.getItems(
+                server = server,
+                parentId = null,
+                includeItemTypes = "MusicArtist,Artist,AlbumArtist",
+                sortBy = JellyfinSortBy.NAME,
+                limit = 500,
+              ).getOrNull()?.items.orEmpty()
+            }
+            val libraryArtistsDeferred = async {
+              jellyfinRepository.getArtists(server = server, parentId = library.id, limit = 500)
+                .getOrNull()?.items.orEmpty()
+            }
+            val rootArtistsDeferred = async {
+              jellyfinRepository.getArtists(server = server, parentId = null, limit = 500)
+                .getOrNull()?.items.orEmpty()
+            }
+            val libraryAlbumArtistsDeferred = async {
+              jellyfinRepository.getArtists(
+                server = server,
+                parentId = library.id,
+                limit = 500,
+                albumArtistsOnly = true,
+              ).getOrNull()?.items.orEmpty()
+            }
+            val rootAlbumArtistsDeferred = async {
+              jellyfinRepository.getArtists(
+                server = server,
+                parentId = null,
+                limit = 500,
+                albumArtistsOnly = true,
+              ).getOrNull()?.items.orEmpty()
+            }
 
-          val rootItemsArtists = jellyfinRepository.getItems(
-            server = server,
-            parentId = null,
-            includeItemTypes = "MusicArtist,Artist,AlbumArtist",
-            sortBy = JellyfinSortBy.NAME,
-            limit = 500,
-          ).getOrNull()?.items.orEmpty()
+            val allFetched =
+              libraryItemsDeferred.await() +
+                rootItemsDeferred.await() +
+                libraryArtistsDeferred.await() +
+                rootArtistsDeferred.await() +
+                libraryAlbumArtistsDeferred.await() +
+                rootAlbumArtistsDeferred.await()
 
-          val libraryArtistsEndpoint = jellyfinRepository.getArtists(
-            server = server,
-            parentId = library.id,
-            limit = 500,
-          ).getOrNull()?.items.orEmpty()
+            val combinedArtists = allFetched
+              .filter { it.name.isNotBlank() }
+              .distinctBy { if (it.id.isNotBlank()) it.id else it.name.lowercase().trim() }
+              .sortedBy { it.name.lowercase() }
 
-          val rootArtistsEndpoint = jellyfinRepository.getArtists(
-            server = server,
-            parentId = null,
-            limit = 500,
-          ).getOrNull()?.items.orEmpty()
-
-          val libraryAlbumArtistsEndpoint = jellyfinRepository.getArtists(
-            server = server,
-            parentId = library.id,
-            limit = 500,
-            albumArtistsOnly = true,
-          ).getOrNull()?.items.orEmpty()
-
-          val rootAlbumArtistsEndpoint = jellyfinRepository.getArtists(
-            server = server,
-            parentId = null,
-            limit = 500,
-            albumArtistsOnly = true,
-          ).getOrNull()?.items.orEmpty()
-
-          val allFetched = libraryItemsArtists + rootItemsArtists + libraryArtistsEndpoint + rootArtistsEndpoint + libraryAlbumArtistsEndpoint + rootAlbumArtistsEndpoint
-
-          val combinedArtists = allFetched
-            .filter { it.name.isNotBlank() }
-            .distinctBy { if (it.id.isNotBlank()) it.id else it.name.lowercase().trim() }
-            .sortedBy { it.name.lowercase() }
-
-          _uiState.update { it.copy(musicArtists = combinedArtists, isLoading = false) }
+            _uiState.update { it.copy(musicArtists = combinedArtists, isLoading = false) }
+          }
         }
         JellyfinMusicTab.ALBUMS -> {
           val result = jellyfinRepository.getItems(

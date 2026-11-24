@@ -58,7 +58,10 @@ class PlayerStatsChipOwnerTest {
     val text = file.readText()
     val postInit = text.substringAfter("override fun postInitOptions()").substringBefore("\n  }\n")
     assertTrue(postInit.contains("StatsLuaOverlay.onCoreStarted()"))
-    assertTrue(postInit.contains("isDefinitelyAudioOnly() != true"))
+    // Stats must show only for positively video-classified items: gating on
+    // "not definitely audio" flashed the stats page over audio items whose metadata
+    // was not loaded yet at core start (user-reported music player flash).
+    assertTrue(postInit.contains("declaredMediaKind() == DeclaredPlaybackMediaKind.VIDEO"))
     assertTrue(postInit.contains("StatsLuaOverlay.show(advancedPreferences.enabledStatisticsPage.get())"))
     assertTrue(postInit.indexOf("onCoreStarted()") < postInit.indexOf("StatsLuaOverlay.show("))
     assertFalse(text.contains("applyStartupStatistics"))
