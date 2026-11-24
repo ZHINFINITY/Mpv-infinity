@@ -128,7 +128,6 @@ fun SeekPlayerUpdate(
   }
 }
 
-
 @Composable
 fun TranslatedSubtitleText(
   text: String,

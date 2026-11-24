@@ -22,7 +22,7 @@ class SubtitleTranslationProvidersTest {
 
   @Test
   fun providerLabelsRoundTripAndUnknownFallsBackToGoogle() {
-    assertEquals(listOf("Google Translate", "Zangetsu", "OpenAI-compatible", "DeepL", "Gemini"), SubtitleTranslationProvider.labels)
+    assertEquals(listOf("Google Translate", "Free Google", "OpenAI-compatible", "DeepL", "Gemini"), SubtitleTranslationProvider.labels)
     SubtitleTranslationProvider.entries.forEach { assertEquals(it, SubtitleTranslationProvider.fromLabel(it.label)) }
     assertEquals(SubtitleTranslationProvider.GEMINI, SubtitleTranslationProvider.fromLabel(" gemini "))
     assertEquals(SubtitleTranslationProvider.GOOGLE, SubtitleTranslationProvider.fromLabel(""))

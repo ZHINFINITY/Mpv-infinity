@@ -649,7 +649,10 @@ Weiter: NEXT</string>
   <string name="fonts_loaded">%1$d Schriftarten geladen</string>
   <string name="reload_fonts">Schriftarten neu laden</string>
   <string name="reload_fonts_summary">Ausgewählten Quellordner erneut scannen und Schriftartenliste aktualisieren</string>
-  <string name="clear_font_directory">Schriftartenverzeichnis leeren</string>
+
+  <string name="download_fonts">Schriftarten herunterladen</string>
+  <string name="download_fonts_summary">Schriftarten aus Google Fonts durchsuchen und herunterladen</string>
+  <string name="download_fonts_failed">Schriftart-Download fehlgeschlagen, bitte Verbindung prüfen</string>  <string name="clear_font_directory">Schriftartenverzeichnis leeren</string>
   <string name="reset_to_default_font">Auf Standardschrift zurücksetzen</string>
   <string name="set_as_default">Als Standard festlegen</string>
   <string name="notification_channel_name">Medienwiedergabe</string>
@@ -2281,4 +2284,14 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="video_mark_as_last_played">Zuletzt abgespielt</string>
   <string name="video_mark_as_finished">Abgeschlossen</string>
   <string name="video_mark_as_none">Keine</string>
+  <string name="widget_music_no_media">Nichts in der Warteschlange</string>
+  <string name="widget_music_open_player_hint">Zum Öffnen des Players tippen</string>
+  <string name="widget_music_previous" translatable="false">Previous track</string>
+  <string name="widget_music_play_pause" translatable="false">Play or pause</string>
+  <string name="widget_music_next" translatable="false">Next track</string>
+  <string name="toast_translation_cue_fallback">Rückfall auf zeilenweise Übersetzung (%1$s)</string>
+  <string name="download_fonts_sheet_title">Google Fonts</string>
+  <string name="download_fonts_sheet_summary">Schriftarten aus Google Fonts durchsuchen und herunterladen</string>
+  <string name="download_fonts_search_hint">Schriftarten suchen</string>
+  <string name="download_fonts_no_results">Keine Schriftarten gefunden</string>
 </resources>

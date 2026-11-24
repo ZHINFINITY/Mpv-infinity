@@ -1,5 +1,10 @@
 <resources>
   <string name="app_name" translatable="false">Mpv∞</string>
+  <string name="widget_music_no_media">Nothing queued</string>
+  <string name="widget_music_open_player_hint">Tap to open the player</string>
+  <string name="widget_music_previous" translatable="false">Previous track</string>
+  <string name="widget_music_play_pause" translatable="false">Play or pause</string>
+  <string name="widget_music_next" translatable="false">Next track</string>
   <string name="generic_reset">Reset</string>
   <string name="generic_share">Share</string>
   <string name="generic_confirm">Confirm</string>
@@ -653,6 +658,13 @@
   <string name="fonts_loaded">%1$d fonts loaded</string>
   <string name="reload_fonts">Reload fonts</string>
   <string name="reload_fonts_summary">Rescan the selected source folder and refresh the font list</string>
+  <string name="download_fonts">Download fonts</string>
+  <string name="download_fonts_summary">Browse and download any Google Font to use as the subtitle font</string>
+  <string name="download_fonts_failed">Font download failed, check your connection</string>
+  <string name="download_fonts_sheet_title">Google Fonts</string>
+  <string name="download_fonts_sheet_summary">Browse and download fonts from Google Fonts</string>
+  <string name="download_fonts_search_hint">Search fonts</string>
+  <string name="download_fonts_no_results">No fonts match your search</string>
   <string name="clear_font_directory">Clear font directory</string>
   <string name="reset_to_default_font">Reset to default font</string>
   <string name="set_as_default">Set as default</string>
@@ -1639,6 +1651,10 @@
   <string name="ui_search_language">Search language…</string>
   <string name="ui_no_languages_found">No languages found</string>
   <string name="ui_cancel_translation">Cancel translation</string>
+  <string name="ui_translate_embedded_subtitles">Translate embedded subtitles</string>
+  <string name="toast_could_not_find_current_video_file">Could not find current video file</string>
+  <string name="toast_could_not_locate_track_in_file">Could not locate this track in the file</string>
+  <string name="toast_translation_failed">Translation failed: %1$s</string>
   <string name="ui_translate">Translate</string>
   <string name="ui_pan_zoom">Pan &amp; Zoom</string>
   <string name="ui_decrease_zoom">Decrease zoom</string>
@@ -2362,4 +2378,5 @@
   <string name="video_mark_as_last_played">Last Played</string>
   <string name="video_mark_as_finished">Finished</string>
   <string name="video_mark_as_none">None</string>
+  <string name="toast_translation_cue_fallback">Falling back to line-by-line translation (%1$s)</string>
 </resources>

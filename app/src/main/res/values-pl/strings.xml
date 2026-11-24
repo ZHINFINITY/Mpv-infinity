@@ -643,7 +643,10 @@
   <string name="fonts_loaded">%1$d czcionki loaded</string>
   <string name="reload_fonts">Reload czcionki</string>
   <string name="reload_fonts_summary">Rescan ten wybrane źródło folder i refresh ten czcionka lista</string>
-  <string name="clear_font_directory">Wyczyść czcionka directory</string>
+
+  <string name="download_fonts">Pobierz czcionki</string>
+  <string name="download_fonts_summary">Przeglądaj i pobieraj czcionki z Google Fonts</string>
+  <string name="download_fonts_failed">Nie udało się pobrać czcionek, sprawdź połączenie</string>  <string name="clear_font_directory">Wyczyść czcionka directory</string>
   <string name="reset_to_default_font">Resetuj do Domyślne czcionka</string>
   <string name="set_as_default">Set jako Domyślne</string>
   <string name="notification_channel_name">Multimedia Odtwarzanie</string>
@@ -1569,6 +1572,10 @@
   <string name="ui_search_language">Wyszukaj język…</string>
   <string name="ui_no_languages_found">Nie znaleziono języków</string>
   <string name="ui_cancel_translation">Anuluj tłumaczenie</string>
+  <string name="ui_translate_embedded_subtitles">Przetłumacz wbudowane napisy</string>
+  <string name="toast_could_not_find_current_video_file">Nie można znaleźć bieżącego pliku wideo</string>
+  <string name="toast_could_not_locate_track_in_file">Nie można znaleźć tej ścieżki w pliku</string>
+  <string name="toast_translation_failed">Tłumaczenie nie powiodło się: %1$s</string>
   <string name="ui_translate">Tłumacz</string>
   <string name="ui_pan_zoom">Pan &amp; Powiększenie</string>
   <string name="ui_decrease_zoom">Zmniejsz powiększenie</string>
@@ -2278,4 +2285,14 @@
   <string name="video_mark_as_last_played">Ostatnio odtwarzane</string>
   <string name="video_mark_as_finished">Ukończone</string>
   <string name="video_mark_as_none">Brak</string>
+  <string name="widget_music_no_media">Nic w kolejce</string>
+  <string name="widget_music_open_player_hint">Dotknij, aby otworzyć odtwarzacz</string>
+  <string name="widget_music_previous" translatable="false">Previous track</string>
+  <string name="widget_music_play_pause" translatable="false">Play or pause</string>
+  <string name="widget_music_next" translatable="false">Next track</string>
+  <string name="toast_translation_cue_fallback">Powrót do tłumaczenia linia po linii (%1$s)</string>
+  <string name="download_fonts_sheet_title">Google Fonts</string>
+  <string name="download_fonts_sheet_summary">Przeglądaj i pobieraj czcionki z Google Fonts</string>
+  <string name="download_fonts_search_hint">Szukaj czcionek</string>
+  <string name="download_fonts_no_results">Brak czcionek pasujących do wyszukiwania</string>
 </resources>

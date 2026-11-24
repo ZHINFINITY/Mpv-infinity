@@ -55,6 +55,7 @@ import app.infinity.mpvz.repository.MediaFileRepository
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.utils.history.RecentlyPlayedOps
 import app.infinity.mpvz.utils.media.MediaLibraryEvents
+import app.infinity.mpvz.ui.widget.MusicPlayerWidgetProvider
 import app.infinity.mpvz.utils.media.PlaybackStateEvents
 import app.infinity.mpvz.utils.storage.FileTypeUtils
 import `is`.xyz.mpv.MPVLib
@@ -2319,6 +2320,8 @@ class MediaPlaybackService :
     try {
       val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
       notificationManager.notify(NOTIFICATION_ID, buildNotification())
+      MusicPlayerWidgetProvider.publishProgress(currentPositionSeconds, sanitizedDurationMs())
+      MusicPlayerWidgetProvider.refreshAll(applicationContext)
       lastNotificationUpdateTime = SystemClock.elapsedRealtime()
       lastPublishedPositionSeconds = currentPositionSeconds
     } catch (e: Exception) {

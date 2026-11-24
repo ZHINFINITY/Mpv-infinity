@@ -649,7 +649,10 @@ Suivant : NEXT</string>
   <string name="fonts_loaded">%1$d polices chargées</string>
   <string name="reload_fonts">Recharger les polices</string>
   <string name="reload_fonts_summary">Analyser de nouveau le dossier source sélectionné et actualiser la liste des polices</string>
-  <string name="clear_font_directory">Effacer le répertoire des polices</string>
+
+  <string name="download_fonts">Télécharger des polices</string>
+  <string name="download_fonts_summary">Parcourir et télécharger les polices de Google Fonts</string>
+  <string name="download_fonts_failed">Échec du téléchargement des polices, vérifiez votre connexion</string>  <string name="clear_font_directory">Effacer le répertoire des polices</string>
   <string name="reset_to_default_font">Rétablir la police par défaut</string>
   <string name="set_as_default">Définir par défaut</string>
   <string name="notification_channel_name">Lecture multimédia</string>
@@ -2281,4 +2284,14 @@ Veuillez redémarrer l’application pour appliquer toutes les modifications.</s
   <string name="video_mark_as_last_played">Dernière lecture</string>
   <string name="video_mark_as_finished">Terminé</string>
   <string name="video_mark_as_none">Aucun</string>
+  <string name="widget_music_no_media">"File d'attente vide"</string>
+  <string name="widget_music_open_player_hint">Touchez pour ouvrir le lecteur</string>
+  <string name="widget_music_previous" translatable="false">Previous track</string>
+  <string name="widget_music_play_pause" translatable="false">Play or pause</string>
+  <string name="widget_music_next" translatable="false">Next track</string>
+  <string name="toast_translation_cue_fallback">Retour à la traduction ligne par ligne (%1$s)</string>
+  <string name="download_fonts_sheet_title">Google Fonts</string>
+  <string name="download_fonts_sheet_summary">Parcourir et télécharger les polices de Google Fonts</string>
+  <string name="download_fonts_search_hint">Rechercher des polices</string>
+  <string name="download_fonts_no_results">Aucune police ne correspond à votre recherche</string>
 </resources>

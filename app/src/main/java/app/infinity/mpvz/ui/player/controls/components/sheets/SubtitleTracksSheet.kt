@@ -29,6 +29,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -81,13 +82,12 @@ fun SubtitlesSheet(
   onOpenOnlineSearch: () -> Unit,
   onDismissRequest: () -> Unit,
   onTranslateSubtitle: (TrackNode, String) -> Unit,
+  onTranslateEmbeddedSubtitle: (TrackNode, String) -> Unit = { _, _ -> },
   onGenerateSubtitle: () -> Unit,
   onCancelTranslation: () -> Unit,
   isTranslating: Boolean,
   translationProgress: Float,
   translationStatus: String,
-  translationEnabled: Boolean,
-  onToggleTranslation: () -> Unit = {},
   isGeneratingSubtitles: Boolean,
   subtitleGenerationProgress: Float,
   subtitleGenerationStatus: String,
@@ -336,6 +336,30 @@ fun SubtitlesSheet(
               Icon(Icons.RoundedFilled.Subtitles, "Generate subtitles")
             }
           }
+          if (aiEnabled && tracks.any { it.external != true } && configuredLanguages.isNotEmpty()) {
+            IconButton(
+              onClick = {
+                // Translate the track the user actually selected; fall back to the
+                // first embedded track only when nothing is selected.
+                val embedded =
+                  tracks.firstOrNull { it.external != true && it.id != -1 && isSubtitleSelected(it.id) }
+                    ?: tracks.firstOrNull { it.external != true && it.id != -1 }
+                val lang = embeddedTranslationLanguage.ifBlank {
+                  configuredLanguages.firstOrNull() ?: ""
+                }
+                if (embedded != null && lang.isNotBlank() && !isTranslating) {
+                  onTranslateEmbeddedSubtitle(embedded, lang)
+                }
+              },
+              enabled = !isTranslating,
+            ) {
+              Icon(
+                Icons.RoundedFilled.Translate,
+                stringResource(R.string.ui_translate_embedded_subtitles),
+                tint = if (isTranslating) MaterialTheme.colorScheme.primary else LocalContentColor.current,
+              )
+            }
+          }
           IconButton(onClick = onOpenSubtitleSettings) {
             Icon(Icons.RoundedFilled.Palette, null)
           }
@@ -344,19 +368,6 @@ fun SubtitlesSheet(
           }
         },
       )
-      if (translationEnabled && configuredLanguages.isNotEmpty()) {
-        Text(
-          text =
-            "Translation language: " +
-              configuredLanguages.joinToString(", ") { codeToName[it] ?: it.uppercase() },
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.outline,
-          modifier = Modifier.padding(horizontal = MaterialTheme.spacing.medium),
-          maxLines = 1,
-          overflow = TextOverflow.Ellipsis,
-        )
-      }
-
       if (aiEnabled && isTranslating) {
         Column(
           modifier =
@@ -426,33 +437,25 @@ fun SubtitlesSheet(
         }
       }
 
-      if (aiEnabled) {
-        Row(
-          modifier = Modifier.playerSheetSettingRow(active = translationEnabled),
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.medium),
+      if (aiEnabled && tracks.any { it.external != true } && configuredLanguages.isNotEmpty()) {
+        Column(
+          modifier = Modifier.fillMaxWidth().padding(horizontal = MaterialTheme.spacing.medium),
+          verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small),
         ) {
-          Text("Translate embedded subtitles", modifier = Modifier.weight(1f))
-          GlassSwitch(checked = translationEnabled, onCheckedChange = { onToggleTranslation() })
-        }
-        if (tracks.any { it.external != true } && translationEnabled && configuredLanguages.isNotEmpty()) {
-          Column(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = MaterialTheme.spacing.medium),
-            verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small),
+          Text(
+            "Translation language",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+          androidx.compose.foundation.layout.FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small),
           ) {
-            Text(
-              "Translation language",
-              style = MaterialTheme.typography.labelLarge,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small)) {
-              configuredLanguages.take(2).forEach { code ->
-                GlassChip(
-                  selected = embeddedTranslationLanguage.equals(code, ignoreCase = true),
-                  onClick = { onEmbeddedTranslationLanguageChange(code) },
-                  label = { Text(codeToName[code.lowercase()] ?: code.uppercase()) },
-                )
-              }
+            configuredLanguages.forEach { code ->
+              GlassChip(
+                selected = embeddedTranslationLanguage.equals(code, ignoreCase = true),
+                onClick = { onEmbeddedTranslationLanguageChange(code) },
+                label = { Text(codeToName[code.lowercase()] ?: code.uppercase()) },
+              )
             }
           }
         }
@@ -481,12 +484,7 @@ fun SubtitlesSheet(
                 isExternal = track.external == true,
                 onToggle = { onToggleSubtitle(track.id) },
                 onRemove = { onRemoveSubtitle(track.id) },
-                onTranslate = {
-                  if (translationEnabled) {
-                    showLanguagePicker = track
-                  }
-                },
-                translationEnabled = translationEnabled,
+                onTranslate = { showLanguagePicker = track },
                 isCurrentlyTranslating = track.id == translatingTrackId,
               )
             }
@@ -541,14 +539,13 @@ fun SubtitleTrackRow(
   onToggle: () -> Unit,
   onRemove: () -> Unit,
   onTranslate: () -> Unit,
-  translationEnabled: Boolean,
   isCurrentlyTranslating: Boolean = false,
   modifier: Modifier = Modifier,
 ) {
   TrackSheetRow(track, isSelected, onToggle, checkbox = true, secondaryIndicator = selectionIndicator, modifier = modifier, trailing = {
     if (isCurrentlyTranslating) androidx.compose.material3.CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
     if (isExternal) {
-      if (translationEnabled) IconButton(onClick = onTranslate) { Icon(Icons.RoundedFilled.Translate, stringResource(R.string.ui_translate)) }
+      IconButton(onClick = onTranslate) { Icon(Icons.RoundedFilled.Translate, stringResource(R.string.ui_translate)) }
       IconButton(onClick = onRemove) { Icon(Icons.RoundedFilled.Delete, null) }
     }
   })

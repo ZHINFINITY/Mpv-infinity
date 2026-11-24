@@ -102,8 +102,9 @@ class PlayerStatsChipOwnerTest {
     assertTrue(text.contains("private var nativeEngineConfigured = false"))
     assertTrue(text.contains("val nativePlaybackSnapshot get() = nativeEngineOrNull()?.snapshot ?: idleNativePlaybackSnapshot"))
     assertTrue(text.contains("private val nativeFirstFrame get() = nativeEngineOrNull()?.hasRenderedFirstFrame ?: idleNativeFirstFrame"))
-    assertTrue(text.contains("val engine = nativeEngineOrNull() ?: return@repeatOnLifecycle"))
-    assertTrue(text.contains("engine.subtitleCueText.collect { cue ->"))
+    // The cue-level translation was restored as a fallback for formats whole-track
+    // extraction can't handle (e.g. PGS bitmaps), routed through the ViewModel.
+    assertTrue(text.contains("viewModel.translateEmbeddedSubtitleCue(cue, native = true)"))
     assertFalse(text.contains("flatMapLatest"))
     assertFalse(text.contains("emptyFlow()"))
     assertFalse(text.contains("collectAsState(initial = NativePlaybackSnapshot())"))

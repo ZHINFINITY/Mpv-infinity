@@ -78,7 +78,7 @@ class EmbeddedSubtitleTranslator(
         val translated =
           when (settings.provider) {
             SubtitleTranslationProvider.GOOGLE -> translateGoogleWithFallback(text, language, settings)
-            SubtitleTranslationProvider.ZANGETSU -> translateZangetsuWithFallback(text, language, settings)
+            SubtitleTranslationProvider.FREE_GOOGLE -> translateFreeGoogleWithFallback(text, language, settings)
             else -> execute(settings, requestFor(settings, text, language))
           }
         if (cache.size > MAX_CACHE) cache.clear()
@@ -111,8 +111,8 @@ class EmbeddedSubtitleTranslator(
     when (settings.provider) {
       SubtitleTranslationProvider.GOOGLE ->
         SubtitleTranslationProviders.googleRequest(text, language, settings.endpoint, settings.apiKey)
-      SubtitleTranslationProvider.ZANGETSU ->
-        SubtitleTranslationProviders.zangetsuRequest(text, language, settings.endpoint)
+      SubtitleTranslationProvider.FREE_GOOGLE ->
+        SubtitleTranslationProviders.freeGoogleRequest(text, language, settings.endpoint)
       SubtitleTranslationProvider.DEEPL ->
         SubtitleTranslationProviders.deeplRequest(text, language, settings.endpoint, settings.apiKey)
       SubtitleTranslationProvider.GEMINI ->
@@ -150,8 +150,8 @@ class EmbeddedSubtitleTranslator(
     throw last ?: SubtitleTranslationException("No Google Translate endpoint is available")
   }
 
-  /** Zangetsu shares Google's free hosts and response shape; a user endpoint is tried first. */
-  private suspend fun translateZangetsuWithFallback(text: String, language: String, settings: Settings): String {
+  /** Shares Google's free hosts and response shape; a user endpoint is tried first. */
+  private suspend fun translateFreeGoogleWithFallback(text: String, language: String, settings: Settings): String {
     val endpoints =
       listOf(
         settings.endpoint,
@@ -161,13 +161,13 @@ class EmbeddedSubtitleTranslator(
     var last: Throwable? = null
     for (endpoint in endpoints) {
       try {
-        return execute(settings, SubtitleTranslationProviders.zangetsuRequest(text, language, endpoint))
+        return execute(settings, SubtitleTranslationProviders.freeGoogleRequest(text, language, endpoint))
       } catch (failure: Throwable) {
         if (failure is CancellationException) throw failure
         last = failure
       }
     }
-    throw last ?: SubtitleTranslationException("No Zangetsu translation endpoint is available")
+    throw last ?: SubtitleTranslationException("No free translation endpoint is available")
   }
 
   private suspend fun execute(settings: Settings, request: TranslationHttpRequest): String {
@@ -187,7 +187,7 @@ class EmbeddedSubtitleTranslator(
       }
       when (settings.provider) {
         SubtitleTranslationProvider.GOOGLE -> SubtitleTranslationProviders.parseGoogle(json, text)
-        SubtitleTranslationProvider.ZANGETSU -> SubtitleTranslationProviders.parseGoogle(json, text)
+        SubtitleTranslationProvider.FREE_GOOGLE -> SubtitleTranslationProviders.parseGoogle(json, text)
         SubtitleTranslationProvider.DEEPL -> SubtitleTranslationProviders.parseDeepl(json, text)
         SubtitleTranslationProvider.GEMINI -> SubtitleTranslationProviders.parseGemini(json, text)
         SubtitleTranslationProvider.OPENAI_COMPATIBLE -> SubtitleTranslationProviders.parseOpenAi(json, text)

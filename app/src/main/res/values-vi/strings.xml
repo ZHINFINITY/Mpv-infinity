@@ -641,7 +641,10 @@
   <string name="fonts_loaded">Đã tải %1$d phông chữ</string>
   <string name="reload_fonts">Tải lại phông chữ</string>
   <string name="reload_fonts_summary">Quét lại thư mục nguồn đã chọn và làm mới danh sách phông chữ</string>
-  <string name="clear_font_directory">Xóa thư mục phông chữ</string>
+
+  <string name="download_fonts">Tải phông chữ</string>
+  <string name="download_fonts_summary">Duyệt và tải phông chữ từ Google Fonts</string>
+  <string name="download_fonts_failed">Tải phông chữ thất bại, kiểm tra kết nối của bạn</string>  <string name="clear_font_directory">Xóa thư mục phông chữ</string>
   <string name="reset_to_default_font">Đặt lại về phông chữ mặc định</string>
   <string name="set_as_default">Đặt làm mặc định</string>
   <string name="notification_channel_name">Phát lại phương tiện</string>
@@ -1557,6 +1560,10 @@
   <string name="ui_search_language">Tìm kiếm ngôn ngữ…</string>
   <string name="ui_no_languages_found">Không tìm thấy ngôn ngữ nào</string>
   <string name="ui_cancel_translation">Hủy dịch</string>
+  <string name="ui_translate_embedded_subtitles">Dịch phụ đề nhúng</string>
+  <string name="toast_could_not_find_current_video_file">Không tìm thấy tệp video hiện tại</string>
+  <string name="toast_could_not_locate_track_in_file">Không tìm thấy track này trong tệp</string>
+  <string name="toast_translation_failed">Dịch thất bại: %1$s</string>
   <string name="ui_translate">Dịch</string>
   <string name="ui_pan_zoom">Xoay &amp; Thu phóng</string>
   <string name="ui_decrease_zoom">Giảm thu phóng</string>
@@ -2266,4 +2273,14 @@
   <string name="video_mark_as_last_played">Phát gần đây nhất</string>
   <string name="video_mark_as_finished">Đã xem xong</string>
   <string name="video_mark_as_none">Không có</string>
+  <string name="widget_music_no_media">Không có gì trong hàng đợi</string>
+  <string name="widget_music_open_player_hint">Nhấn để mở trình phát</string>
+  <string name="widget_music_previous" translatable="false">Previous track</string>
+  <string name="widget_music_play_pause" translatable="false">Play or pause</string>
+  <string name="widget_music_next" translatable="false">Next track</string>
+  <string name="toast_translation_cue_fallback">Chuyển về dịch theo từng dòng (%1$s)</string>
+  <string name="download_fonts_sheet_title">Google Fonts</string>
+  <string name="download_fonts_sheet_summary">Duyệt và tải phông chữ từ Google Fonts</string>
+  <string name="download_fonts_search_hint">Tìm phông chữ</string>
+  <string name="download_fonts_no_results">Không có phông chữ khớp tìm kiếm của bạn</string>
 </resources>

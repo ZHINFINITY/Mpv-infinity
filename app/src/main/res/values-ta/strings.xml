@@ -641,7 +641,10 @@
   <string name="fonts_loaded">%1$d எழுத்துருக்கள் loaded</string>
   <string name="reload_fonts">Reload எழுத்துருக்கள்</string>
   <string name="reload_fonts_summary">Rescan தேர்ந்தெடுக்கப்பட்டது மூலம் கோப்புறை மற்றும் புதுப்பி எழுத்துரு பட்டியல்</string>
-  <string name="clear_font_directory">அழி எழுத்துரு directory</string>
+
+  <string name="download_fonts">எழுத்துருக்களைப் பதிவிறக்கு</string>
+  <string name="download_fonts_summary">Google Fonts இல் உள்ள எழுத்துருக்களை உலாவி பதிவிறக்கவும்</string>
+  <string name="download_fonts_failed">எழுத்துருப் பதிவிறக்கம் தோல்வியுற்றது, இணைப்பைச் சரிபார்க்கவும்</string>  <string name="clear_font_directory">அழி எழுத்துரு directory</string>
   <string name="reset_to_default_font">மீட்டமை க்கு இயல்புநிலை எழுத்துரு</string>
   <string name="set_as_default">Set ஆக இயல்புநிலை</string>
   <string name="notification_channel_name">ஊடகம் இயக்கம்</string>
@@ -1557,6 +1560,10 @@
   <string name="ui_search_language">மொழியைத் தேடு…</string>
   <string name="ui_no_languages_found">மொழிகள் எதுவும் கிடைக்கவில்லை</string>
   <string name="ui_cancel_translation">மொழிபெயர்ப்பை ரத்து செய்</string>
+  <string name="ui_translate_embedded_subtitles">உட்பொதிந்த வசனங்களை மொழிபெயர்</string>
+  <string name="toast_could_not_find_current_video_file">தற்போதைய வீடியோ கோப்பைக் கண்டறிய முடியவில்லை</string>
+  <string name="toast_could_not_locate_track_in_file">இந்த வசன தடம் கோப்பில் கண்டறிய முடியவில்லை</string>
+  <string name="toast_translation_failed">மொழிபெயர்ப்பு தோல்வி: %1$s</string>
   <string name="ui_translate">மொழிபெயர்</string>
   <string name="ui_pan_zoom">நகர்த்தி பெரிதாக்கு</string>
   <string name="ui_decrease_zoom">பெரிதாக்கலைக் குறை</string>
@@ -2266,4 +2273,14 @@
   <string name="video_mark_as_last_played">கடைசியாக இயக்கப்பட்டது</string>
   <string name="video_mark_as_finished">முடிந்தது</string>
   <string name="video_mark_as_none">எதுவுமில்லை</string>
+  <string name="widget_music_no_media">வரிசையில் எதுவுமில்லை</string>
+  <string name="widget_music_open_player_hint">பிளேயரைத் திறக்க தட்டவும்</string>
+  <string name="widget_music_previous" translatable="false">Previous track</string>
+  <string name="widget_music_play_pause" translatable="false">Play or pause</string>
+  <string name="widget_music_next" translatable="false">Next track</string>
+  <string name="toast_translation_cue_fallback">வரிவாரியான மொழிபெயர்ப்புக்கு மாறுகிறது (%1$s)</string>
+  <string name="download_fonts_sheet_title">Google எழுத்துருக்கள்</string>
+  <string name="download_fonts_sheet_summary">Google Fonts இல் உள்ள எழுத்துருக்களை உலாவி பதிவிறக்கவும்</string>
+  <string name="download_fonts_search_hint">எழுத்துருக்களைத் தேடுங்கள்</string>
+  <string name="download_fonts_no_results">உங்கள் தேடலுக்குப் பொருந்தும் எழுத்துரு இல்லை</string>
 </resources>

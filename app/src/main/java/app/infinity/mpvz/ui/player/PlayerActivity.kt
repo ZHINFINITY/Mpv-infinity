@@ -82,6 +82,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import app.infinity.mpvz.BuildConfig
 import app.infinity.mpvz.R
 import app.infinity.mpvz.catalog.StreamWatchHistory
+import app.infinity.mpvz.ui.widget.MusicPlayerWidgetProvider
 import app.infinity.mpvz.database.entities.PlaybackStateEntity
 import app.infinity.mpvz.database.entities.PlaylistEntity
 import app.infinity.mpvz.database.entities.PlaylistItemEntity
@@ -109,6 +110,7 @@ import app.infinity.mpvz.preferences.InterpolationRuntimeApplyPolicy
 import app.infinity.mpvz.preferences.MpvConfigControlledFeatures
 import app.infinity.mpvz.preferences.MpvConfigOverridePolicy
 import app.infinity.mpvz.preferences.PlayerPreferences
+import app.infinity.mpvz.preferences.DEFAULT_SUBTITLE_FONT_FAMILY
 import app.infinity.mpvz.preferences.SubtitlesPreferences
 import app.infinity.mpvz.preferences.VideoSortType
 import app.infinity.mpvz.repository.MediaFileRepository
@@ -126,6 +128,7 @@ import app.infinity.mpvz.ui.torrent.TorrentSelectionActivity
 import app.infinity.mpvz.utils.device.VulkanCapabilities
 import app.infinity.mpvz.utils.history.RecentlyPlayedOps
 import app.infinity.mpvz.utils.media.HttpUtils
+import app.infinity.mpvz.utils.media.FontFamilyName
 import app.infinity.mpvz.utils.media.JellyfinSessionReporter
 import app.infinity.mpvz.utils.media.MediaUtils
 import app.infinity.mpvz.utils.media.fileExtension
@@ -1625,6 +1628,8 @@ class PlayerActivity :
       ),
     )
     restoreAudioPlaybackSessionIfNeeded()
+    pendingWidgetMediaAction =
+      intent?.getStringExtra(MusicPlayerWidgetProvider.EXTRA_WIDGET_MEDIA_ACTION)
     if (redirectUnselectedTorrentToPicker(intent, finishCurrent = true)) return
     if (!acceptPreparedPlaybackLaunch(intent)) {
       finish()
@@ -1796,7 +1801,10 @@ class PlayerActivity :
           subtitlesPreferences.fontSize.changes(),
         ) { textColor, backgroundColor, borderColor, borderSize, fontSize ->
           listOf(textColor, backgroundColor, borderColor, borderSize, fontSize)
-        }.collect { values ->
+        }.collectLatest { values ->
+          // setStyle re-applies overrides to live ASS tracks natively (ass_process_force_style),
+          // which is cheap enough to run per change; collectLatest still drops superseded
+          // updates so a slider gesture doesn't queue a style update per frame.
           nativeEngineOrNull()?.setSubtitleStyle(
             textColor = values[0],
             backgroundColor = values[1],
@@ -2248,6 +2256,9 @@ class PlayerActivity :
         }
       }
     }
+    setupSystemBarsAutoHide()
+    setupPipHelper()
+
     lifecycleScope.launch {
       repeatOnLifecycle(Lifecycle.State.STARTED) {
         // The engine is built lazily (music never needs it). Returning here used to drop
@@ -2261,8 +2272,6 @@ class PlayerActivity :
         }
       }
     }
-    setupSystemBarsAutoHide()
-    setupPipHelper()
 
     lifecycleScope.launch {
       val initError = awaitMpvCorePreparation()
@@ -4313,6 +4322,20 @@ class PlayerActivity :
     if (state.phase !in setOf(PlaybackPhase.LOADING, PlaybackPhase.READY, PlaybackPhase.BACKGROUND)) return false
     val item = state.currentItem ?: PlaybackSession.queue.value.currentItem ?: return false
     return item.isDefinitelyAudioOnly() && item.audiobook == null && !item.requiresTorrentResolution()
+  }
+
+  // Set when the home-screen widget cold-launches playback; applied once playback restarts.
+  private var pendingWidgetMediaAction: String? = null
+
+  private fun consumePendingWidgetMediaAction() {
+    val action = pendingWidgetMediaAction ?: return
+    pendingWidgetMediaAction = null
+    // Values mirror MusicPlayerWidgetProvider.MediaAction names.
+    when (action) {
+      "PLAY_PAUSE" -> if (PlaybackSession.getPropertyBoolean("pause") == true) viewModel.unpause()
+      "NEXT" -> viewModel.handleMediaNext()
+      "PREVIOUS" -> viewModel.handleMediaPrevious()
+    }
   }
 
   private fun restoreAudioPlaybackSessionIfNeeded() {
@@ -6905,6 +6928,7 @@ class PlayerActivity :
         }
         viewModel.onVideoLoadCompleted()
         handleFileLoaded(loadGeneration)
+        consumePendingWidgetMediaAction()
         if (pendingVideoTrackRestoreAfterRebuild && MediaPlaybackService.activityForeground && !isDeviceScreenOffOrLocked()) {
           enableVideoAfterBackground()
         }
@@ -7402,7 +7426,15 @@ class PlayerActivity :
 
     // MPV uses shared typography options for both tracks. Secondary-specific font/color/outline
     // properties are not exposed by this engine; don't send unsupported writes that return -3.
-    PlaybackSession.setPropertyString("sub-font", font)
+    // A blank/alias family ("sans-serif") makes sub-ass-override render in libass's builtin
+    // (the "font breaks" report); default to the bundled Roboto Flex family instead.
+    PlaybackSession.setPropertyString(
+      "sub-font",
+      FontFamilyName.resolve(
+        java.io.File("${filesDir.path}/fonts/"),
+        font.ifBlank { "Roboto Flex" },
+      ),
+    )
     PlaybackSession.setPropertyInt("sub-font-size", fontSize)
     PlaybackSession.setPropertyBoolean("sub-bold", bold)
     PlaybackSession.setPropertyBoolean("sub-italic", italic)

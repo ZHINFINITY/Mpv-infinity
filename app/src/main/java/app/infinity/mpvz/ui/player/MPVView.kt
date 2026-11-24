@@ -1067,8 +1067,25 @@ class MPVView(
     PlaybackSession.setOptionString("sub-file-paths", "")
     PlaybackSession.setOptionString("subs-fallback", "no")
 
-    val fontsDirPath = "${context.filesDir.path}/fonts/"
-    PlaybackSession.setOptionString("sub-fonts-dir", fontsDirPath)
+    // mpv's fontconfig on Android cannot resolve generic aliases like "sans-serif", and an
+    // empty fonts dir leaves libass with only its broken-metrics builtin — both render
+    // override-ASS subtitles with collapsed spaces. Seed the dir with the bundled
+    // Roboto Flex so there is always a real font, and point `sub-fonts-dir` at it.
+    val fontsDir = java.io.File(context.filesDir, "fonts")
+    runCatching {
+      if (!fontsDir.isDirectory) fontsDir.mkdirs()
+      val bundled = java.io.File(fontsDir, "RobotoFlex-bundled.ttf")
+      if (!bundled.isFile || bundled.length() == 0L) {
+        context.resources.openRawResource(
+          context.resources.getIdentifier("roboto_flex", "font", context.packageName),
+        ).use { input ->
+          bundled.outputStream().use { output -> input.copyTo(output) }
+        }
+      }
+    }
+    if (fontsDir.isDirectory && fontsDir.listFiles()?.any { it.isFile } == true) {
+      PlaybackSession.setOptionString("sub-fonts-dir", "${fontsDir.path}/")
+    }
     // Auto-detect subtitle encoding
     PlaybackSession.setOptionString("sub-codepage", "auto")
     // Allow embedded fonts from MKV/MP4 containers
@@ -1090,7 +1107,15 @@ class MPVView(
     PlaybackSession.setOptionString("secondary-sub-delay", secondarySubDelay)
     PlaybackSession.setOptionString("secondary-sub-speed", secondarySubSpeed.toString())
 
-    val preferredFont = subtitlesPreferences.font.get().ifBlank { DEFAULT_SUBTITLE_FONT_FAMILY }
+    // "sans-serif" is a fontconfig alias libmpv cannot resolve on Android; with override
+    // active that falls back to libass's builtin (collapsed spaces). Default to the bundled
+    // Roboto Flex family, which is always present in the fonts dir.
+    val storedFont = subtitlesPreferences.font.get().ifBlank { "Roboto Flex" }
+    val preferredFont =
+      app.infinity.mpvz.utils.media.FontFamilyName.resolve(
+        java.io.File("${context.filesDir.path}/fonts/"),
+        storedFont,
+      )
     PlaybackSession.setOptionString("sub-font", preferredFont)
 
     if (subtitlesPreferences.overrideAssSubs.get()) {

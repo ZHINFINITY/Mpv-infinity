@@ -36,9 +36,6 @@ object VideoScanUtils : KoinComponent {
   private const val TAG = "VideoScanUtils"
   private val metadataCache: VideoMetadataCacheRepository by inject()
 
-  // Extensions where MediaStore duration is unreliable (returns 0)
-  private val MEDIASTORE_DURATION_UNRELIABLE = setOf("ts", "mts", "m2ts")
-
   /**
    * Get all videos in a specific folder
    * MediaStore first, filesystem fallback for external devices
@@ -66,13 +63,14 @@ object VideoScanUtils : KoinComponent {
         scanAudioFromMediaStore(context, normalizedFolderPath, videosMap, noMediaPathFilter, options)
       }
 
-      // MediaStore returns 0 duration for .ts/.mts/.m2ts — fix those entries now
-      val zeroTsKeys =
+      // MediaStore reports 0 duration for formats its own extractor cannot measure
+      // (.ts/.mts/.m2ts, and remuxes with codecs like AV1 or VC-1) — repair those entries
+      val zeroDurationKeys =
         videosMap.keys.filter { key ->
           val v = videosMap[key] ?: return@filter false
-          v.duration <= 0L && v.path.substringAfterLast('.').lowercase() in MEDIASTORE_DURATION_UNRELIABLE
+          v.duration <= 0L
         }
-      for (key in zeroTsKeys) {
+      for (key in zeroDurationKeys) {
         val v = videosMap[key] ?: continue
         try {
           val file = File(v.path)

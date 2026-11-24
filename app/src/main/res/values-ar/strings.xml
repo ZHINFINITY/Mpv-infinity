@@ -649,7 +649,10 @@
   <string name="fonts_loaded">تم تحميل %1$d خطًا</string>
   <string name="reload_fonts">إعادة تحميل الخطوط</string>
   <string name="reload_fonts_summary">إعادة فحص مجلد المصدر المحدد وتحديث قائمة الخطوط</string>
-  <string name="clear_font_directory">مسح مجلد الخطوط</string>
+
+  <string name="download_fonts">تنزيل الخطوط</string>
+  <string name="download_fonts_summary">استعرض ونزّل الخطوط من خطوط Google</string>
+  <string name="download_fonts_failed">فشل تنزيل الخطوط، تحقق من اتصالك</string>  <string name="clear_font_directory">مسح مجلد الخطوط</string>
   <string name="reset_to_default_font">إعادة الضبط إلى الخط الافتراضي</string>
   <string name="set_as_default">تعيين كافتراضي</string>
   <string name="notification_channel_name">تشغيل الوسائط</string>
@@ -2281,4 +2284,14 @@
   <string name="video_mark_as_last_played">آخر تشغيل</string>
   <string name="video_mark_as_finished">مكتمل</string>
   <string name="video_mark_as_none">بلا علامة</string>
+  <string name="widget_music_no_media">لا شيء في قائمة الانتظار</string>
+  <string name="widget_music_open_player_hint">اضغط لفتح المشغل</string>
+  <string name="widget_music_previous" translatable="false">Previous track</string>
+  <string name="widget_music_play_pause" translatable="false">Play or pause</string>
+  <string name="widget_music_next" translatable="false">Next track</string>
+  <string name="toast_translation_cue_fallback">الرجوع إلى الترجمة سطراً بسطر (%1$s)</string>
+  <string name="download_fonts_sheet_title">خطوط Google</string>
+  <string name="download_fonts_sheet_summary">استعرض ونزّل الخطوط من خطوط Google</string>
+  <string name="download_fonts_search_hint">البحث في الخطوط</string>
+  <string name="download_fonts_no_results">لا توجد خطوط مطابقة لبحثك</string>
 </resources>

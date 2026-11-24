@@ -50,6 +50,7 @@ import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import app.infinity.mpvz.ui.player.LibassSubtitleSurfaceView
+import app.infinity.mpvz.utils.media.FontFamilyName
 import app.infinity.mpvz.preferences.MpvFlowComputeApi
 import androidx.media3.subtitle.libass.LibassSubtitleRenderer
 import io.github.peerless2012.ass.media.AssHandler
@@ -151,6 +152,8 @@ data class NativeTrack(
   val isDefault: Boolean = false,
   val isForced: Boolean = false,
   val hearingImpaired: Boolean = false,
+  /** Absolute stream index inside the container (mpv's ff-index); needed by whole-track translation. */
+  val streamIndex: Int? = null,
 )
 
 internal enum class NativeRestartFrameOutcome { WAITING, RENDERED, ERROR }
@@ -593,6 +596,7 @@ class NativeMedia3Engine internal constructor(
       decoderReuseEvaluation: androidx.media3.exoplayer.DecoderReuseEvaluation?,
     ) {
       currentVideoFormat = format
+      NativeMediaMetadata.publish(currentVideoFormat, currentAudioFormat)
       if (BuildConfig.DEBUG) {
         val colorInfo = format.colorInfo
         val flowSink = media3FlowSink
@@ -622,6 +626,7 @@ class NativeMedia3Engine internal constructor(
       decoderReuseEvaluation: androidx.media3.exoplayer.DecoderReuseEvaluation?,
     ) {
       currentAudioFormat = format
+      NativeMediaMetadata.publish(currentVideoFormat, currentAudioFormat)
       publishSnapshot()
     }
 
@@ -974,6 +979,7 @@ class NativeMedia3Engine internal constructor(
       currentVideoFormat = null
       currentAudioFormat = null
       currentVideoSize = null
+      NativeMediaMetadata.clear()
       resetVideoFrameCounterBaseline()
       frameProcessingOffsetTotalUs = 0L
       frameProcessingSampleCount = 0L
@@ -1257,6 +1263,12 @@ class NativeMedia3Engine internal constructor(
       .clearOverridesOfType(C.TRACK_TYPE_TEXT)
       .addOverride(TrackSelectionOverride(match.first.mediaTrackGroup, match.second))
       .build()
+    // Remember the external track as the desired selection: the setMediaItem/prepare in
+    // addExternalSubtitle fires further onTracksChanged events, and without this
+    // restoreSelectedNativeSubtitle would re-apply the previously selected embedded track,
+    // dropping the freshly added (e.g. translated) one.
+    selectedNativeSubtitleSelection = subtitleSelectionFor(match.first, match.second)
+    selectedNativeSubtitleKey = player.currentTracks.groups.indexOf(match.first) to match.second
     pendingExternalSelectionId = null
     publishSnapshot()
   }
@@ -1364,6 +1376,9 @@ class NativeMedia3Engine internal constructor(
   private fun restoreSelectedNativeSubtitle(tracks: Tracks) {
     val wanted = selectedNativeSubtitleSelection ?: return
     if (restoringNativeSubtitleSelection) return
+    // An external selection is waiting to be applied; restoring an older selection here would
+    // race it and put the embedded track back on top.
+    if (pendingExternalSelectionId != null) return
     val match = tracks.groups
       .asSequence()
       .filter { it.type == C.TRACK_TYPE_TEXT }
@@ -1507,7 +1522,23 @@ class NativeMedia3Engine internal constructor(
       return it
     }
     return runCatching {
-      LibassSubtitleRenderer(width, height, null).also {
+      // Register the user's custom fonts folder (same dir the mpv engine points sub-fonts-dir
+      // at) so libass can resolve custom families named in style overrides; without it a font
+      // picked in the subtitle settings silently falls back to the default.
+      val fontsDirectory = File(appContext.filesDir, "fonts")
+      LibassSubtitleRenderer(width, height, fontsDirectory.takeIf { d -> d.isDirectory }?.path).also {
+        // Directory-based fontconfig config may not parse, so also register each font file
+        // explicitly with libass under its REAL family name (read from the TTF name table):
+        // libass matches `Fontname` against the family, not the file name, so registering
+        // "Anton-Regular" while the settings say "Anton" never resolves.
+        fontsDirectory.takeIf { d -> d.isDirectory }?.listFiles()
+          ?.filter { file -> file.name.lowercase().endsWith(".ttf") || file.name.lowercase().endsWith(".otf") }
+          ?.forEach { file ->
+            runCatching {
+              val familyName = FontFamilyName.read(file) ?: file.nameWithoutExtension
+              it.addFont(familyName, file.readBytes())
+            }.onFailure { Log.w(logTag, "custom font registration failed: ${file.name}") }
+          }
         libassRenderer = it
         libassRendererSize = width to height
         view.setRenderer(it)
@@ -1585,6 +1616,7 @@ class NativeMedia3Engine internal constructor(
     currentVideoFormat = null
     currentAudioFormat = null
     currentVideoSize = null
+    NativeMediaMetadata.clear()
     resetVideoFrameCounterBaseline()
     frameProcessingOffsetTotalUs = 0L
     frameProcessingSampleCount = 0L
@@ -1973,6 +2005,7 @@ class NativeMedia3Engine internal constructor(
     currentVideoFormat = null
     currentVideoSize = null
     videoDecoderName = null
+    NativeMediaMetadata.clear()
     _subtitleCueText.value = ""
     selectedNativeSubtitleKey = null
     selectedNativeSubtitleSelection = null
@@ -2056,6 +2089,9 @@ class NativeMedia3Engine internal constructor(
             channelCount = format.channelCount.coerceAtLeast(0),
             isDefault = format.selectionFlags and C.SELECTION_FLAG_DEFAULT != 0,
             isForced = format.selectionFlags and C.SELECTION_FLAG_FORCED != 0,
+            // Media3 format ids for Matroska/MP4 streams carry the absolute stream index
+            // (AssMatroskaExtractor formats them); translation maps this to mpv's ff-index.
+            streamIndex = format.id?.toIntOrNull(),
             hearingImpaired = format.roleFlags and C.ROLE_FLAG_DESCRIBES_MUSIC_AND_SOUND != 0,
             selected = if (type == C.TRACK_TYPE_TEXT && selectedNativeSubtitleKey == (groupIndex to trackIndex)) {
               true
