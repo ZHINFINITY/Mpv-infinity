@@ -26,7 +26,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -53,6 +53,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -175,20 +176,46 @@ internal fun MusicPlayerScreen(
     color = MaterialTheme.colorScheme.surface,
   ) {
     val surfaceColor = MaterialTheme.colorScheme.surface
-    Box(
-      Modifier
-        .fillMaxSize()
-        .background(
-          Brush.verticalGradient(
-            colors =
-              listOf(
-                ambienceColors?.base?.let(::Color) ?: surfaceColor,
-                ambienceColors?.accent?.let { Color(it).copy(alpha = 0.55f) } ?: surfaceColor,
-                surfaceColor,
-              ),
+    // MPV-style backdrop: the album art itself, blurred and darkened, fills the whole
+    // screen when available; the color-gradient ambience stays as the fallback.
+    val backdropUri = snapshot.artworkUri?.takeIf { it.isNotBlank() }?.let { runCatching { Uri.parse(it) }.getOrNull() }
+    if (backdropUri != null) {
+      AsyncImage(
+        model = backdropUri,
+        contentDescription = null,
+        contentScale = ContentScale.Crop,
+        modifier = Modifier.fillMaxSize().blur(40.dp),
+      )
+      Box(
+        Modifier
+          .fillMaxSize()
+          .background(
+            Brush.verticalGradient(
+              colors =
+                listOf(
+                  Color.Black.copy(alpha = 0.40f),
+                  ambienceColors?.accent?.let { Color(it).copy(alpha = 0.45f) } ?: Color.Black.copy(alpha = 0.55f),
+                  Color.Black.copy(alpha = 0.72f),
+                ),
+            ),
           ),
-        ),
-    )
+      )
+    } else {
+      Box(
+        Modifier
+          .fillMaxSize()
+          .background(
+            Brush.verticalGradient(
+              colors =
+                listOf(
+                  ambienceColors?.base?.let(::Color) ?: surfaceColor,
+                  ambienceColors?.accent?.let { Color(it).copy(alpha = 0.55f) } ?: surfaceColor,
+                  surfaceColor,
+                ),
+            ),
+          ),
+      )
+    }
     BoxWithConstraints(
       modifier = Modifier
         .fillMaxSize()
@@ -252,9 +279,11 @@ internal fun MusicPlayerScreen(
           MusicArtwork(
             artworkUri = snapshot.artworkUri,
             isPlaying = snapshot.isPlaying,
+            // Full-screen feel: the art dominates the portrait layout instead of a
+            // small capped square.
             modifier = Modifier
-              .fillMaxWidth(0.88f)
-              .sizeIn(maxWidth = 340.dp, maxHeight = 340.dp)
+              .fillMaxWidth()
+              .fillMaxHeight(0.62f)
               .aspectRatio(1f)
               .padding(top = 14.dp),
           )
