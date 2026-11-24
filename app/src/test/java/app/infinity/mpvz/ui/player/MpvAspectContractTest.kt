@@ -204,4 +204,34 @@ class MpvAspectContractTest {
     assertTrue(stateReadGuard > stateRead)
     assertTrue(nativeApply > stateReadGuard)
   }
+
+  @Test fun mpvStreamingOptionsKeepADeepReadaheadAndReuseHttpConnections() {
+    val mpvView = source("ui/player/MPVView.kt")
+
+    assertTrue(mpvView.contains("PlaybackSession.setOptionString(\"cache\", \"yes\")"))
+    assertTrue(mpvView.contains("PlaybackSession.setOptionString(\"demuxer-readahead-secs\", \"20\")"))
+    assertFalse(mpvView.contains("PlaybackSession.setOptionString(\"cache\", \"auto\")"))
+    // Persistent connections avoid a TCP+TLS handshake per HLS/DASH segment.
+    assertFalse(mpvView.contains("http_persistent=0"))
+    assertTrue(mpvView.contains("http_persistent=1"))
+    assertFalse(mpvView.contains("PlaybackSession.setOptionString(\"demuxer-max-bytes\", \"64MiB\")"))
+  }
+
+  @Test fun nativeEngineKeepsThirtySecondsOfBufferForOnlineStreams() {
+    val engine = source("ui/player/NativeMedia3Engine.kt")
+
+    assertTrue(engine.contains("30_000"))
+    assertTrue(engine.contains("180_000"))
+    assertFalse(engine.contains("10_000,\n          120_000"))
+  }
+
+  @Test fun thumbnailGenerationUsesHardwareDecodeAndCachesRotationProbes() {
+    val repository = source("domain/thumbnail/ThumbnailRepository.kt")
+
+    assertFalse(repository.contains("useHwDec = false"))
+    assertTrue(repository.contains("useHwDec = true"))
+    assertTrue(repository.contains("rotationCache"))
+    // The rotation probe is a second full container parse per file; it must be cached.
+    assertTrue(repository.contains("rotationCache.getOrPut(video.uri.toString())"))
+  }
 }

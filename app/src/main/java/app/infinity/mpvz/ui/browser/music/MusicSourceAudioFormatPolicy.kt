@@ -11,6 +11,7 @@ import java.util.Locale
 internal data class MusicSourceAudioFormat(
   val bitDepth: Int?,
   val sampleRateHz: Int?,
+  val isFloat: Boolean = false,
 )
 
 /**
@@ -24,12 +25,19 @@ internal object MusicSourceAudioFormatPolicy {
   fun fromSourceMetadata(
     bitDepthText: String?,
     sampleRateText: String?,
+    formatProfileText: String? = null,
   ): MusicSourceAudioFormat? {
     val bitDepth =
       Regex("\\d+").find(bitDepthText.orEmpty())?.value?.toIntOrNull()
         ?.takeIf { it in 1..64 }
+    val isFloat = formatProfileText.orEmpty().contains("float", ignoreCase = true) ||
+      bitDepthText.orEmpty().contains("float", ignoreCase = true)
     val sampleRateHz = parseSampleRate(sampleRateText)
-    return if (bitDepth == null && sampleRateHz == null) null else MusicSourceAudioFormat(bitDepth, sampleRateHz)
+    return if (bitDepth == null && sampleRateHz == null) {
+      null
+    } else {
+      MusicSourceAudioFormat(bitDepth, sampleRateHz, isFloat)
+    }
   }
 
   fun isLosslessCodec(codecOrExtension: String?): Boolean {
@@ -45,7 +53,9 @@ internal object MusicSourceAudioFormatPolicy {
   ): String? {
     if (!isLosslessCodec(codecOrExtension)) return null
     val details = buildList {
-      sourceFormat?.bitDepth?.let { add("$it-bit") }
+      sourceFormat?.bitDepth?.let { depth ->
+        add(if (sourceFormat.isFloat) "$depth-bit float" else "$depth-bit")
+      }
       sourceFormat?.sampleRateHz?.let { add(formatSampleRate(it)) }
     }
     return if (details.isEmpty()) "LOSSLESS" else "LOSSLESS · ${details.joinToString(" · ")}"

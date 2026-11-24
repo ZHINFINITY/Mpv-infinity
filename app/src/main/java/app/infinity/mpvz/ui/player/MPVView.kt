@@ -805,15 +805,24 @@ class MPVView(
     PlaybackSession.setOptionString("http-allow-redirect", "yes")
     PlaybackSession.setOptionString("cookies", "yes")
     PlaybackSession.setOptionString("cookies-file", AndroidCookieJar.playbackCookieFile(context).absolutePath)
-    PlaybackSession.setOptionString("cache", "auto")
+    // Force caching for every input (network and local pipes alike). "auto" only engages the
+    // cache for inputs mpv classifies as non-local, so slow-seek sources like WebDAV/SMB/http
+    // mounted paths skip readahead entirely and stall on every fluctuation.
+    PlaybackSession.setOptionString("cache", "yes")
+    // mpv's default readahead window is 1s, far below one TCP slow-start burst: the demuxer
+    // keeps stopping just ahead of playback and playback keeps waiting for it. Keep a deep
+    // readahead so short bandwidth dips are absorbed from memory instead of pausing the video.
+    PlaybackSession.setOptionString("demuxer-readahead-secs", "20")
     PlaybackSession.setOptionString("cache-pause", "yes")
     PlaybackSession.setOptionString("cache-pause-wait", "2")
-    PlaybackSession.setOptionString("demuxer-max-bytes", "64MiB")
+    PlaybackSession.setOptionString("demuxer-max-bytes", "128MiB")
     // Recover boundedly from transient HTTP/TLS disconnects, including non-seekable live inputs.
     // Do not use reconnect_at_eof globally: a legitimate VOD EOF must still finish normally.
+    // http_persistent=1 keeps one connection alive across HLS/DASH segments instead of a fresh
+    // TCP+TLS handshake per segment, which shows up as recurring buffering on high-latency CDNs.
     PlaybackSession.setOptionString(
       "demuxer-lavf-o",
-      "http_persistent=0,reconnect=1,reconnect_on_network_error=1,reconnect_streamed=1," +
+      "http_persistent=1,reconnect=1,reconnect_on_network_error=1,reconnect_streamed=1," +
         "reconnect_delay_max=5,reconnect_max_retries=5,reconnect_delay_total_max=20",
     )
     // demuxer-lavf-o only reaches demuxer-internal opens (HLS/DASH segments). The primary http(s)
@@ -870,9 +879,12 @@ class MPVView(
     }
 
     // Keep the MPV stats OSD video-only. Otherwise a music item can inherit the previous
-    // video's stats overlay when MPV is reused for audio playback.
+    // video's stats overlay when MPV is reused for audio playback. Only a positively
+    // video-classified item may show stats: "not definitely audio" is also every item whose
+    // metadata has not loaded yet, and those are exactly the music sessions that flashed the
+    // stats page for a second before the controls hid it.
     StatsLuaOverlay.onCoreStarted()
-    if (PlaybackSession.queue.value.currentItem?.isDefinitelyAudioOnly() != true) {
+    if (PlaybackSession.queue.value.currentItem?.declaredMediaKind() == DeclaredPlaybackMediaKind.VIDEO) {
       StatsLuaOverlay.show(advancedPreferences.enabledStatisticsPage.get())
     }
   }

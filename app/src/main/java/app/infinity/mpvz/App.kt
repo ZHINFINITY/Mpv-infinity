@@ -64,6 +64,7 @@ class App :
 
   override fun onCreate() {
     super.onCreate()
+    app.infinity.mpvz.utils.storage.FileTypeUtils.appContext = this
 
     // Initialize Koin
     startKoin {

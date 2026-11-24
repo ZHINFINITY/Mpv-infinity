@@ -374,8 +374,10 @@ class NativeMedia3Engine internal constructor(
     .setLoadControl(
       DefaultLoadControl.Builder()
         .setBufferDurationsMs(
-          10_000,
-          120_000,
+          // Keep a deeper backstop of buffered media for online streams: 10s of network jitter
+          // on a fluctuating CDN connection is enough to force a rebuffer with the old floor.
+          30_000,
+          180_000,
           1_000,
           3_000,
         )

@@ -51,6 +51,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
@@ -65,6 +66,10 @@ import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import coil3.compose.AsyncImage
 import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.presentation.components.RemoteImageLoader
+import okhttp3.OkHttpClient
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.controls.components.MiniAudioVisualizer
 import app.infinity.mpvz.utils.media.MediaInfoOps
@@ -79,6 +84,8 @@ private enum class MusicPlayerSheet {
 private data class LoadedSourceAudioInfo(
   val codec: String,
   val format: MusicSourceAudioFormat?,
+  val channels: Int? = null,
+  val bitRateBps: Int? = null,
 )
 
 @Composable
@@ -93,12 +100,22 @@ internal fun MusicPlayerScreen(
   val landscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
   var loadedSourceInfo by remember(snapshot.currentUri) { mutableStateOf<LoadedSourceAudioInfo?>(null) }
   var openSheet by remember { mutableStateOf<MusicPlayerSheet?>(null) }
+  val sourceInfoCache = remember { mutableMapOf<String, LoadedSourceAudioInfo>() }
 
   LaunchedEffect(snapshot.currentUri, snapshot.title) {
-    loadedSourceInfo = null
     val uriText = snapshot.currentUri ?: return@LaunchedEffect
+    sourceInfoCache[uriText]?.let {
+      loadedSourceInfo = it
+      return@LaunchedEffect
+    }
+    loadedSourceInfo = null
     val uri = runCatching { Uri.parse(uriText) }.getOrNull() ?: return@LaunchedEffect
-    val fileName = uri.lastPathSegment?.substringAfterLast('/')?.ifBlank { null } ?: "audio"
+    // Stream URLs (Jellyfin "stream?static=true", Navidrome "stream.view") have no useful
+    // lastPathSegment; the queue item's own extension is the better MediaInfo hint.
+    val fileName =
+      snapshot.sourceExtension?.let { "audio.$it" }
+        ?: uri.lastPathSegment?.substringAfterLast('/')?.ifBlank { null }
+        ?: "audio"
     val audio =
       MediaInfoOps.getMediaInfo(context, uri, fileName)
         .getOrNull()
@@ -114,25 +131,60 @@ internal fun MusicPlayerScreen(
         MusicSourceAudioFormatPolicy.fromSourceMetadata(
           bitDepthText = it.bitDepth,
           sampleRateText = it.samplingRate,
+          formatProfileText = it.formatProfile,
         )
       }
-    loadedSourceInfo = LoadedSourceAudioInfo(sourceCodec, sourceFormat)
+    val channels = audio?.channels?.trim()?.removeSuffix("ch")?.trim()?.toIntOrNull()
+    val bitRateBps = audio?.bitRate?.trim()?.toIntOrNull()?.times(1_000)
+    LoadedSourceAudioInfo(sourceCodec, sourceFormat, channels, bitRateBps)
+      .also { cached ->
+        loadedSourceInfo = cached
+        sourceInfoCache[uriText] = cached
+      }
   }
 
   val losslessLabel =
     MusicSourceAudioFormatPolicy.headerLabel(
       codecOrExtension =
         loadedSourceInfo?.codec?.takeIf { it.isNotBlank() }
-          ?: snapshot.sourceExtension
-          ?: snapshot.currentUri?.substringAfterLast('.')?.substringBefore('?'),
+          ?: snapshot.sourceExtension?.takeIf { it.isNotBlank() },
       sourceFormat = loadedSourceInfo?.format,
     )
+
+  // Ambience backdrop: dominant album-art colors behind the player, for both portrait and
+  // landscape layouts. Mirrors the MPV video ambience so both engines get the treatment.
+  var ambienceColors by remember(snapshot.artworkUri) {
+    mutableStateOf<AmbienceColors?>(null)
+  }
+  LaunchedEffect(snapshot.artworkUri) {
+    val art = snapshot.artworkUri?.takeIf { it.isNotBlank() } ?: return@LaunchedEffect
+    val bitmap =
+      RemoteImageLoader.getFromMemory(art)
+        ?: RemoteImageLoader.load(context, OkHttpClient(), art)
+    val colors = bitmap?.let { withContext(Dispatchers.Default) { AmbienceColors.from(it) } }
+    if (colors != null) ambienceColors = colors
+  }
 
   BackHandler(onBack = onBackPress)
   Surface(
     modifier = Modifier.fillMaxSize(),
     color = MaterialTheme.colorScheme.surface,
   ) {
+    val surfaceColor = MaterialTheme.colorScheme.surface
+    Box(
+      Modifier
+        .fillMaxSize()
+        .background(
+          Brush.verticalGradient(
+            colors =
+              listOf(
+                ambienceColors?.base?.let(::Color) ?: surfaceColor,
+                ambienceColors?.accent?.let { Color(it).copy(alpha = 0.55f) } ?: surfaceColor,
+                surfaceColor,
+              ),
+          ),
+        ),
+    )
     BoxWithConstraints(
       modifier = Modifier
         .fillMaxSize()
@@ -234,7 +286,7 @@ internal fun MusicPlayerScreen(
               },
               modifier = Modifier.fillMaxWidth(),
             ) {
-              Column(modifier = Modifier.fillMaxWidth()) {
+              Column(modifier = Modifier.weight(1f)) {
                 Text(
                   text = item.title.ifBlank { "Audio Track" },
                   maxLines = 1,
@@ -250,6 +302,13 @@ internal fun MusicPlayerScreen(
                   color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
               }
+              IconButton(onClick = { controller?.removeMediaItem(index) }) {
+                Icon(
+                  Icons.RoundedFilled.Close,
+                  contentDescription = "Remove from queue",
+                  tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+              }
             }
           }
         }
@@ -259,6 +318,8 @@ internal fun MusicPlayerScreen(
         SourceInfoContent(
           codec = loadedSourceInfo?.codec?.takeIf { it.isNotBlank() } ?: snapshot.sourceExtension,
           sourceFormat = loadedSourceInfo?.format,
+          channels = loadedSourceInfo?.channels,
+          bitRateBps = loadedSourceInfo?.bitRateBps,
           modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp),
         )
       }
@@ -290,15 +351,22 @@ private fun MusicHeader(
         }
         if (losslessLabel != null) LosslessBadge(label = losslessLabel)
       }
-      Text(
-        text = "Now Playing",
-        modifier = Modifier.align(Alignment.Center).padding(horizontal = 142.dp),
-        style = MaterialTheme.typography.titleMedium,
-        textAlign = TextAlign.Center,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-      )
+      Row(
+        modifier = Modifier.align(Alignment.Center).fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        Spacer(modifier = Modifier.weight(0.25f))
+        Text(
+          text = "Now Playing",
+          modifier = Modifier.weight(0.5f),
+          style = MaterialTheme.typography.titleMedium,
+          textAlign = TextAlign.Center,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(modifier = Modifier.weight(0.25f))
+      }
       IconButton(onClick = onInfo, modifier = Modifier.align(Alignment.CenterEnd)) {
         Icon(
           imageVector = Icons.RoundedFilled.Info,
@@ -565,13 +633,17 @@ private fun MusicSecondaryControls(
 private fun SourceInfoContent(
   codec: String?,
   sourceFormat: MusicSourceAudioFormat?,
+  channels: Int? = null,
+  bitRateBps: Int? = null,
   modifier: Modifier = Modifier,
 ) {
   Column(modifier = modifier.padding(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
     Text("Source audio", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
     Text("Codec: ${codec?.takeIf { it.isNotBlank() }?.uppercase(Locale.ROOT) ?: "Not reported"}")
-    Text("Source bit depth: ${sourceFormat?.bitDepth?.let { "$it-bit" } ?: "Not reported"}")
+    Text("Source bit depth: ${sourceFormat?.bitDepth?.let { if (sourceFormat.isFloat) "$it-bit float" else "$it-bit" } ?: "Not reported"}")
     Text("Source sample rate: ${sourceFormat?.sampleRateHz?.let(::formatSampleRate) ?: "Not reported"}")
+    Text("Channels: ${channels?.let { "$it" } ?: "Not reported"}")
+    Text("Bit rate: ${bitRateBps?.let { "${it / 1_000} kbps" } ?: "Not reported"}")
     if (codec.isNullOrBlank() && sourceFormat == null) {
       Text("Source metadata is not available yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
