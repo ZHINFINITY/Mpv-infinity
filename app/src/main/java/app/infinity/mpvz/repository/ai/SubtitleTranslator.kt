@@ -249,7 +249,11 @@ class SubtitleTranslator(
     if (tasks.isEmpty()) throw SubtitleTranslationException("No text cues found to translate")
 
     val unique = LinkedHashMap<String, CueTask>()
-    tasks.forEach { task -> unique.putIfAbsent(task.key, task) }
+    tasks.forEach { task ->
+      // Merge repeats into the first task so every occurrence gets the translation.
+      val existing = unique[task.key]
+      if (existing == null) unique[task.key] = task else existing.lineIdxs.addAll(task.lineIdxs)
+    }
     val results = HashMap<Int, String>(tasks.size)
     translateUnique(unique, results, targetLanguage, onProgress)
 

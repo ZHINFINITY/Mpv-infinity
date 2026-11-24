@@ -108,10 +108,10 @@ class VideoMetadataCacheRepository(
             ),
           )
         }.onFailure { error ->
-          // A failed extraction (transient open/parse error) must not leave the previous
-          // zero-duration row in place, or shouldRefreshCachedMetadata keeps trusting it.
+          // Delete only the stale row this call observed: a concurrent extraction of a
+          // changed file may have inserted a valid row under the same path meanwhile.
           Log.w(TAG, "Failed to extract metadata for $displayName: ${error.message}")
-          runCatching { dao.deleteMetadata(path) }
+          runCatching { dao.deleteStaleMetadata(path, dateModified, size) }
         }
 
       result.getOrNull()
