@@ -183,6 +183,7 @@ enum class MpvConfigOverride(
         "cache",
         "cache-pause",
         "cache-pause-wait",
+        "demuxer-readahead-secs",
         "demuxer-max-bytes",
         "demuxer-lavf-o",
       ),

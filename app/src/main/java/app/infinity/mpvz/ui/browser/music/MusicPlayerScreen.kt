@@ -136,11 +136,15 @@ internal fun MusicPlayerScreen(
       }
     val channels = audio?.channels?.trim()?.removeSuffix("ch")?.trim()?.toIntOrNull()
     val bitRateBps = audio?.bitRate?.trim()?.toIntOrNull()?.times(1_000)
-    LoadedSourceAudioInfo(sourceCodec, sourceFormat, channels, bitRateBps)
-      .also { cached ->
-        loadedSourceInfo = cached
+    LoadedSourceAudioInfo(sourceCodec, sourceFormat, channels, bitRateBps).also { cached ->
+      loadedSourceInfo = cached
+      // Cache successful probes only: a failed extraction (no format, no codec, no
+      // bitrate) must stay uncached so the next visit retries instead of pinning a
+      // blank result forever.
+      if (cached.codec.isNotBlank() || cached.format != null || cached.bitRateBps != null) {
         sourceInfoCache[uriText] = cached
       }
+    }
   }
 
   val losslessLabel =

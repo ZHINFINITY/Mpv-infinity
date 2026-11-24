@@ -110,9 +110,18 @@ class NavidromeViewModel(
         // DB write lands, this collector still sees the old rows; the pendingSelectionId
         // guard keeps it from reverting the UI to the previous server in that window.
         val newActive = when {
-          pendingSelectionId != null ->
-            servers.firstOrNull { it.id == pendingSelectionId }
-              ?.also { pendingSelectionId = null }
+          pendingSelectionId != null -> {
+            val pending = servers.firstOrNull { it.id == pendingSelectionId }
+            if (pending != null) {
+              pendingSelectionId = null
+              pending
+            } else {
+              // Pending server was deleted before its row landed; fall back to the
+              // normal selection path instead of latching onto a missing ID.
+              pendingSelectionId = null
+              null
+            }
+          }
           currentActive != null && servers.any { it.id == currentActive.id } ->
             servers.first { it.id == currentActive.id }
               .takeIf { newest == null || newest.id == it.id || newest.lastConnected >= currentActive.lastConnected }

@@ -682,6 +682,13 @@ class ThumbnailRepository(
                 .getRotation(context, video.uri, video.displayName)
             }.getOrDefault(0)
           }
+        }.also { pendingRotation ->
+          val rotation = pendingRotation.await()
+          // A failed probe (0 on error) isn't a real answer: don't pin it, so a
+          // later thumbnail request re-probes once the source is readable again.
+          if (rotation != 0) rotationCache[video.uri.toString()] = pendingRotation
+          else rotationCache.remove(video.uri.toString(), pendingRotation)
+          rotation
         }.await()
       } catch (cancellation: CancellationException) {
         bitmap.takeUnless { it.isRecycled }?.recycle()
