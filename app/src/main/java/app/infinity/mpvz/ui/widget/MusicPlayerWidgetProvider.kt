@@ -188,6 +188,9 @@ class MusicPlayerWidgetProvider : AppWidgetProvider() {
     /** Below this dp width the widget renders the compact single-row layout. */
     const val COMPACT_MAX_WIDTH = 180
 
+    /** Height/width ratio above which a cell is portrait enough for the tall stacked layout. */
+    const val PORTRAIT_ASPECT = 1.15f
+
     /** Default palette seed when the track has no decodable artwork. */
     const val DEFAULT_SEED = 0xFF2B2536.toInt()
 
@@ -293,13 +296,15 @@ class MusicPlayerWidgetProvider : AppWidgetProvider() {
       widthDp: Int,
       @Suppress("UNUSED_PARAMETER") heightDp: Int,
     ): RemoteViews {
-      // Layout choice uses width and height: a wide-but-short cell cannot fit the tall
-      // layout's stacked artwork without squashing it, so fall back to the compact row.
+      // Layout choice uses width and height: clearly portrait cells (taller than wide) get the
+      // tall stacked-artwork layout, everything wide or square enough gets the wide layout with
+      // the artwork beside the text, and small or flat cells fall back to the compact row.
       val layoutRes = when {
         widthDp < COMPACT_MAX_WIDTH -> R.layout.widget_music_player
-        widthDp >= WIDE_MIN_WIDTH && heightDp >= WIDE_MIN_WIDTH -> R.layout.widget_music_wide
-        widthDp >= WIDE_MIN_WIDTH && heightDp < TALL_MIN_HEIGHT -> R.layout.widget_music_player
-        else -> R.layout.widget_music_tall
+        heightDp.toFloat() > widthDp * PORTRAIT_ASPECT -> R.layout.widget_music_tall
+        widthDp >= WIDE_MIN_WIDTH -> R.layout.widget_music_wide
+        heightDp >= TALL_MIN_HEIGHT -> R.layout.widget_music_tall
+        else -> R.layout.widget_music_player
       }
       val views = RemoteViews(context.packageName, layoutRes)
 
@@ -319,8 +324,12 @@ class MusicPlayerWidgetProvider : AppWidgetProvider() {
 
       if (artwork != null) {
         views.setViewVisibility(R.id.widget_artwork_placeholder, android.view.View.GONE)
+        // The wide and compact layouts ship widget_artwork as visibility="gone"; without this
+        // the decoded bitmap is set on an invisible view and the cell shows only the placeholder.
+        views.setViewVisibility(R.id.widget_artwork, android.view.View.VISIBLE)
         views.setImageViewBitmap(R.id.widget_artwork, artwork)
       } else {
+        views.setViewVisibility(R.id.widget_artwork, android.view.View.GONE)
         views.setViewVisibility(R.id.widget_artwork_placeholder, android.view.View.VISIBLE)
       }
 

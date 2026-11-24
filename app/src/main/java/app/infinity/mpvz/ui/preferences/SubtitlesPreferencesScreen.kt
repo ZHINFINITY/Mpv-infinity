@@ -21,15 +21,18 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
@@ -37,6 +40,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import app.infinity.mpvz.ui.preferences.components.SettingsScaffold as Scaffold
 import androidx.compose.material3.SuggestionChip
@@ -49,13 +53,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState as collectFlowAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateSetOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
@@ -63,6 +70,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.R
@@ -518,7 +526,7 @@ object SubtitlesPreferencesScreen : Screen {
 
               PreferenceDivider()
 
-              val fontDownloadInFlight = rememberSaveable { mutableStateOf(false) }
+              var showFontDownloadSheet by rememberSaveable { mutableStateOf(false) }
               Preference(
                 modifier = Modifier.settingsSearchTarget(R.string.download_fonts),
                 title = { Text(stringResource(R.string.download_fonts)) },
@@ -529,44 +537,13 @@ object SubtitlesPreferencesScreen : Screen {
                   )
                 },
                 icon = {
-                  if (fontDownloadInFlight.value) {
-                    CircularProgressIndicator(modifier = Modifier.size(20.dp))
-                  } else {
-                    Icon(
-                      Icons.RoundedFilled.Download,
-                      contentDescription = null,
-                      tint = MaterialTheme.colorScheme.primary,
-                    )
-                  }
+                  Icon(
+                    Icons.RoundedFilled.Download,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                  )
                 },
-                enabled = !fontDownloadInFlight.value,
-                onClick = {
-                  fontDownloadInFlight.value = true
-                  scope.launch(Dispatchers.IO) {
-                    val downloaded =
-                      runCatching { FontDownloadManager.downloadCuratedFonts(context) }
-                        .onFailure { Log.e("SubtitlesScreen", "Font download failed", it) }
-                        .getOrElse { emptyList() }
-                    withContext(Dispatchers.Main) {
-                      if (downloaded.isEmpty()) {
-                        Toast.makeText(
-                          context,
-                          context.getString(R.string.download_fonts_failed),
-                          Toast.LENGTH_SHORT,
-                        ).show()
-                      } else {
-                        Toast.makeText(
-                          context,
-                          context.getString(R.string.download_fonts_done, downloaded.size),
-                          Toast.LENGTH_SHORT,
-                        ).show()
-                        preferences.fontsFolder.set("internal")
-                        fontRefreshKey++
-                      }
-                      fontDownloadInFlight.value = false
-                    }
-                  }
-                },
+                onClick = { showFontDownloadSheet = true },
               )
 
               PreferenceDivider()
@@ -592,6 +569,16 @@ object SubtitlesPreferencesScreen : Screen {
                     fontRefreshKey++
                   },
                 )
+
+              if (showFontDownloadSheet) {
+                GoogleFontDownloadSheet(
+                  onDismiss = { showFontDownloadSheet = false },
+                  onDownloaded = {
+                    preferences.fontsFolder.set("internal")
+                    fontRefreshKey++
+                  },
+                )
+              }
             }
           }
 
@@ -1412,4 +1399,190 @@ private fun SubtitleApiKeyPreference(
       }
     },
   )
+}
+
+private enum class FontDownloadRowState { Idle, Downloading, Done, Failed }
+
+/**
+ * mpvrx-style Google Fonts browser: a searchable sheet listing every openly licensed Google family
+ * with its category, and one download action per row. The catalog is fetched once on open.
+ */
+@Composable
+private fun GoogleFontDownloadSheet(onDismiss: () -> Unit, onDownloaded: () -> Unit) {
+  val context = LocalContext.current
+  val scope = rememberCoroutineScope()
+  var query by rememberSaveable { mutableStateOf("") }
+  var loading by remember { mutableStateOf(true) }
+  var loadFailed by remember { mutableStateOf(false) }
+  var catalog by remember { mutableStateOf<List<GoogleFontCatalogEntry>>(emptyList()) }
+  val rowStates = remember { mutableStateMapOf<String, FontDownloadRowState>() }
+  val downloadedNames = remember { mutableStateSetOf<String>() }
+
+  suspend fun refreshDownloaded() {
+    val names = withContext(Dispatchers.IO) { FontDownloadManager.downloadedFontNames(context) }
+    downloadedNames.clear()
+    downloadedNames.addAll(names)
+  }
+
+  LaunchedEffect(Unit) {
+    refreshDownloaded()
+    val fetched =
+      withContext(Dispatchers.IO) {
+        runCatching { FontDownloadManager.fetchCatalog() }
+          .onFailure { Log.e("SubtitlesScreen", "Font catalog fetch failed", it) }
+          .getOrElse { emptyList() }
+      }
+    catalog = fetched
+    loadFailed = fetched.isEmpty()
+    loading = false
+  }
+
+  GlassOptionSheet(
+    onDismissRequest = onDismiss,
+    title = stringResource(R.string.download_fonts_sheet_title),
+    containerColor = settingsGlassContainerColor(androidx.compose.material3.AlertDialogDefaults.containerColor),
+    modifier = androidx.compose.ui.Modifier.settingsGlassSurface(cornerRadius = 28.dp, independent = true),
+  ) {
+    Column {
+      Text(
+        stringResource(R.string.download_fonts_sheet_summary),
+        color = MaterialTheme.colorScheme.outline,
+        style = MaterialTheme.typography.bodyMedium,
+      )
+      Spacer(Modifier.size(8.dp))
+      TextField(
+        value = query,
+        onValueChange = { query = it },
+        singleLine = true,
+        placeholder = { Text(stringResource(R.string.download_fonts_search_hint)) },
+        leadingIcon = { Icon(Icons.RoundedFilled.Search, contentDescription = null) },
+        modifier = Modifier.fillMaxWidth(),
+      )
+      Spacer(Modifier.size(8.dp))
+      when {
+        loading -> {
+          Box(Modifier.fillMaxWidth().heightIn(min = 120.dp), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator()
+          }
+        }
+        loadFailed -> {
+          Column(
+            Modifier.fillMaxWidth().padding(vertical = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+          ) {
+            Text(stringResource(R.string.download_fonts_failed), color = MaterialTheme.colorScheme.error)
+            TextButton(onClick = {
+              loading = true
+              loadFailed = false
+              scope.launch {
+                val fetched =
+                  withContext(Dispatchers.IO) {
+                    runCatching { FontDownloadManager.fetchCatalog() }.getOrElse { emptyList() }
+                  }
+                catalog = fetched
+                loadFailed = fetched.isEmpty()
+                loading = false
+              }
+            }) { Text(stringResource(R.string.downloads_retry)) }
+          }
+        }
+        else -> {
+          val filtered =
+            remember(query, catalog) {
+              if (query.isBlank()) {
+                catalog
+              } else {
+                catalog.filter { it.family.contains(query.trim(), ignoreCase = true) }
+              }
+            }
+          LazyColumn(
+            modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+          ) {
+            items(filtered, key = { it.family }) { entry ->
+              val state = rowStates[entry.family] ?: FontDownloadRowState.Idle
+              val alreadyDownloaded = entry.family in downloadedNames
+              ListItem(
+                headlineContent = { Text(entry.family) },
+                supportingContent = { Text(entry.category) },
+                trailingContent = {
+                  when (state) {
+                    FontDownloadRowState.Downloading ->
+                      CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                    FontDownloadRowState.Done, FontDownloadRowState.Idle ->
+                      IconButton(
+                        enabled = state == FontDownloadRowState.Idle,
+                        onClick = {
+                          rowStates[entry.family] = FontDownloadRowState.Downloading
+                          scope.launch {
+                            val ok =
+                              withContext(Dispatchers.IO) {
+                                runCatching { FontDownloadManager.downloadFont(context, entry.family) }
+                                  .onFailure { Log.e("SubtitlesScreen", "Font download failed", it) }
+                                  .getOrElse { false }
+                              }
+                            if (ok) {
+                              downloadedNames.add(entry.family)
+                              rowStates[entry.family] = FontDownloadRowState.Done
+                              onDownloaded()
+                            } else {
+                              rowStates[entry.family] = FontDownloadRowState.Failed
+                              Toast.makeText(
+                                context,
+                                context.getString(R.string.download_fonts_failed),
+                                Toast.LENGTH_SHORT,
+                              ).show()
+                            }
+                          }
+                        },
+                      ) {
+                        Icon(
+                          Icons.RoundedFilled.Download,
+                          contentDescription = stringResource(R.string.download_fonts),
+                        )
+                      }
+                    FontDownloadRowState.Failed ->
+                      IconButton(
+                        onClick = {
+                          rowStates[entry.family] = FontDownloadRowState.Downloading
+                          scope.launch {
+                            val ok =
+                              withContext(Dispatchers.IO) {
+                                runCatching { FontDownloadManager.downloadFont(context, entry.family) }
+                                  .getOrElse { false }
+                              }
+                            if (ok) {
+                              downloadedNames.add(entry.family)
+                              rowStates[entry.family] = FontDownloadRowState.Done
+                              onDownloaded()
+                            } else {
+                              rowStates[entry.family] = FontDownloadRowState.Failed
+                            }
+                          }
+                        },
+                      ) {
+                        Icon(
+                          Icons.RoundedFilled.Refresh,
+                          contentDescription = stringResource(R.string.downloads_retry),
+                          tint = MaterialTheme.colorScheme.error,
+                        )
+                      }
+                  }
+                },
+                modifier = Modifier.alpha(if (alreadyDownloaded && state == FontDownloadRowState.Idle) 0.55f else 1f),
+              )
+            }
+          }
+          if (filtered.isEmpty()) {
+            Text(
+              stringResource(R.string.download_fonts_no_results),
+              modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
+              color = MaterialTheme.colorScheme.outline,
+              textAlign = TextAlign.Center,
+            )
+          }
+        }
+      }
+    }
+  }
 }

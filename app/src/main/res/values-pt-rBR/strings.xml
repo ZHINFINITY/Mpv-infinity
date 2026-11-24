@@ -651,8 +651,7 @@ Próximo: NEXT</string>
   <string name="reload_fonts_summary">Verificar novamente a pasta de origem selecionada e atualizar a lista de fontes</string>
 
   <string name="download_fonts">Baixar fontes</string>
-  <string name="download_fonts_summary">Baixa um conjunto de fontes de legenda populares de licença aberta (Anton, Roboto, Noto Sans e mais) para usar como fonte das legendas</string>
-  <string name="download_fonts_done">%1$d fontes baixadas</string>
+  <string name="download_fonts_summary">Navegue e baixe fontes do Google Fonts</string>
   <string name="download_fonts_failed">Falha ao baixar fontes, verifique sua conexão</string>  <string name="clear_font_directory">Limpar diretório de fontes</string>
   <string name="reset_to_default_font">Restaurar fonte padrão</string>
   <string name="set_as_default">Definir como padrão</string>
@@ -2291,4 +2290,8 @@ Reinicie o aplicativo para que todas as alterações entrem em vigor.</string>
   <string name="widget_music_play_pause" translatable="false">Play or pause</string>
   <string name="widget_music_next" translatable="false">Next track</string>
   <string name="toast_translation_cue_fallback">Voltando à tradução linha por linha (%1$s)</string>
+  <string name="download_fonts_sheet_title">Google Fonts</string>
+  <string name="download_fonts_sheet_summary">Navegue e baixe fontes do Google Fonts</string>
+  <string name="download_fonts_search_hint">Pesquisar fontes</string>
+  <string name="download_fonts_no_results">Nenhuma fonte corresponde à sua pesquisa</string>
 </resources>

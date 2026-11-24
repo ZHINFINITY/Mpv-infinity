@@ -659,9 +659,12 @@
   <string name="reload_fonts">Reload fonts</string>
   <string name="reload_fonts_summary">Rescan the selected source folder and refresh the font list</string>
   <string name="download_fonts">Download fonts</string>
-  <string name="download_fonts_summary">Fetch a set of popular open-licensed subtitle fonts (Anton, Roboto, Noto Sans and more) for use as the subtitle font</string>
-  <string name="download_fonts_done">Downloaded %1$d fonts</string>
+  <string name="download_fonts_summary">Browse and download any Google Font to use as the subtitle font</string>
   <string name="download_fonts_failed">Font download failed, check your connection</string>
+  <string name="download_fonts_sheet_title">Google Fonts</string>
+  <string name="download_fonts_sheet_summary">Browse and download fonts from Google Fonts</string>
+  <string name="download_fonts_search_hint">Search fonts</string>
+  <string name="download_fonts_no_results">No fonts match your search</string>
   <string name="clear_font_directory">Clear font directory</string>
   <string name="reset_to_default_font">Reset to default font</string>
   <string name="set_as_default">Set as default</string>

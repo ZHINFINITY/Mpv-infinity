@@ -180,7 +180,7 @@ class GlassOptionSheetConversionContractTest {
 
   @Test fun convertedSettingsPopupsUseTheFrostedSheet() {
     val expected = mapOf(
-      "$pref/SubtitlesPreferencesScreen.kt" to 2, "$pref/FoldersPreferencesScreen.kt" to 2,
+      "$pref/SubtitlesPreferencesScreen.kt" to 3, "$pref/FoldersPreferencesScreen.kt" to 2,
       "$pref/GesturePreferencesScreen.kt" to 1, "$pref/ModelSearchDialog.kt" to 1,
       "$pref/AiIntegrationScreen.kt" to 1,
       "$pref/AudioPreferencesScreen.kt" to 1, "$pref/PlayerControlsPreferencesScreen.kt" to 1,

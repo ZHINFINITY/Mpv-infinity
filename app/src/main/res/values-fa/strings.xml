@@ -643,8 +643,7 @@
   <string name="reload_fonts_summary">پوشه منبع انتخاب شده را انتخاب کرده و لیست فونت را تازه کنید</string>
 
   <string name="download_fonts">دانلود فونت‌ها</string>
-  <string name="download_fonts_summary">دریافت مجموعه‌ای از فونت‌های محبوب زیرنویس با مجوز آزاد (آنتون، روبوتو، نوتو سانس و بیشتر) برای استفاده به‌عنوان فونت زیرنویس</string>
-  <string name="download_fonts_done">%1$d فونت دانلود شد</string>
+  <string name="download_fonts_summary">مرور و دانلود فونت‌ها از Google Fonts</string>
   <string name="download_fonts_failed">دانلود فونت ناموفق بود، اتصال خود را بررسی کنید</string>  <string name="clear_font_directory">فهرست فونت های واضح</string>
   <string name="reset_to_default_font">تنظیم مجدد فونت های پیش فرض</string>
   <string name="set_as_default">تنظیم به صورت پیش فرض</string>
@@ -2280,4 +2279,8 @@
   <string name="widget_music_play_pause" translatable="false">Play or pause</string>
   <string name="widget_music_next" translatable="false">Next track</string>
   <string name="toast_translation_cue_fallback">بازگشت به ترجمه خط به خط (%1$s)</string>
+  <string name="download_fonts_sheet_title">فونت‌های گوگل</string>
+  <string name="download_fonts_sheet_summary">مرور و دانلود فونت‌ها از Google Fonts</string>
+  <string name="download_fonts_search_hint">جستجوی فونت‌ها</string>
+  <string name="download_fonts_no_results">هیچ فونتی با جستجوی شما مطابقت ندارد</string>
 </resources>

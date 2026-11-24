@@ -15,7 +15,7 @@
 
     <FrameLayout
       android:id="@+id/widget_artwork_container"
-      android:layout_width="wrap_content"
+      android:layout_width="80dp"
       android:layout_height="match_parent">
 
       <ImageView

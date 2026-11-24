@@ -651,8 +651,7 @@
   <string name="reload_fonts_summary">選択したソースフォルダーを再スキャンし、フォント一覧を更新します</string>
 
   <string name="download_fonts">フォントをダウンロード</string>
-  <string name="download_fonts_summary">人気のオープンライセンス字幕フォント（Anton、Roboto、Noto Sans など）をダウンロードして字幕フォントとして使用できます</string>
-  <string name="download_fonts_done">%1$d 個のフォントをダウンロードしました</string>
+  <string name="download_fonts_summary">Google Fonts のフォントを閲覧・ダウンロード</string>
   <string name="download_fonts_failed">フォントのダウンロードに失敗しました。接続を確認してください</string>  <string name="clear_font_directory">フォントディレクトリを消去</string>
   <string name="reset_to_default_font">デフォルトフォントに戻す</string>
   <string name="set_as_default">デフォルトに設定</string>
@@ -2291,4 +2290,8 @@
   <string name="widget_music_play_pause" translatable="false">Play or pause</string>
   <string name="widget_music_next" translatable="false">Next track</string>
   <string name="toast_translation_cue_fallback">行ごと翻訳に切り替えます (%1$s)</string>
+  <string name="download_fonts_sheet_title">Google Fonts</string>
+  <string name="download_fonts_sheet_summary">Google Fonts のフォントを閲覧・ダウンロード</string>
+  <string name="download_fonts_search_hint">フォントを検索</string>
+  <string name="download_fonts_no_results">検索に一致するフォントはありません</string>
 </resources>

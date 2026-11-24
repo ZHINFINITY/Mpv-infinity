@@ -645,8 +645,7 @@
   <string name="reload_fonts_summary">Rescan ten wybrane źródło folder i refresh ten czcionka lista</string>
 
   <string name="download_fonts">Pobierz czcionki</string>
-  <string name="download_fonts_summary">Pobiera zestaw popularnych otwartych czcionek napisów (Anton, Roboto, Noto Sans i inne) do użycia jako czcionka napisów</string>
-  <string name="download_fonts_done">Pobrano czcionek: %1$d</string>
+  <string name="download_fonts_summary">Przeglądaj i pobieraj czcionki z Google Fonts</string>
   <string name="download_fonts_failed">Nie udało się pobrać czcionek, sprawdź połączenie</string>  <string name="clear_font_directory">Wyczyść czcionka directory</string>
   <string name="reset_to_default_font">Resetuj do Domyślne czcionka</string>
   <string name="set_as_default">Set jako Domyślne</string>
@@ -2292,4 +2291,8 @@
   <string name="widget_music_play_pause" translatable="false">Play or pause</string>
   <string name="widget_music_next" translatable="false">Next track</string>
   <string name="toast_translation_cue_fallback">Powrót do tłumaczenia linia po linii (%1$s)</string>
+  <string name="download_fonts_sheet_title">Google Fonts</string>
+  <string name="download_fonts_sheet_summary">Przeglądaj i pobieraj czcionki z Google Fonts</string>
+  <string name="download_fonts_search_hint">Szukaj czcionek</string>
+  <string name="download_fonts_no_results">Brak czcionek pasujących do wyszukiwania</string>
 </resources>

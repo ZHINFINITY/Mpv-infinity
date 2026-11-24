@@ -643,8 +643,7 @@
   <string name="reload_fonts_summary">Pindai ulang folder sumber yang dipilih dan segarkan daftar font</string>
 
   <string name="download_fonts">Unduh font</string>
-  <string name="download_fonts_summary">Ambil kumpulan font subtitle populer berlisensi terbuka (Anton, Roboto, Noto Sans, dll.) untuk dipakai sebagai font subtitle</string>
-  <string name="download_fonts_done">%1$d font terunduh</string>
+  <string name="download_fonts_summary">Jelajahi dan unduh font dari Google Fonts</string>
   <string name="download_fonts_failed">Unduhan font gagal, periksa koneksi Anda</string>  <string name="clear_font_directory">Hapus direktori font</string>
   <string name="reset_to_default_font">Setel ulang ke font default</string>
   <string name="set_as_default">Tetapkan sebagai default</string>
@@ -2280,4 +2279,8 @@
   <string name="widget_music_play_pause" translatable="false">Play or pause</string>
   <string name="widget_music_next" translatable="false">Next track</string>
   <string name="toast_translation_cue_fallback">Kembali ke terjemahan baris demi baris (%1$s)</string>
+  <string name="download_fonts_sheet_title">Google Fonts</string>
+  <string name="download_fonts_sheet_summary">Jelajahi dan unduh font dari Google Fonts</string>
+  <string name="download_fonts_search_hint">Cari font</string>
+  <string name="download_fonts_no_results">Tidak ada font yang cocok dengan pencarian Anda</string>
 </resources>

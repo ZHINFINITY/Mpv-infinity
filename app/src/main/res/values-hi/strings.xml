@@ -643,8 +643,7 @@
   <string name="reload_fonts_summary">चुने गए स्रोत फोल्डर को फिर से स्कैन करें और फॉन्ट लिस्ट रिफ्रेश करें</string>
 
   <string name="download_fonts">फ़ॉन्ट डाउनलोड करें</string>
-  <string name="download_fonts_summary">लोकप्रिय खुले-लाइसेंस वाले सबटाइटल फ़ॉन्ट (Anton, Roboto, Noto Sans और अधिक) डाउनलोड करें ताकि उन्हें सबटाइटल फ़ॉन्ट के रूप में इस्तेमाल करें</string>
-  <string name="download_fonts_done">%1$d फ़ॉन्ट डाउनलोड हुए</string>
+  <string name="download_fonts_summary">Google Fonts से फ़ॉन्ट ब्राउज़ और डाउनलोड करें</string>
   <string name="download_fonts_failed">फ़ॉन्ट डाउनलोड विफल, अपना कनेक्शन जाँचें</string>  <string name="clear_font_directory">फॉन्ट फोल्डर साफ करें</string>
   <string name="reset_to_default_font">डिफ़ॉल्ट फॉन्ट पर रीसेट करें</string>
   <string name="set_as_default">डिफ़ॉल्ट के रूप में सेट करें</string>
@@ -2276,4 +2275,8 @@
   <string name="widget_music_play_pause" translatable="false">Play or pause</string>
   <string name="widget_music_next" translatable="false">Next track</string>
   <string name="toast_translation_cue_fallback">लाइन-दर-लाइन अनुवाद पर लौट रहे हैं (%1$s)</string>
+  <string name="download_fonts_sheet_title">Google Fonts</string>
+  <string name="download_fonts_sheet_summary">Google Fonts से फ़ॉन्ट ब्राउज़ और डाउनलोड करें</string>
+  <string name="download_fonts_search_hint">फ़ॉन्ट खोजें</string>
+  <string name="download_fonts_no_results">कोई फ़ॉन्ट आपकी खोज से मेल नहीं खाता</string>
 </resources>
