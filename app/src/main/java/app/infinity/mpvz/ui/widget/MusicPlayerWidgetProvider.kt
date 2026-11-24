@@ -320,7 +320,8 @@ class MusicPlayerWidgetProvider : AppWidgetProvider() {
           android.content.res.ColorStateList.valueOf(accent),
         )
       }
-      views.setInt(R.id.widget_button_play_pause, "setColorFilter", accent)
+      // The play/pause button sits on a light pill with a dark icon (mpvrx-style); no
+      // runtime tint — setBackgroundColor would square off the pill drawable.
 
       // Reflect real playback progress when the service published a usable duration.
       val positionSeconds = latestPositionSeconds

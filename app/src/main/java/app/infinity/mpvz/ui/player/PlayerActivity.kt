@@ -7426,13 +7426,13 @@ class PlayerActivity :
 
     // MPV uses shared typography options for both tracks. Secondary-specific font/color/outline
     // properties are not exposed by this engine; don't send unsupported writes that return -3.
-    // A blank family would make sub-ass-override=force render everything in libass's built-in
-    // default font (the "font breaks" report), so always resolve to a concrete family.
+    // A blank/alias family ("sans-serif") makes sub-ass-override render in libass's builtin
+    // (the "font breaks" report); default to the bundled Roboto Flex family instead.
     PlaybackSession.setPropertyString(
       "sub-font",
       FontFamilyName.resolve(
         java.io.File("${filesDir.path}/fonts/"),
-        font.ifBlank { DEFAULT_SUBTITLE_FONT_FAMILY },
+        font.ifBlank { "Roboto Flex" },
       ),
     )
     PlaybackSession.setPropertyInt("sub-font-size", fontSize)

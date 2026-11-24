@@ -21,16 +21,25 @@ import java.util.concurrent.ConcurrentHashMap
 object FontDownloadManager {
   private val FONT_URLS =
     mapOf(
-      "Anton" to "https://github.com/google/fonts/raw/main/ofl/anton/Anton-Regular.ttf",
-      "OpenSans" to "https://github.com/google/fonts/raw/main/ofl/opensans/OpenSans%5Bwdth%2Cwght%5D.ttf",
-      "Roboto" to "https://github.com/google/fonts/raw/main/ofl/roboto/Roboto%5Bwdth%2Cwght%5D.ttf",
-      "NotoSans" to "https://github.com/google/fonts/raw/main/ofl/notosans/NotoSans%5Bwdth%2Cwght%5D.ttf",
-      "NotoSansArabic" to "https://github.com/google/fonts/raw/main/ofl/notosansarabic/NotoSansArabic%5Bwdth%2Cwght%5D.ttf",
-      "NotoSansJP" to "https://github.com/google/fonts/raw/main/ofl/notosansjp/NotoSansJP%5Bwght%5D.ttf",
-      "Montserrat" to "https://github.com/google/fonts/raw/main/ofl/montserrat/Montserrat%5Bwght%5D.ttf",
-      "Lato" to "https://github.com/google/fonts/raw/main/ofl/lato/Lato-Regular.ttf",
-      "Poppins" to "https://github.com/google/fonts/raw/main/ofl/poppins/Poppins-Regular.ttf",
-      "Cairo" to "https://github.com/google/fonts/raw/main/ofl/cairo/Cairo%5Bslnt%2Cwght%5D.ttf",
+      "Anton" to "ofl/anton/Anton-Regular.ttf",
+      "OpenSans" to "ofl/opensans/OpenSans%5Bwdth%2Cwght%5D.ttf",
+      "Roboto" to "ofl/roboto/Roboto%5Bwdth%2Cwght%5D.ttf",
+      "NotoSans" to "ofl/notosans/NotoSans%5Bwdth%2Cwght%5D.ttf",
+      "NotoSansArabic" to "ofl/notosansarabic/NotoSansArabic%5Bwdth%2Cwght%5D.ttf",
+      "NotoSansJP" to "ofl/notosansjp/NotoSansJP%5Bwght%5D.ttf",
+      "Montserrat" to "ofl/montserrat/Montserrat%5Bwght%5D.ttf",
+      "Lato" to "ofl/lato/Lato-Regular.ttf",
+      "Poppins" to "ofl/poppins/Poppins-Regular.ttf",
+      "Cairo" to "ofl/cairo/Cairo%5Bslnt%2Cwght%5D.ttf",
+    )
+
+  // Mirrors of the google/fonts repository, tried in order: GitHub is unreachable or
+  // rate-limited on some networks, so each font falls back through the CDNs.
+  private fun mirrors(path: String): List<String> =
+    listOf(
+      "https://cdn.jsdelivr.net/gh/google/fonts@main/$path",
+      "https://raw.githubusercontent.com/google/fonts/main/$path",
+      "https://github.com/google/fonts/raw/main/$path",
     )
 
   private val failed = ConcurrentHashMap<String, Boolean>()
@@ -43,14 +52,22 @@ object FontDownloadManager {
       if (out.isFile && out.length() > 0 || failed[name] == true) {
         null
       } else {
-        runCatching { fetch(out, FONT_URLS.getValue(name)) }
-          .onFailure { failed[name] = true }
-          .getOrNull()
-          ?: return@mapNotNull null
+        if (!downloadOne(FONT_URLS.getValue(name), out)) {
+          failed[name] = true
+          return@mapNotNull null
+        }
         name
       }
     }
   }
+
+  /** Tries each mirror in order; leaves a non-empty file only on success. */
+  private fun downloadOne(path: String, out: File): Boolean =
+    mirrors(path).any { url ->
+      val ok = runCatching { fetch(out, url) }.isSuccess && out.isFile && out.length() > 0L
+      if (!ok) out.delete()
+      ok
+    }
 
   private fun fetch(out: File, spec: String) {
     val connection = URL(spec).openConnection() as HttpURLConnection
