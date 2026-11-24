@@ -44,9 +44,9 @@ class VideoMetadataCacheRepository(
     file: File,
     cached: VideoMetadataEntity,
   ): Boolean {
-    val extension = file.extension.lowercase()
-    val transportStream = extension == "ts" || extension == "mts" || extension == "m2ts"
-    return transportStream && cached.duration <= 0L
+    // MediaStore/first-extraction can fail to measure duration for remuxes with codecs
+    // like AV1 or VC-1; re-extract any cached entry that never got a duration.
+    return cached.duration <= 0L
   }
 
   /**
