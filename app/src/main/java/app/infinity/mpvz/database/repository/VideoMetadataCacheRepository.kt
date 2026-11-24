@@ -108,7 +108,10 @@ class VideoMetadataCacheRepository(
             ),
           )
         }.onFailure { error ->
+          // Delete only the stale row this call observed: a concurrent extraction of a
+          // changed file may have inserted a valid row under the same path meanwhile.
           Log.w(TAG, "Failed to extract metadata for $displayName: ${error.message}")
+          runCatching { dao.deleteStaleMetadata(path, dateModified, size) }
         }
 
       result.getOrNull()

@@ -58,6 +58,12 @@ interface VideoMetadataDao {
   @Query("DELETE FROM video_metadata_cache WHERE lastScanned < :cutoffTimestamp")
   suspend fun clearOldCache(cutoffTimestamp: Long)
 
+  @Query("DELETE FROM video_metadata_cache WHERE path = :path")
+  suspend fun deleteMetadata(path: String)
+
+  @Query("DELETE FROM video_metadata_cache WHERE path = :path AND dateModified = :dateModified AND size = :size")
+  suspend fun deleteStaleMetadata(path: String, dateModified: Long, size: Long)
+
   /**
    * Clear all cached metadata
    */

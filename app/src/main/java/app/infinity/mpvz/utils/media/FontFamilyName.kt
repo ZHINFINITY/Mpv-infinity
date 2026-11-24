@@ -17,7 +17,9 @@ object FontFamilyName {
     file.inputStream().use { input ->
       val header = ByteArray(12)
       if (input.read(header) != 12) return null
-      if (header[0] != 0x00.toByte() || header[1] != 0x01.toByte()) return null // sfnt version
+      if (header[0] != 0x00.toByte() || (header[1] != 0x01.toByte() && header[1] != 0x4F.toByte())) {
+        return null
+      } // sfnt version: 0x00010000 (TrueType) or 0x4F54544F ("OTTO", CFF OpenType)
       val numTables = readU16(header, 4)
       val tableDir = ByteArray(numTables * 16)
       if (input.read(tableDir) != tableDir.size) return null
@@ -32,8 +34,16 @@ object FontFamilyName {
       }
       if (nameOffset < 0L) return null
 
-      val name = ByteArray(file.length().toInt())
-      file.inputStream().use { full -> full.readFully(name) }
+      // Parse the name table at its real offset within the file; reading from file
+      // offset 0 mis-parsed the sfnt header as the name-table header.
+      val name = ByteArray((file.length() - nameOffset).toInt().coerceAtLeast(0))
+      var skipped = 0L
+      while (skipped < nameOffset) {
+        val n = input.skip(nameOffset - skipped)
+        if (n <= 0L) return null
+        skipped += n
+      }
+      if (name.isNotEmpty() && input.read(name) != name.size) return null
       val count = readU16(name, 2)
       val stringOffset = readU16(name, 4)
       var asciiFamily: String? = null
