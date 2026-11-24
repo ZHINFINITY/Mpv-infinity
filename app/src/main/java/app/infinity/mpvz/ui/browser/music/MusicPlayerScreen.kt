@@ -9,8 +9,12 @@ import android.content.res.Configuration
 import android.net.Uri
 import android.text.format.DateUtils
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -53,10 +57,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.draw.blur
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -176,16 +183,25 @@ internal fun MusicPlayerScreen(
     color = MaterialTheme.colorScheme.surface,
   ) {
     val surfaceColor = MaterialTheme.colorScheme.surface
-    // MPV-style backdrop: the album art itself, blurred and darkened, fills the whole
-    // screen when available; the color-gradient ambience stays as the fallback.
+    // mpvRx-style backdrop: the album art itself is the background — sharp, full-bleed,
+    // fading into an ambient Palette wash near the controls (no blur). The colour-gradient
+    // ambience alone is the fallback when no artwork exists.
     val backdropUri = snapshot.artworkUri?.takeIf { it.isNotBlank() }?.let { runCatching { Uri.parse(it) }.getOrNull() }
+    val washAnimation = remember { Animatable(0f) }
+    LaunchedEffect(ambienceColors) {
+      washAnimation.animateTo(1f, animationSpec = tween(durationMillis = 800))
+    }
+    val washAlpha = washAnimation.value
+    val vibrantWash = ambienceColors?.accent?.let { Color(it) } ?: surfaceColor
+    val baseWash = ambienceColors?.base?.let(::Color) ?: surfaceColor
     if (backdropUri != null) {
       AsyncImage(
         model = backdropUri,
         contentDescription = null,
         contentScale = ContentScale.Crop,
-        modifier = Modifier.fillMaxSize().blur(40.dp),
+        modifier = Modifier.fillMaxSize(),
       )
+      // Ambient colour wash: vibrant up top, deep tone near the controls.
       Box(
         Modifier
           .fillMaxSize()
@@ -193,10 +209,33 @@ internal fun MusicPlayerScreen(
             Brush.verticalGradient(
               colors =
                 listOf(
-                  Color.Black.copy(alpha = 0.40f),
-                  ambienceColors?.accent?.let { Color(it).copy(alpha = 0.45f) } ?: Color.Black.copy(alpha = 0.55f),
-                  Color.Black.copy(alpha = 0.72f),
+                  vibrantWash.copy(alpha = 0.50f * washAlpha),
+                  vibrantWash.copy(alpha = 0.30f * washAlpha),
+                  baseWash.copy(alpha = 0.62f * washAlpha),
                 ),
+            ),
+          ),
+      )
+      // Vignette for header/control readability over bright covers, then the bottom fade
+      // that melts the cover into the wash.
+      Box(
+        Modifier
+          .fillMaxSize()
+          .background(
+            Brush.verticalGradient(
+              colors = listOf(Color.Black.copy(alpha = 0.42f), Color.Transparent, Color.Black.copy(alpha = 0.20f)),
+            ),
+          ),
+      )
+      Box(
+        Modifier
+          .fillMaxSize()
+          .background(
+            Brush.verticalGradient(
+              0f to Color.Transparent,
+              0.48f to Color.Transparent,
+              0.86f to surfaceColor.copy(alpha = 0.88f),
+              1f to surfaceColor,
             ),
           ),
       )
@@ -208,8 +247,8 @@ internal fun MusicPlayerScreen(
             Brush.verticalGradient(
               colors =
                 listOf(
-                  ambienceColors?.base?.let(::Color) ?: surfaceColor,
-                  ambienceColors?.accent?.let { Color(it).copy(alpha = 0.55f) } ?: surfaceColor,
+                  baseWash,
+                  vibrantWash.copy(alpha = 0.55f),
                   surfaceColor,
                 ),
             ),
@@ -230,6 +269,8 @@ internal fun MusicPlayerScreen(
           MusicArtwork(
             artworkUri = snapshot.artworkUri,
             isPlaying = snapshot.isPlaying,
+            onSwipeNext = { controller?.seekToNext() },
+            onSwipePrevious = { controller?.seekToPrevious() },
             modifier = Modifier
               .weight(0.36f)
               .fillMaxHeight(0.88f)
@@ -279,6 +320,8 @@ internal fun MusicPlayerScreen(
           MusicArtwork(
             artworkUri = snapshot.artworkUri,
             isPlaying = snapshot.isPlaying,
+            onSwipeNext = { controller?.seekToNext() },
+            onSwipePrevious = { controller?.seekToPrevious() },
             // Full-screen feel: the art dominates the portrait layout instead of a
             // small capped square.
             modifier = Modifier
@@ -472,11 +515,52 @@ private fun MusicArtwork(
   artworkUri: String?,
   isPlaying: Boolean,
   modifier: Modifier = Modifier,
+  onSwipeNext: (() -> Unit)? = null,
+  onSwipePrevious: (() -> Unit)? = null,
 ) {
+  val haptics = LocalHapticFeedback.current
+  var dragOffset by remember { mutableFloatStateOf(0f) }
+  val dragAnimation = remember { Animatable(0f) }
+  val settledDrag by animateFloatAsState(targetValue = dragOffset, animationSpec = tween(90))
+  LaunchedEffect(dragOffset) {
+    if (dragOffset == 0f && dragAnimation.value != 0f) {
+      dragAnimation.animateTo(0f, animationSpec = tween(220))
+      dragAnimation.snapTo(0f)
+    }
+  }
+  val visualDrag = if (dragOffset == 0f) dragAnimation.value else settledDrag
   Box(
     modifier = modifier
       .clip(RoundedCornerShape(24.dp))
-      .background(MaterialTheme.colorScheme.surfaceVariant),
+      .background(MaterialTheme.colorScheme.surfaceVariant)
+      .graphicsLayer {
+        // mpvRx-style parallax: the cover tilts and slides with the finger.
+        val fraction = (visualDrag / 420f).coerceIn(-1f, 1f)
+        translationX = visualDrag * 0.55f
+        rotationZ = fraction * 2.5f
+        val shrink = 1f - 0.05f * kotlin.math.abs(fraction)
+        scaleX = shrink
+        scaleY = shrink
+      }
+      .pointerInput(onSwipeNext, onSwipePrevious) {
+        detectHorizontalDragGestures(
+          onDragStart = { dragOffset = 0f },
+          onDragEnd = {
+            if (dragOffset > 140f) {
+              haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+              onSwipeNext?.invoke()
+            } else if (dragOffset < -140f) {
+              haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+              onSwipePrevious?.invoke()
+            }
+            dragOffset = 0f
+          },
+          onDragCancel = { dragOffset = 0f },
+        ) { change, dragAmount ->
+          change.consume()
+          dragOffset += dragAmount
+        }
+      },
     contentAlignment = Alignment.Center,
   ) {
     val parsedUri = artworkUri?.let { runCatching { Uri.parse(it) }.getOrNull() }
