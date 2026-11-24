@@ -17,7 +17,9 @@ object FontFamilyName {
     file.inputStream().use { input ->
       val header = ByteArray(12)
       if (input.read(header) != 12) return null
-      if (header[0] != 0x00.toByte() || header[1] != 0x01.toByte()) return null // sfnt version
+      if (header[0] != 0x00.toByte() || (header[1] != 0x01.toByte() && header[1] != 0x4F.toByte())) {
+        return null
+      } // sfnt version: 0x00010000 (TrueType) or 0x4F54544F ("OTTO", CFF OpenType)
       val numTables = readU16(header, 4)
       val tableDir = ByteArray(numTables * 16)
       if (input.read(tableDir) != tableDir.size) return null

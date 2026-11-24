@@ -331,7 +331,7 @@ class SubtitleTranslator(
             try {
               val cached = synchronized(cache) { cache[task.key] }
               if (cached != null) {
-                synchronized(results) { results[task.lineIdxs.first()] = cached }
+                synchronized(results) { task.lineIdxs.forEach { results[it] = cached } }
               } else {
                 var translated: String? = null
                 for (attempt in 0 until 2) {
@@ -352,7 +352,7 @@ class SubtitleTranslator(
                 // text, so the track is never lost and no cue is left empty.
                 translated?.let { value ->
                   synchronized(cache) { cache[task.key] = value }
-                  synchronized(results) { results[task.lineIdxs.first()] = value }
+                  synchronized(results) { task.lineIdxs.forEach { results[it] = value } }
                 }
               }
               val done = synchronized(unique) { ++completed }

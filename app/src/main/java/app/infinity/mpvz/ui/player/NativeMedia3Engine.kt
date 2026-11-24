@@ -1939,6 +1939,7 @@ class NativeMedia3Engine internal constructor(
     disableAssTracks()
     selectedNativeSubtitleKey = null
     selectedNativeSubtitleSelection = null
+    pendingExternalSelectionId = null
     player.trackSelectionParameters = player.trackSelectionParameters
       .buildUpon()
       .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)

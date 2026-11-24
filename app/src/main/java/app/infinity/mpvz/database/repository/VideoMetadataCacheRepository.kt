@@ -108,7 +108,10 @@ class VideoMetadataCacheRepository(
             ),
           )
         }.onFailure { error ->
+          // A failed extraction (transient open/parse error) must not leave the previous
+          // zero-duration row in place, or shouldRefreshCachedMetadata keeps trusting it.
           Log.w(TAG, "Failed to extract metadata for $displayName: ${error.message}")
+          runCatching { dao.deleteMetadata(path) }
         }
 
       result.getOrNull()
