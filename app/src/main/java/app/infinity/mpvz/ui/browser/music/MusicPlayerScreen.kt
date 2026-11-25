@@ -167,6 +167,17 @@ internal fun MusicPlayerScreen(
           ?: snapshot.sourceExtension?.takeIf { it.isNotBlank() },
       sourceFormat = loadedSourceInfo?.format,
     )
+  // Compact badge between the timestamps: "FLAC · LOSSLESS · 24-BIT · 96 KHZ".
+  val formatBadgeLabel = losslessLabel?.let { label ->
+    val codecToken =
+      loadedSourceInfo?.codec?.takeIf { it.isNotBlank() }?.trim()?.uppercase(Locale.ROOT)
+        ?: snapshot.sourceExtension?.takeIf { it.isNotBlank() }?.trim()?.uppercase(Locale.ROOT)
+    if (codecToken.isNullOrBlank() || label.startsWith(codecToken)) label else "$codecToken · $label"
+  }
+  // Hi-res audio: 24-bit or better depth, or a sample rate of 96 kHz and above.
+  val hiResAudio = loadedSourceInfo?.format?.let { format ->
+    (format.bitDepth ?: 0) >= 24 || (format.sampleRateHz ?: 0) >= 96_000
+  } ?: false
 
   // Ambience backdrop: dominant album-art colors behind the player, for both portrait and
   // landscape layouts. Mirrors the MPV video ambience so both engines get the treatment.
@@ -341,7 +352,13 @@ internal fun MusicPlayerScreen(
           )
           Spacer(Modifier.weight(1f))
           MusicTrackInfo(snapshot = snapshot, modifier = Modifier.fillMaxWidth())
-          MusicTimeline(snapshot = snapshot, controller = controller, modifier = Modifier.fillMaxWidth())
+          MusicTimeline(
+            snapshot = snapshot,
+            controller = controller,
+            formatBadge = formatBadgeLabel,
+            hiRes = hiResAudio,
+            modifier = Modifier.fillMaxWidth(),
+          )
           MusicTransport(snapshot = snapshot, controller = controller, modifier = Modifier.fillMaxWidth())
           MusicSecondaryControls(
             snapshot = snapshot,
@@ -677,6 +694,8 @@ private fun MusicTrackInfo(
 private fun MusicTimeline(
   snapshot: MusicPlaybackSnapshot,
   controller: MediaController?,
+  formatBadge: String? = null,
+  hiRes: Boolean = false,
   modifier: Modifier = Modifier,
 ) {
   val duration = snapshot.durationMs
@@ -697,10 +716,48 @@ private fun MusicTimeline(
       },
       enabled = duration > 0L,
     )
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-      Text(formatTime((progress * duration).toLong()), style = MaterialTheme.typography.labelMedium)
-      Text(formatTime(duration), style = MaterialTheme.typography.labelMedium)
+    Box(modifier = Modifier.fillMaxWidth()) {
+      Text(
+        text = formatTime((progress * duration).toLong()),
+        style = MaterialTheme.typography.labelMedium,
+        modifier = Modifier.align(Alignment.CenterStart),
+      )
+      Text(
+        text = formatTime(duration),
+        style = MaterialTheme.typography.labelMedium,
+        modifier = Modifier.align(Alignment.CenterEnd),
+      )
+      if (hiRes || !formatBadge.isNullOrBlank()) {
+        Row(
+          modifier = Modifier.align(Alignment.Center),
+          horizontalArrangement = Arrangement.spacedBy(6.dp),
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          if (hiRes) HiResBadge()
+          if (!formatBadge.isNullOrBlank()) LosslessBadge(label = formatBadge)
+        }
+      }
     }
+  }
+}
+
+@Composable
+private fun HiResBadge(modifier: Modifier = Modifier) {
+  Surface(
+    modifier = modifier,
+    shape = RoundedCornerShape(7.dp),
+    color = Color(0xFF14120A).copy(alpha = 0.82f),
+    border = BorderStroke(1.dp, Color(0xFFC9A227).copy(alpha = 0.8f)),
+  ) {
+    Text(
+      text = "HI-RES",
+      modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+      style = MaterialTheme.typography.labelSmall,
+      fontSize = 10.sp,
+      fontWeight = FontWeight.Bold,
+      maxLines = 1,
+      color = Color(0xFFE5C24B),
+    )
   }
 }
 
