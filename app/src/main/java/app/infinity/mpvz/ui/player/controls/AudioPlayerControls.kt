@@ -780,8 +780,13 @@ fun AudioPlayerControls(
     }
 
   val isHiRes =
-    remember(sampleRate, isLosslessCodecOrExt) {
-      isLosslessCodecOrExt && (sampleRate ?: 0) >= 88200
+    remember(sampleRate, bitsPerSample, bitsPerSampleAlt, isLosslessCodecOrExt) {
+      if (!isLosslessCodecOrExt) {
+        false
+      } else {
+        val depth = (bitsPerSample ?: bitsPerSampleAlt)?.trim()?.toIntOrNull() ?: 0
+        depth >= 24 || (sampleRate ?: 0) >= 88200
+      }
     }
 
   var showLosslessDetails by remember { mutableStateOf(false) }
@@ -1581,7 +1586,33 @@ fun AudioPlayerControls(
     }
   }
   var activeCoverOverride by remember { mutableStateOf<Bitmap?>(null) }
+  val fullScreenArt by audioPreferences.audioFullScreenArt.collectAsState()
   Box(modifier = Modifier.fillMaxSize()) {
+  if (fullScreenArt && isPortrait && albumArtBitmap != null) {
+    // Full-screen album art: the cover is the entire background. A dark scrim keeps
+    // the header, badge and floating controls legible over any artwork.
+    Image(
+      bitmap = albumArtBitmap!!.asImageBitmap(),
+      contentDescription = null,
+      contentScale = ContentScale.Crop,
+      modifier = Modifier.matchParentSize(),
+    )
+    Box(
+      modifier =
+        Modifier
+          .matchParentSize()
+          .background(
+            Brush.verticalGradient(
+              colors = listOf(
+                Color.Black.copy(alpha = 0.55f),
+                Color.Transparent,
+                Color.Transparent,
+                Color.Black.copy(alpha = 0.92f),
+              ),
+            ),
+          ),
+    )
+  }
   AudioPaletteGlassScene(
     topArgb = visualizerPalette.primary,
     bottomArgb = visualizerPalette.secondary,
@@ -1617,7 +1648,7 @@ fun AudioPlayerControls(
         .background(
           // Opaque base: the browser under the sheet stops drawing once the sheet covers it,
           // so a transparent page would read as black. Liquid glass still frosts on top.
-          MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 1f),
+          MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = if (fullScreenArt && isPortrait && albumArtBitmap != null) 0f else 1f),
         )
         .drawWithCache {
           if (audioPaletteBackground && ambientModeEnabled &&
@@ -1716,7 +1747,16 @@ fun AudioPlayerControls(
 
     val losslessBadge = @Composable {
       if (collapsedAudioBadgeLabel.isNotBlank()) {
-        Surface(
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+          if (isHiRes) {
+            // Gold hi-res marker: appears only for high-resolution lossless audio.
+            Text(
+              text = "✦",
+              style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+              color = Color(0xFFD4AF37),
+            )
+          }
+          Surface(
           shape = RoundedCornerShape(4.dp),
           color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f),
           border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
@@ -1744,6 +1784,7 @@ fun AudioPlayerControls(
             color = MaterialTheme.colorScheme.onSecondaryContainer,
             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
           )
+        }
         }
       }
     }
@@ -1942,7 +1983,9 @@ fun AudioPlayerControls(
                 }
               }
 
-              // 3. Current Cover Art Card
+              // 3. Current Cover Art Card. With full-screen art the background already shows
+              // this cover, so the card collapses to a slim placeholder that keeps the
+              // vertical rhythm (the measured bounds still feed the minimize morph).
               Surface(
                 modifier = Modifier
                   .aspectRatio(1f)
@@ -1969,12 +2012,21 @@ fun AudioPlayerControls(
                 shape = coverShape,
                 color = Color.Transparent,
               ) {
-                CoverArtCardImage(
-                  bitmap = activeCoverOverride ?: albumArtBitmap,
-                  artworkUrl = currentArtworkUri,
-                  motionArtwork = currentAudioPresentation?.motionArtwork?.takeIf { activeCoverOverride == null && !(isRadio && streamCover != null) },
-                  isPlaying = paused != true && !coverShown,
-                )
+                if (fullScreenArt && isPortrait && albumArtBitmap != null) {
+                  Box(
+                    modifier =
+                      Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.08f)),
+                  )
+                } else {
+                  CoverArtCardImage(
+                    bitmap = activeCoverOverride ?: albumArtBitmap,
+                    artworkUrl = currentArtworkUri,
+                    motionArtwork = currentAudioPresentation?.motionArtwork?.takeIf { activeCoverOverride == null && !(isRadio && streamCover != null) },
+                    isPlaying = paused != true && !coverShown,
+                  )
+                }
               }
             }
           }
