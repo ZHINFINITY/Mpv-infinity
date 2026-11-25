@@ -1628,22 +1628,41 @@ fun AudioPlayerControls(
   val fullScreenArt by audioPreferences.audioFullScreenArt.collectAsState()
   val baseSurfaceColor = MaterialTheme.colorScheme.surfaceContainerHigh
   Box(modifier = Modifier.fillMaxSize()) {
-  if (fullScreenArt && isPortrait && albumArtBitmap != null) {
+  val fullScreenArtActive = fullScreenArt && isPortrait && (albumArtBitmap != null || !currentArtworkUri.isNullOrBlank())
+  if (fullScreenArtActive) {
     // Full-screen album art: the cover is the entire background. A dark scrim keeps
-    // the header, badge and floating controls legible over any artwork.
-    Image(
-      bitmap = albumArtBitmap!!.asImageBitmap(),
-      contentDescription = null,
-      contentScale = ContentScale.Crop,
+    // the header, badge and floating controls legible over any artwork. The art is
+    // NOT a static backdrop: it carries the same page-morph transform as the player
+    // sheet, so when minimizing it shrinks together with the player into the mini
+    // rect instead of fading out in place (no art-coloured background left behind).
+    // CoverArtCardImage also covers URL-only artwork (streams) that has no bitmap.
+    Box(
       modifier =
         Modifier
           .matchParentSize()
           .graphicsLayer {
-            // The full-bleed art must not become the mini player's backdrop: fade it
-            // out on the same curve as the chrome while the page morphs into the mini.
-            alpha = MusicMinimizeTransitionPolicy.chromeAlpha(currentMiniProgress())
+            val frame = currentTransitionFrame(size.width, size.height)
+            if (frame != null) {
+              val layer = MusicMinimizeTransitionPolicy.pageLayer(frame, playerOrigin.x, playerOrigin.y)
+              transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
+              translationX = layer.translationX
+              translationY = layer.translationY
+              scaleX = layer.scaleX
+              scaleY = layer.scaleY
+              shape = MusicPageClipShape(frame.clipWidth, frame.clipHeight, frame.clipCornerRadiusDp.dp.toPx())
+              clip = true
+            } else {
+              transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
+              translationX = 0f
+              translationY = 0f
+              scaleX = 1f
+              scaleY = 1f
+              clip = false
+            }
           },
-    )
+    ) {
+      CoverArtCardImage(bitmap = albumArtBitmap, artworkUrl = currentArtworkUri)
+    }
     Box(
       modifier =
         Modifier
@@ -2085,7 +2104,7 @@ fun AudioPlayerControls(
                 shape = coverShape,
                 color = Color.Transparent,
               ) {
-                if (!(fullScreenArt && isPortrait && albumArtBitmap != null)) {
+                if (!fullScreenArtActive) {
                   CoverArtCardImage(
                     bitmap = activeCoverOverride ?: albumArtBitmap,
                     artworkUrl = currentArtworkUri,
@@ -2969,8 +2988,12 @@ fun AudioPlayerControls(
       }
       .graphicsLayer {
         val local = coverLocalBounds
-        val frame = if (coverShown && local != null) currentTransitionFrame(
-          playerWidthPx.takeIf { it > 0f } ?: transitionViewportWidthPx, playerHeightPx) else null
+        // In full-screen art mode the full-bleed artwork itself shrinks into the mini
+        // player, so the separate flying small-cover overlay would duplicate it.
+        val frame = if (coverShown && local != null && !fullScreenArtActive) {
+          currentTransitionFrame(
+            playerWidthPx.takeIf { it > 0f } ?: transitionViewportWidthPx, playerHeightPx)
+        } else null
         if (frame == null || local == null) {
           alpha = 0f
           return@graphicsLayer
