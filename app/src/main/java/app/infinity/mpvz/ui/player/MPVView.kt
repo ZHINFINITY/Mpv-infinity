@@ -478,8 +478,8 @@ class MPVView(
           PlaybackSession.setOptionString("display-fps-override", "0")
         else -> null
       }
-    // FongMi MEMC replaces mpv's ordinary `interpolation` frame mixer. Match its MPV-RX
-    // contract: enable the motion option with display-synced ticks, without also enabling
+    // FongMi MEMC replaces mpv's ordinary `interpolation` frame mixer. Match the pinned
+    // motion contract: enable the motion option with display-synced ticks, without also enabling
     // the separate built-in interpolation path.
     val flowVideoSyncRc =
       if (mpvFlowFrameInterpolationCandidate) {

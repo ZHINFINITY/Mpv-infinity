@@ -155,7 +155,7 @@ fun AudioMiniPlayer(modifier: Modifier = Modifier) {
       verticalAlignment = Alignment.CenterVertically,
     ) {
       // Album art (real cover when the session has one, visualizer fallback) —
-      // mpvrx's mini player always shows the artwork thumbnail, never a plain icon.
+      // Always show the artwork thumbnail, never a plain icon.
       val artworkModel = sessionState.currentItem?.artworkUri
       if (!artworkModel.isNullOrBlank()) {
         AsyncImage(
