@@ -225,6 +225,7 @@ import okhttp3.OkHttpClient
 import org.koin.compose.koinInject
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 private data class AudioPresentationMetadata(
   val artwork: Bitmap?,
@@ -242,6 +243,13 @@ private data class AudioPresentationMetadata(
  * a small fixed weight, and the mutex intentionally serializes misses to cap decoder pressure.
  */
 private object AudioPresentationMetadataCache {
+  /**
+   * Process-wide last-known-good artwork. Minimizing finishes the player activity, so a
+   * composition-scoped `remember` loses the art on reopen; the cache may still resolve late,
+   * and until then the gate would show the empty boxed layout instead of the art.
+   */
+  val lastKnownGoodArtwork = AtomicReference<Pair<String?, Bitmap?>>(null to null)
+
   private const val MAX_CACHE_KB = 16 * 1024
   private const val METADATA_ONLY_WEIGHT_KB = 64
   private val loadMutex = Mutex()
@@ -941,13 +949,25 @@ fun AudioPlayerControls(
   // can briefly resolve to null. Holding the last value (not keyed to the track) avoids
   // both the art flash/gap and a full-screen-art fallback to the boxed layout.
   var lastValidArtwork by remember {
-    mutableStateOf(currentAudioPresentation?.artwork ?: currentArtworkUri?.takeIf { it.isNotBlank() })
+    val seeded = AudioPresentationMetadataCache.lastKnownGoodArtwork.get()
+    mutableStateOf(
+      currentAudioPresentation?.artwork
+        ?: currentArtworkUri?.takeIf { it.isNotBlank() }
+        ?: seeded.second.takeIf { currentAudioPresentation == null || currentAudioPresentation.artwork == null }
+        ?: seeded.first,
+    )
   }
   LaunchedEffect(currentAudioPresentation?.artwork, currentItem?.stableId) {
-    currentAudioPresentation?.artwork?.let { lastValidArtwork = it }
+    currentAudioPresentation?.artwork?.let {
+      lastValidArtwork = it
+      AudioPresentationMetadataCache.lastKnownGoodArtwork.set(currentArtworkUri?.takeIf { u -> u.isNotBlank() } to it)
+    }
   }
   LaunchedEffect(currentArtworkUri) {
-    if (!currentArtworkUri.isNullOrBlank()) lastValidArtwork = currentArtworkUri
+    if (!currentArtworkUri.isNullOrBlank()) {
+      lastValidArtwork = currentArtworkUri
+      AudioPresentationMetadataCache.lastKnownGoodArtwork.set(currentArtworkUri to AudioPresentationMetadataCache.lastKnownGoodArtwork.get().second)
+    }
   }
   val albumArtBitmap = streamCover.takeIf { isRadio } ?: currentAudioPresentation?.artwork
 
@@ -1714,7 +1734,10 @@ fun AudioPlayerControls(
             modifier = Modifier.matchParentSize(),
           )
         } else {
-          CoverArtCardImage(bitmap = lastValidArtwork as? Bitmap, artworkUrl = currentArtworkUri)
+          CoverArtCardImage(
+            bitmap = lastValidArtwork as? Bitmap,
+            artworkUrl = (lastValidArtwork as? String)?.takeIf { it.isNotBlank() } ?: currentArtworkUri,
+          )
         }
         // Fade the bottom of the artwork into the surface color (mpvrx's fade-out
         // mask): controls region stays a clean, opaque surface — text always legible.
@@ -1816,8 +1839,8 @@ fun AudioPlayerControls(
             drawRect(
               Brush.verticalGradient(
                 0f to baseSurfaceColor.copy(alpha = 0f),
-                0.62f to baseSurfaceColor.copy(alpha = 0f),
-                0.78f to baseSurfaceColor,
+                0.55f to baseSurfaceColor.copy(alpha = 0f),
+                0.62f to baseSurfaceColor,
                 1f to baseSurfaceColor,
               ),
             )
