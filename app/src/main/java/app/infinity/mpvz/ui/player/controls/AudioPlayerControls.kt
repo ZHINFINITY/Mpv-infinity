@@ -1656,11 +1656,12 @@ fun AudioPlayerControls(
   Box(modifier = Modifier.fillMaxSize()) {
   val fullScreenArtActive = fullScreenArt && isPortrait && (lastValidArtwork != null || !currentArtworkUri.isNullOrBlank())
   if (fullScreenArtActive) {
-    // Full-screen album art: the cover is the entire background. A dark scrim keeps
-    // the header, badge and floating controls legible over any artwork. The art is
-    // NOT a static backdrop: it carries the same page-morph transform as the player
-    // sheet, so when minimizing it shrinks together with the player into the mini
-    // rect instead of fading out in place (no art-coloured background left behind).
+    // mpvrx-style immersive artwork: the cover is NOT painted behind the controls.
+    // Like mpvrx's AudioPlayerControls (immersiveArtworkBackground), the art is a
+    // top panel (~64% of the page height) that fades out into an opaque surface
+    // where the title, badges, seekbar and transport controls live, so the text is
+    // always legible without heavy scrims. The panel carries the same page-morph
+    // transform as the sheet and fades with the chrome alpha while minimizing.
     // lastValidArtwork covers the background-return gap: mpv metadata clears until
     // it re-emits, and without the retained value the art would flash empty.
     Box(
@@ -1688,35 +1689,53 @@ fun AudioPlayerControls(
             }
           },
     ) {
-      if (lastValidArtwork is Bitmap) {
-        @Suppress("USELESS_ELVIS")
-        Image(
-          bitmap = (lastValidArtwork as? Bitmap)?.asImageBitmap()
-            ?: albumArtBitmap!!.asImageBitmap(),
-          contentDescription = null,
-          contentScale = ContentScale.Crop,
-          modifier = Modifier.matchParentSize(),
+      Box(
+        modifier =
+          Modifier
+            .fillMaxWidth()
+            .fillMaxHeight(0.64f)
+            .graphicsLayer { alpha = MusicMinimizeTransitionPolicy.chromeAlpha(currentMiniProgress()) },
+      ) {
+        if (lastValidArtwork is Bitmap) {
+          @Suppress("USELESS_ELVIS")
+          Image(
+            bitmap = (lastValidArtwork as? Bitmap)?.asImageBitmap()
+              ?: albumArtBitmap!!.asImageBitmap(),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.matchParentSize(),
+          )
+        } else {
+          CoverArtCardImage(bitmap = lastValidArtwork as? Bitmap, artworkUrl = currentArtworkUri)
+        }
+        // Fade the bottom of the artwork into the surface color (mpvrx's fade-out
+        // mask): controls region stays a clean, opaque surface — text always legible.
+        Box(
+          modifier =
+            Modifier
+              .matchParentSize()
+              .background(
+                Brush.verticalGradient(
+                  0.45f to Color.Transparent,
+                  1f to baseSurfaceColor,
+                ),
+              ),
         )
-      } else {
-        CoverArtCardImage(bitmap = lastValidArtwork as? Bitmap, artworkUrl = currentArtworkUri)
       }
-    }
-    Box(
-      modifier =
-        Modifier
-          .matchParentSize()
-          .graphicsLayer { alpha = MusicMinimizeTransitionPolicy.chromeAlpha(currentMiniProgress()) }
-          .background(
-            Brush.verticalGradient(
-              colors = listOf(
-                Color.Black.copy(alpha = 0.55f),
-                Color.Transparent,
-                Color.Transparent,
-                Color.Black.copy(alpha = 0.92f),
+      // Light header vignette only (mpvrx artworkHeaderVignette), so the top
+      // title row reads over bright covers.
+      Box(
+        modifier =
+          Modifier
+            .matchParentSize()
+            .graphicsLayer { alpha = MusicMinimizeTransitionPolicy.chromeAlpha(currentMiniProgress()) }
+            .background(
+              Brush.verticalGradient(
+                listOf(Color.Black.copy(alpha = 0.4f), Color.Transparent, Color.Transparent),
               ),
             ),
-          ),
-    )
+      )
+    }
   }
   AudioPaletteGlassScene(
     topArgb = visualizerPalette.primary,
@@ -1752,14 +1771,25 @@ fun AudioPlayerControls(
         .onGloballyPositioned { pageContentCoordinates[0] = it }
         .drawBehind {
           // Opaque base: the browser under the sheet stops drawing once the sheet covers it,
-          // so a transparent page would read as black. With full-screen art the base is
-          // transparent until the artwork fades back in during the minimize morph.
+          // so a transparent page would read as black. With full-screen art the base stays
+          // transparent only under the top artwork panel and becomes opaque below it, where
+          // the controls sit (mpvrx layout); while minimizing the chrome alpha fills the
+          // whole base solid so the mini player is opaque.
           val artBackdrop = fullScreenArt && isPortrait && albumArtBitmap != null
-          // Transparent while expanded so the full-bleed artwork shows through; opaque once the
-          // chrome has faded (chromeAlpha reaches 0 at 40% of the morph) so the mini player is solid.
-          val baseAlpha =
-            if (artBackdrop) 1f - MusicMinimizeTransitionPolicy.chromeAlpha(currentMiniProgress()) else 1f
-          if (baseAlpha > 0f) drawRect(baseSurfaceColor, alpha = baseAlpha)
+          if (!artBackdrop) {
+            drawRect(baseSurfaceColor)
+          } else {
+            val chrome = MusicMinimizeTransitionPolicy.chromeAlpha(currentMiniProgress())
+            drawRect(
+              Brush.verticalGradient(
+                0f to baseSurfaceColor.copy(alpha = 0f),
+                0.62f to baseSurfaceColor.copy(alpha = 0f),
+                0.78f to baseSurfaceColor,
+                1f to baseSurfaceColor,
+              ),
+            )
+            if (chrome > 0f) drawRect(baseSurfaceColor, alpha = chrome)
+          }
         }
         .drawWithCache {
           // With full-screen art the artwork itself is the background; the ambient palette

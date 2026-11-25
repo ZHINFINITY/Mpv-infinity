@@ -384,6 +384,7 @@
   <string name="pref_audio_full_screen_art_summary">Fill the whole music player with the album cover and float the controls over it</string>
   <string name="pref_audio_badge_style_title">Media badge style</string>
   <string name="pref_audio_badge_style_text">Text pill</string>
+  <string name="pref_video_badge_style_title">Video badge pack</string>
   <string name="pref_audio_ambient_mode_title">Ambient Mode</string>
   <string name="pref_audio_palette_background_title">Album palette background</string>
   <string name="pref_audio_palette_background_summary">Use colors extracted from the current song artwork as the music player background instead of the app theme</string>

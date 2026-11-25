@@ -378,6 +378,7 @@
   <string name="pref_audio_full_screen_art_summary">用专辑封面填满整个音乐播放器，控制按钮悬浮其上</string>
   <string name="pref_audio_badge_style_title">媒体徽章样式</string>
   <string name="pref_audio_badge_style_text">文本胶囊</string>
+  <string name="pref_video_badge_style_title">视频徽章包</string>
 <string name="pref_audio_ambient_mode_title">氛围模式</string>
   <string name="pref_audio_palette_background_title">专辑调色板背景</string>
   <string name="pref_audio_palette_background_summary">使用当前歌曲封面提取的颜色作为音乐播放器背景，而不是应用主题</string>

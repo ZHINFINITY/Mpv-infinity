@@ -378,6 +378,7 @@
   <string name="pref_audio_full_screen_art_summary">ملء مشغّل الموسيقى بالكامل بغلاف الألبوم مع عناصر التحكم فوقه</string>
   <string name="pref_audio_badge_style_title">نمط شارة الوسائط</string>
   <string name="pref_audio_badge_style_text">شريط نصي</string>
+  <string name="pref_video_badge_style_title">نمط شارات الفيديو</string>
 <string name="pref_audio_ambient_mode_title">الوضع المحيطي</string>
   <string name="pref_audio_palette_background_title">خلفية لوحة ألوان الألبوم</string>
   <string name="pref_audio_palette_background_summary">استخدام الألوان المستخرجة من غلاف الأغنية الحالية كخلفية لمشغل الموسيقى بدلًا من سمة التطبيق</string>

@@ -23,7 +23,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.preferences.AppearancePreferences
-import app.infinity.mpvz.preferences.AudioPreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.ui.player.NativeMediaMetadata
 import app.infinity.mpvz.ui.player.PlaybackSession
@@ -50,11 +49,10 @@ fun MediaBadgesRow(
 ) {
   val context = LocalContext.current
   val preferences = koinInject<AppearancePreferences>()
-  val audioPreferences = koinInject<AudioPreferences>()
   val showMediaBadges by preferences.showMediaBadges.collectAsState()
   val liquidGlassSurfaces by preferences.liquidGlassSurfaces.collectAsState()
-  val audioBadgeStyle by audioPreferences.audioBadgeStyle.collectAsState()
-  val badgeStyle = AudioBadgeStyle.fromId(audioBadgeStyle)
+  val videoBadgeStyle by preferences.videoBadgeStyle.collectAsState()
+  val badgeStyle = AudioBadgeStyle.fromId(videoBadgeStyle)
 
   val rawMediaTitle by PlaybackSession.propString["media-title"].collectAsState()
   val videoHeightProp by PlaybackSession.propInt["video-params/h"].collectAsState()

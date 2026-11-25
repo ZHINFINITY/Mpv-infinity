@@ -370,6 +370,7 @@
   <string name="pref_audio_full_screen_art_summary">Wypełnia cały odtwarzacz muzyczny okładką, a sterowania unoszą się nad nią</string>
   <string name="pref_audio_badge_style_title">Styl plakietki multimediów</string>
   <string name="pref_audio_badge_style_text">Pigułka tekstowa</string>
+  <string name="pref_video_badge_style_title">Pakiet plakietek wideo</string>
 <string name="pref_audio_ambient_mode_title">Ambient Tryb</string>
   <string name="pref_audio_palette_background_title">Album palette tło</string>
   <string name="pref_audio_palette_background_summary">Używaj kolory wyodrębnione z ten bieżący utwór artwork jako ten muzyka odtwarzacz tło zamiast — ten aplikacja motyw</string>

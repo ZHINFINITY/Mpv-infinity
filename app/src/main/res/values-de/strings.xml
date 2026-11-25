@@ -378,6 +378,7 @@ Weiter: NEXT</string>
   <string name="pref_audio_full_screen_art_summary">Füllt den ganzen Musikplayer mit dem Albumcover, Steuerungen darüber</string>
   <string name="pref_audio_badge_style_title">Medien-Badge-Stil</string>
   <string name="pref_audio_badge_style_text">Text-Pill</string>
+  <string name="pref_video_badge_style_title">Video-Badge-Paket</string>
 <string name="pref_audio_ambient_mode_title">Ambient-Modus</string>
   <string name="pref_audio_palette_background_title">Album-Palettenhintergrund</string>
   <string name="pref_audio_palette_background_summary">Farben aus dem Cover des aktuellen Titels als Hintergrund des Musikplayers verwenden, statt des App-Themas</string>

@@ -370,6 +370,7 @@
   <string name="pref_audio_full_screen_art_summary">پرکردن کل پخش‌کننده موسیقی با جلد آلبوم و شناور شدن کنترل‌ها روی آن</string>
   <string name="pref_audio_badge_style_title">سبک نشان رسانه</string>
   <string name="pref_audio_badge_style_text">قرصه متنی</string>
+  <string name="pref_video_badge_style_title">بسته نشان ویدیو</string>
 <string name="pref_audio_ambient_mode_title">Mode</string>
   <string name="pref_audio_palette_background_title">بایگانی برچسب ها</string>
   <string name="pref_audio_palette_background_summary">استفاده از رنگ های استخراج شده از آثار آهنگ فعلی به عنوان پس زمینه پخش موسیقی به جای موضوع برنامه</string>

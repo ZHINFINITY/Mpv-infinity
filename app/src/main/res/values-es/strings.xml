@@ -378,6 +378,7 @@ Siguiente: NEXT</string>
   <string name="pref_audio_full_screen_art_summary">Llena todo el reproductor de música con la portada y flotar los controles encima</string>
   <string name="pref_audio_badge_style_title">Estilo de insignia multimedia</string>
   <string name="pref_audio_badge_style_text">Píldora de texto</string>
+  <string name="pref_video_badge_style_title">Paquete de insignias de vídeo</string>
 <string name="pref_audio_ambient_mode_title">Modo ambiente</string>
   <string name="pref_audio_palette_background_title">Fondo con paleta del álbum</string>
   <string name="pref_audio_palette_background_summary">Usar como fondo del reproductor de música los colores extraídos de la carátula de la canción actual en lugar del tema de la aplicación</string>
