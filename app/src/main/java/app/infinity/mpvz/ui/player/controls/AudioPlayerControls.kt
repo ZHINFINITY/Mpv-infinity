@@ -175,9 +175,11 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.ColorUtils
 import kotlin.math.abs
+import kotlin.math.max
 import kotlin.math.roundToInt
 import app.infinity.mpvz.R
 import app.infinity.mpvz.domain.thumbnail.EmbeddedArtworkResolver
@@ -189,6 +191,7 @@ import app.infinity.mpvz.preferences.AudioVisualizerStyle
 import app.infinity.mpvz.preferences.GesturePreferences
 import app.infinity.mpvz.preferences.PlayerPreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.ui.icons.AppIcon
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.Panels
@@ -1721,7 +1724,33 @@ fun AudioPlayerControls(
           drawRect(baseSurfaceColor)
         }
         .drawWithCache {
-          if (audioPaletteBackground && ambientModeEnabled &&
+          val fullBleedArt = isPortrait && !showVisualizer && !showInPlaceLyrics && !isStandbyActive
+          val backdropBitmap = (activeCoverOverride ?: albumArtBitmap)?.asImageBitmap()
+          if (fullBleedArt && backdropBitmap != null) {
+            // mpvrx Now Playing: the cover fills the page edge to edge and a scrim fades it
+            // into the surface colour so the floating controls stay legible over any art.
+            onDrawBehind {
+              val scale = max(size.width / backdropBitmap.width, size.height / backdropBitmap.height)
+              val dstWidth = (backdropBitmap.width * scale).roundToInt()
+              val dstHeight = (backdropBitmap.height * scale).roundToInt()
+              drawImage(
+                backdropBitmap,
+                dstOffset = IntOffset(
+                  ((size.width - dstWidth) / 2f).roundToInt(),
+                  ((size.height - dstHeight) / 2f).roundToInt(),
+                ),
+                dstSize = IntSize(dstWidth, dstHeight),
+              )
+              drawRect(
+                Brush.verticalGradient(
+                  0f to Color.Transparent,
+                  0.34f to baseSurfaceColor.copy(alpha = 0.30f),
+                  0.55f to baseSurfaceColor.copy(alpha = 0.80f),
+                  0.72f to baseSurfaceColor,
+                ),
+              )
+            }
+          } else if (audioPaletteBackground && ambientModeEnabled &&
             (animatedAmbientTop != Color.Transparent || animatedAmbientBottom != Color.Transparent)) {
             val topColor = animatedAmbientTop
             val bottomColor = animatedAmbientBottom
@@ -1966,6 +1995,10 @@ fun AudioPlayerControls(
             )
           } else {
             val coverShape = RoundedCornerShape(MusicMinimizeTransitionPolicy.FULL_COVER_RADIUS_DP.dp)
+            // mpvrx full-bleed mode: the art is the page background, so the square card
+            // carousel is not drawn — swiping still changes the track and repaints the
+            // backdrop via activeCoverOverride.
+            val fullBleedArtActive = isPortrait && !showVisualizer && !showInPlaceLyrics && !isStandbyActive
             DisposableEffect(Unit) {
               coverShown = true
               onDispose { coverShown = false }
@@ -2037,7 +2070,7 @@ fun AudioPlayerControls(
               contentAlignment = Alignment.Center,
             ) {
               // 1. Previous Cover Art Card (Visible when dragging right -> currentOffset > 0)
-              if (currentOffset > 0f) {
+              if (currentOffset > 0f && !fullBleedArtActive) {
                 Surface(
                   modifier = Modifier
                     .aspectRatio(1f)
@@ -2051,7 +2084,7 @@ fun AudioPlayerControls(
               }
 
               // 2. Next Cover Art Card (Visible when dragging left -> currentOffset < 0)
-              if (currentOffset < 0f) {
+              if (currentOffset < 0f && !fullBleedArtActive) {
                 Surface(
                   modifier = Modifier
                     .aspectRatio(1f)
@@ -2067,46 +2100,48 @@ fun AudioPlayerControls(
               // 3. Current Cover Art Card. With full-screen art the background already shows
               // this cover, so the card collapses to a slim placeholder that keeps the
               // vertical rhythm (the measured bounds still feed the minimize morph).
-              Surface(
-                modifier = Modifier
-                  .aspectRatio(1f)
-                  .offset { IntOffset(currentOffset.roundToInt(), 0) }
-                  .onGloballyPositioned { coordinates ->
-                    // Measure the cover inside the page layer (pre-transform), so the
-                    // rectangle stays correct mid-transition and when opening from mini.
-                    val page = pageContentCoordinates[0]
-                    if (page != null && page.isAttached && coordinates.isAttached &&
-                      coordinates.size.width > 0 && coordinates.size.height > 0) {
-                      val local = page.localPositionOf(coordinates, Offset.Zero)
-                      coverLocalBounds = MusicMinimizeTransitionPolicy.Rect(
-                        local.x, local.y, coordinates.size.width.toFloat(), coordinates.size.height.toFloat())
+              if (!fullBleedArtActive) {
+                Surface(
+                  modifier = Modifier
+                    .aspectRatio(1f)
+                    .offset { IntOffset(currentOffset.roundToInt(), 0) }
+                    .onGloballyPositioned { coordinates ->
+                      // Measure the cover inside the page layer (pre-transform), so the
+                      // rectangle stays correct mid-transition and when opening from mini.
+                      val page = pageContentCoordinates[0]
+                      if (page != null && page.isAttached && coordinates.isAttached &&
+                        coordinates.size.width > 0 && coordinates.size.height > 0) {
+                        val local = page.localPositionOf(coordinates, Offset.Zero)
+                        coverLocalBounds = MusicMinimizeTransitionPolicy.Rect(
+                          local.x, local.y, coordinates.size.width.toFloat(), coordinates.size.height.toFloat())
+                      }
                     }
-                  }
-                  .graphicsLayer {
-                    // While the page morphs, the one visible cover is the flying overlay drawn
-                    // above the page (see FlyingCover below); this copy hides so there is never
-                    // a duplicate or a cover warped by the page's scale.
-                    alpha = if (coverShown && currentTransitionFrame(
-                        playerWidthPx.takeIf { it > 0f } ?: transitionViewportWidthPx, playerHeightPx) != null) 0f else 1f
-                  }
-                  .clip(coverShape),
-                shape = coverShape,
-                color = Color.Transparent,
-              ) {
-                Box(modifier = Modifier.fillMaxSize()) {
-                  CoverArtCardImage(
-                    bitmap = activeCoverOverride ?: albumArtBitmap,
-                    artworkUrl = currentArtworkUri,
-                    motionArtwork = currentAudioPresentation?.motionArtwork?.takeIf { activeCoverOverride == null && !(isRadio && streamCover != null) },
-                    isPlaying = paused != true && !coverShown,
-                  )
-                  // Adaptive gold hi-res marker rides on the cover card itself, like
-                  // mpvrx's on-art badge, and follows the artwork's own colour.
-                  Box(modifier = Modifier.align(Alignment.TopEnd).padding(14.dp)) {
-                    HiResSquiggleMarker(
-                      modifier = Modifier.size(width = 44.dp, height = 24.dp),
-                      color = artworkAdaptiveGold,
+                    .graphicsLayer {
+                      // While the page morphs, the one visible cover is the flying overlay drawn
+                      // above the page (see FlyingCover below); this copy hides so there is never
+                      // a duplicate or a cover warped by the page's scale.
+                      alpha = if (coverShown && currentTransitionFrame(
+                          playerWidthPx.takeIf { it > 0f } ?: transitionViewportWidthPx, playerHeightPx) != null) 0f else 1f
+                    }
+                    .clip(coverShape),
+                  shape = coverShape,
+                  color = Color.Transparent,
+                ) {
+                  Box(modifier = Modifier.fillMaxSize()) {
+                    CoverArtCardImage(
+                      bitmap = activeCoverOverride ?: albumArtBitmap,
+                      artworkUrl = currentArtworkUri,
+                      motionArtwork = currentAudioPresentation?.motionArtwork?.takeIf { activeCoverOverride == null && !(isRadio && streamCover != null) },
+                      isPlaying = paused != true && !coverShown,
                     )
+                    // Adaptive gold hi-res marker rides on the cover card itself, like
+                    // mpvrx's on-art badge, and follows the artwork's own colour.
+                    Box(modifier = Modifier.align(Alignment.TopEnd).padding(14.dp)) {
+                      HiResSquiggleMarker(
+                        modifier = Modifier.size(width = 44.dp, height = 24.dp),
+                        color = artworkAdaptiveGold,
+                      )
+                    }
                   }
                 }
               }
@@ -2437,32 +2472,36 @@ fun AudioPlayerControls(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
         }
-      } else SeekbarWithTimers(
-        position = timelinePosition,
-        committedPosition = timelinePosition,
-        duration = timelineDuration.coerceAtLeast(1f),
-        remaining = effectiveRemaining,
-        onValueChange = { value -> viewModel.seekPreviewTo(value) },
-        onValueChangeFinished = viewModel::seekAudioTo,
-        timersInverted = Pair(false, invertDuration),
-        durationTimerOnCLick = { playerPreferences.invertDuration.set(!invertDuration) },
-        positionTimerOnClick = {},
-        chapters = seekbarChapters,
-        skipSegments = persistentListOf(),
-        paused = isPaused,
-        seekbarStyle = seekbarStyle,
-        glassTrackEnabled = false,
-        showWavyVisualizer = audioWavySeekbar,
-        waveFeatures = if (audioWavySeekbar) visualizerFeatures else null,
-        wavePalette = visualizerPalette,
-        waveVolumeScale = volumeScale,
-        waveSheetOpen = isSheetOpen,
-        loopStart = abLoopA?.toFloat(),
-        loopEnd = abLoopB?.toFloat(),
-        isPortrait = isPortrait,
-        applyHorizontalPadding = false,
-        modifier = Modifier.fillMaxWidth(),
-      )
+      } else Box(modifier = Modifier.fillMaxWidth()) {
+        SeekbarWithTimers(
+          position = timelinePosition,
+          committedPosition = timelinePosition,
+          duration = timelineDuration.coerceAtLeast(1f),
+          remaining = effectiveRemaining,
+          onValueChange = { value -> viewModel.seekPreviewTo(value) },
+          onValueChangeFinished = viewModel::seekAudioTo,
+          timersInverted = Pair(false, invertDuration),
+          durationTimerOnCLick = { playerPreferences.invertDuration.set(!invertDuration) },
+          positionTimerOnClick = {},
+          chapters = seekbarChapters,
+          skipSegments = persistentListOf(),
+          paused = isPaused,
+          seekbarStyle = seekbarStyle,
+          glassTrackEnabled = false,
+          showWavyVisualizer = audioWavySeekbar,
+          waveFeatures = if (audioWavySeekbar) visualizerFeatures else null,
+          wavePalette = visualizerPalette,
+          waveVolumeScale = volumeScale,
+          waveSheetOpen = isSheetOpen,
+          loopStart = abLoopA?.toFloat(),
+          loopEnd = abLoopB?.toFloat(),
+          isPortrait = isPortrait,
+          applyHorizontalPadding = false,
+          modifier = Modifier.fillMaxWidth(),
+        )
+        // mpvrx: format badge sits centred between the seek timers, above the transport row.
+        Box(modifier = Modifier.align(Alignment.BottomCenter)) { losslessBadge() }
+      }
     }
 
     val playbackControlsRow = @Composable {
@@ -2471,82 +2510,108 @@ fun AudioPlayerControls(
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
       ) {
-        ReactiveIconButton(
+        val tonalCircle = Modifier.size(58.dp)
+        Surface(
           onClick = { if (isAudiobook) viewModel.stepPlaybackChapter(-1) else viewModel.playPrevious() },
           enabled = if (isAudiobook) AudiobookPlayback.currentChapter() != null else playlistModeEnabled,
+          shape = CircleShape,
+          color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
+          modifier = tonalCircle,
         ) {
-          Icon(
-            imageVector = Icons.RoundedFilled.SkipPrevious,
-            contentDescription = null,
-            tint =
-              if (playlistModeEnabled) {
-                MaterialTheme.colorScheme.onSurface
-              } else {
-                MaterialTheme.colorScheme.onSurface
-                  .copy(
-                    alpha = 0.38f,
-                  )
-              },
-            modifier = Modifier.size(28.dp),
-          )
-        }
-        if (!isRadio) {
-          ReactiveIconButton(onClick = { viewModel.seekBy(if (isAudiobook) -30 else -audioSeekDuration) }) {
+          Box(contentAlignment = Alignment.Center) {
             Icon(
-              imageVector = Icons.RoundedFilled.FastRewind,
-              contentDescription = null,
-              tint = MaterialTheme.colorScheme.onSurface,
-              modifier = Modifier.size(34.dp),
+              imageVector = Icons.RoundedFilled.SkipPrevious,
+              contentDescription = stringResource(R.string.pref_gesture_media_previous),
+              tint =
+                if (playlistModeEnabled) {
+                  MaterialTheme.colorScheme.onSurface
+                } else {
+                  MaterialTheme.colorScheme.onSurface
+                    .copy(
+                      alpha = 0.38f,
+                    )
+                },
+              modifier = Modifier.size(26.dp),
             )
           }
         }
+        if (!isRadio) {
+          Surface(
+            onClick = { viewModel.seekBy(if (isAudiobook) -30 else -audioSeekDuration) },
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
+            modifier = tonalCircle,
+          ) {
+            Box(contentAlignment = Alignment.Center) {
+              Icon(
+                imageVector = Icons.RoundedFilled.FastRewind,
+                contentDescription = stringResource(R.string.audio_landscape_seek_back),
+                tint = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.size(28.dp),
+              )
+            }
+          }
+        }
+        // mpvrx's wide pill play/pause button.
         ReactiveSurfaceButton(
           onClick = {
             optimisticIsPlaying = !isPlaying
             viewModel.pauseUnpause()
           },
-          shape = CircleShape,
+          shape = RoundedCornerShape(percent = 50),
           color = MaterialTheme.colorScheme.primary,
-          modifier = Modifier.size(if (isPortrait) 76.dp else 64.dp),
+          modifier = Modifier.size(width = if (isPortrait) 160.dp else 64.dp, height = if (isPortrait) 62.dp else 64.dp),
           shadowElevation = 8.dp,
         ) {
           Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
             Icon(
               imageVector = if (isPlaying) Icons.RoundedFilled.Pause else Icons.RoundedFilled.PlayArrow,
-              contentDescription = null,
+              contentDescription = stringResource(if (isPlaying) R.string.audiobook_pause else R.string.ui_play),
               tint = MaterialTheme.colorScheme.onPrimary,
-              modifier = Modifier.size(if (isPortrait) 44.dp else 36.dp),
+              modifier = Modifier.size(if (isPortrait) 38.dp else 36.dp),
             )
           }
         }
         if (!isRadio) {
-          ReactiveIconButton(onClick = { viewModel.seekBy(if (isAudiobook) 30 else audioSeekDuration) }) {
-            Icon(
-              imageVector = Icons.RoundedFilled.FastForward,
-              contentDescription = null,
-              tint = MaterialTheme.colorScheme.onSurface,
-              modifier = Modifier.size(34.dp),
-            )
+          Surface(
+            onClick = { viewModel.seekBy(if (isAudiobook) 30 else audioSeekDuration) },
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
+            modifier = tonalCircle,
+          ) {
+            Box(contentAlignment = Alignment.Center) {
+              Icon(
+                imageVector = Icons.RoundedFilled.FastForward,
+                contentDescription = stringResource(R.string.audio_landscape_seek_forward),
+                tint = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.size(28.dp),
+              )
+            }
           }
         }
-        ReactiveIconButton(
+        Surface(
           onClick = { if (isAudiobook) viewModel.stepPlaybackChapter(1) else viewModel.playNext() },
           enabled = if (isAudiobook) true else playlistModeEnabled,
+          shape = CircleShape,
+          color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
+          modifier = tonalCircle,
         ) {
-          Icon(
-            imageVector = Icons.RoundedFilled.SkipNext,
-            contentDescription = null,
-            tint =
-              if (isAudiobook || playlistModeEnabled) {
-                MaterialTheme.colorScheme.onSurface
-              } else {
-                MaterialTheme.colorScheme.onSurface
-                  .copy(
-                    alpha = 0.38f,
-                  )
-              },
-            modifier = Modifier.size(28.dp),
-          )
+          Box(contentAlignment = Alignment.Center) {
+            Icon(
+              imageVector = Icons.RoundedFilled.SkipNext,
+              contentDescription = stringResource(R.string.pref_gesture_media_next),
+              tint =
+                if (isAudiobook || playlistModeEnabled) {
+                  MaterialTheme.colorScheme.onSurface
+                } else {
+                  MaterialTheme.colorScheme.onSurface
+                    .copy(
+                      alpha = 0.38f,
+                    )
+                },
+              modifier = Modifier.size(26.dp),
+            )
+          }
         }
       }
     }
@@ -2625,22 +2690,13 @@ fun AudioPlayerControls(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
       ) {
-        ReactiveIconButton(
+        AudioTonalActionButton(
           onClick = { onOpenSheet(Sheets.Equalizer) },
           enabled = !audioFiltersConfigOwned,
-          modifier =
-            Modifier
-              .size(48.dp),
-        ) {
-          Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-            Icon(
-              imageVector = Icons.RoundedFilled.Equalizer,
-              contentDescription = "Equalizer",
-              tint = MaterialTheme.colorScheme.onSurface.copy(alpha = if (audioFiltersConfigOwned) 0.38f else 1f),
-              modifier = Modifier.size(24.dp),
-            )
-          }
-        }
+          icon = Icons.RoundedFilled.Equalizer,
+          contentDescription = "Equalizer",
+          tint = MaterialTheme.colorScheme.onSurface.copy(alpha = if (audioFiltersConfigOwned) 0.38f else 1f),
+        )
         if (isTabletLandscape) {
           Box(
             modifier = Modifier.weight(1f),
@@ -2721,81 +2777,59 @@ fun AudioPlayerControls(
               horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
               if (isAudiobook) audiobookModeButtons() else {
-                ReactiveIconButton(
+                AudioTonalActionButton(
                   onClick = viewModel::toggleShuffle,
                   enabled = playlistModeEnabled,
-                  modifier = Modifier.size(48.dp),
-                ) {
-                  Icon(
-                    imageVector = if (shuffleEnabled) Icons.RoundedFilled.ShuffleOn else Icons.RoundedFilled.Shuffle,
-                    contentDescription = null,
-                    tint = if (shuffleEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                  )
-                }
-                ReactiveIconButton(
-                  onClick = viewModel::cycleRepeatMode,
-                  modifier = Modifier.size(48.dp),
-                ) {
-                  Icon(
-                    imageVector = when (repeatMode) {
-                      RepeatMode.OFF -> Icons.RoundedFilled.Repeat
-                      RepeatMode.ONE -> Icons.RoundedFilled.RepeatOne
-                      RepeatMode.ALL -> Icons.RoundedFilled.RepeatOn
-                    },
-                    contentDescription = null,
-                    tint = if (repeatMode != RepeatMode.OFF) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                  )
-                }
-              }
-              ReactiveIconButton(
-                onClick = { viewModel.toggleAudioVisualizer() },
-                onLongClick = { onOpenSheet(Sheets.VisualizerStyle) },
-                modifier = Modifier.size(48.dp),
-              ) {
-                Icon(
-                  imageVector = if (showVisualizer) Icons.RoundedFilled.AutoAwesome else Icons.RoundedFilled.Audiotrack,
+                  icon = if (shuffleEnabled) Icons.RoundedFilled.ShuffleOn else Icons.RoundedFilled.Shuffle,
                   contentDescription = null,
-                  tint = if (showVisualizer) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                  tint = if (shuffleEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                AudioTonalActionButton(
+                  onClick = viewModel::cycleRepeatMode,
+                  icon = when (repeatMode) {
+                    RepeatMode.OFF -> Icons.RoundedFilled.Repeat
+                    RepeatMode.ONE -> Icons.RoundedFilled.RepeatOne
+                    RepeatMode.ALL -> Icons.RoundedFilled.RepeatOn
+                  },
+                  contentDescription = null,
+                  tint = if (repeatMode != RepeatMode.OFF) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
               }
-              ReactiveIconButton(
+              AudioTonalActionButton(
                 onClick = { showInPlaceLyrics = !showInPlaceLyrics },
-                modifier = Modifier.size(48.dp),
-              ) {
-                Icon(
-                  imageVector = Icons.RoundedFilled.Lyrics,
-                  contentDescription = "Lyrics",
-                  tint = if (showInPlaceLyrics) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-              }
-              ReactiveIconButton(
+                icon = Icons.RoundedFilled.Lyrics,
+                contentDescription = null,
+                tint = if (showVisualizer) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+              )
+              AudioTonalActionButton(
+                onClick = { viewModel.toggleAudioVisualizer() },
+                icon = if (showVisualizer) Icons.RoundedFilled.AutoAwesome else Icons.RoundedFilled.Audiotrack,
+                contentDescription = null,
+                tint = if (showVisualizer) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+              )
+              AudioTonalActionButton(
+                onClick = { showInPlaceLyrics = !showInPlaceLyrics },
+                icon = Icons.RoundedFilled.Lyrics,
+                contentDescription = "Lyrics",
+                tint = if (showInPlaceLyrics) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+              )
+              AudioTonalActionButton(
                 onClick = {
                   toggleAudioBackgroundPlayback()
                 },
-                modifier = Modifier.size(48.dp),
-              ) {
-                Icon(
-                  imageVector = Icons.RoundedFilled.Headset,
-                  contentDescription = stringResource(R.string.btn_label_background_playback),
-                  tint = if (backgroundPlaybackEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-              }
-            }
-          }
-          Spacer(modifier = Modifier.width(4.dp))
-          ReactiveIconButton(
-            onClick = { onOpenSheet(if (isAudiobook) Sheets.Chapters else Sheets.Playlist) },
-            modifier = Modifier.size(48.dp),
-          ) {
-            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-              Icon(
-                imageVector = Icons.RoundedFilled.QueueMusic,
-                contentDescription = if (isAudiobook) stringResource(R.string.audiobook_chapters) else "Playlist",
-                tint = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.size(24.dp),
+                icon = Icons.RoundedFilled.Headset,
+                contentDescription = stringResource(R.string.btn_label_background_playback),
+                tint = if (backgroundPlaybackEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
               )
             }
           }
+          Spacer(modifier = Modifier.width(4.dp))
+          AudioTonalActionButton(
+            onClick = { onOpenSheet(if (isAudiobook) Sheets.Chapters else Sheets.Playlist) },
+            icon = Icons.RoundedFilled.QueueMusic,
+            contentDescription = if (isAudiobook) stringResource(R.string.audiobook_chapters) else "Playlist",
+            tint = MaterialTheme.colorScheme.onSurface,
+          )
         }
       }
     }
@@ -3356,6 +3390,32 @@ private fun formatSec(totalSeconds: Long): String {
   } else {
     String.format(Locale.US, "%d:%02d", minutes, remainingSecs)
   }
+}
+
+@Composable
+private fun AudioTonalActionButton(
+  onClick: () -> Unit,
+  enabled: Boolean = true,
+  tint: Color,
+  contentDescription: String?,
+  icon: AppIcon,
+) {
+  // mpvrx's bottom action row: rounded tonal pills instead of bare icons.
+  val shape = RoundedCornerShape(18.dp)
+  Surface(
+    onClick = onClick,
+    shape = shape,
+    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+    modifier = Modifier.size(width = 52.dp, height = 48.dp),
+  ) {
+    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+      Icon(
+        imageVector = icon,
+        contentDescription = contentDescription,
+        tint = tint,
+        modifier = Modifier.size(22.dp),
+      )
+    }  }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
