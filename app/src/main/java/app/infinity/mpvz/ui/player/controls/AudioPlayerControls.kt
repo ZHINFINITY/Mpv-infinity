@@ -138,6 +138,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
@@ -734,11 +735,31 @@ fun AudioPlayerControls(
       ?: currentItem?.playableUri?.takeIf { it.isNotBlank() }
       ?: mediaPath
 
-  val audioCodec by PlaybackSession.propString["audio-codec-name"].collectAsState()
-  val sampleRate by PlaybackSession.propInt["audio-params/samplerate"].collectAsState()
+  val audioCodecProp by PlaybackSession.propString["current-tracks/audio/codec"].collectAsState()
+  val audioCodecNameProp by PlaybackSession.propString["audio-codec-name"].collectAsState()
+  val audioCodecProfileProp by PlaybackSession.propString["current-tracks/audio/codec-profile"].collectAsState()
+  val sampleRateProp by PlaybackSession.propInt["audio-params/samplerate"].collectAsState()
   val audioFormat by PlaybackSession.propString["audio-params/format"].collectAsState()
   val bitsPerSample by PlaybackSession.propString["metadata/by-key/BITS_PER_SAMPLE"].collectAsState()
   val bitsPerSampleAlt by PlaybackSession.propString["metadata/by-key/bits_per_sample"].collectAsState()
+  val audioTracks by viewModel.audioTracks.collectAsStateWithLifecycle()
+  val selectedAudioTrack = audioTracks.firstOrNull { it.isSelected }
+  val audioCodec =
+    audioCodecProp?.takeIf { it.isNotBlank() }
+      ?: audioCodecNameProp?.takeIf { it.isNotBlank() }
+      ?: selectedAudioTrack?.codec
+  val audioCodecProfile =
+    audioCodecProfileProp?.takeIf { it.isNotBlank() } ?: selectedAudioTrack?.codecProfile
+  val sampleRate =
+    selectedAudioTrack?.demuxSampleRate?.toInt()?.takeIf { it > 0 } ?: sampleRateProp
+  val trackMetadataDepth =
+    selectedAudioTrack?.metadata.orEmpty().asSequence()
+      .filter {
+        it.key.lowercase(java.util.Locale.US) in
+          setOf("bits_per_sample", "bits_per_raw_sample", "bit_depth", "bitdepth")
+      }
+      .mapNotNull { it.value?.trim()?.toIntOrNull() }
+      .firstOrNull() ?: 0
   val audioBitrateProp by PlaybackSession.propInt["audio-bitrate"].collectAsState()
   val generalBitrateProp by PlaybackSession.propInt["bitrate"].collectAsState()
   val playbackSpeed by PlaybackSession.propFloat["speed"].collectAsState()
@@ -780,12 +801,15 @@ fun AudioPlayerControls(
     }
 
   val isHiRes =
-    remember(sampleRate, bitsPerSample, bitsPerSampleAlt, isLosslessCodecOrExt) {
+    remember(sampleRate, bitsPerSample, bitsPerSampleAlt, isLosslessCodecOrExt, audioCodecProfile, trackMetadataDepth, audioCodec) {
       if (!isLosslessCodecOrExt) {
         false
       } else {
-        val depth = (bitsPerSample ?: bitsPerSampleAlt)?.trim()?.toIntOrNull() ?: 0
-        depth >= 24 || (sampleRate ?: 0) >= 88200
+        val depth = (bitsPerSample ?: bitsPerSampleAlt)?.trim()?.toIntOrNull() ?: trackMetadataDepth
+        val profile = audioCodecProfile.orEmpty().lowercase(java.util.Locale.US)
+        depth > 16 || (sampleRate ?: 0) > 48000 ||
+          (audioCodec?.lowercase()?.startsWith("dts") == true &&
+            (profile.contains("dts-hd ma") || profile.contains("master audio")))
       }
     }
 
@@ -807,7 +831,10 @@ fun AudioPlayerControls(
           ""
         }
 
-      val bps = bitsPerSample?.takeIf { it.isNotBlank() } ?: bitsPerSampleAlt?.takeIf { it.isNotBlank() }
+      val bps =
+        bitsPerSample?.takeIf { it.isNotBlank() && it.toIntOrNull() != null }
+          ?: bitsPerSampleAlt?.takeIf { it.isNotBlank() && it.toIntOrNull() != null }
+          ?: trackMetadataDepth.takeIf { it > 0 }?.toString()
       val bitrate = audioBitrateProp?.takeIf { it > 0 } ?: generalBitrateProp?.takeIf { it > 0 }
       val kbpsStr = bitrate?.let { "${it / 1000} kbps" }.orEmpty()
       val bitStr =
@@ -1587,6 +1614,7 @@ fun AudioPlayerControls(
   }
   var activeCoverOverride by remember { mutableStateOf<Bitmap?>(null) }
   val fullScreenArt by audioPreferences.audioFullScreenArt.collectAsState()
+  val baseSurfaceColor = MaterialTheme.colorScheme.surfaceContainerHigh
   Box(modifier = Modifier.fillMaxSize()) {
   if (fullScreenArt && isPortrait && albumArtBitmap != null) {
     // Full-screen album art: the cover is the entire background. A dark scrim keeps
@@ -1595,12 +1623,20 @@ fun AudioPlayerControls(
       bitmap = albumArtBitmap!!.asImageBitmap(),
       contentDescription = null,
       contentScale = ContentScale.Crop,
-      modifier = Modifier.matchParentSize(),
+      modifier =
+        Modifier
+          .matchParentSize()
+          .graphicsLayer {
+            // The full-bleed art must not become the mini player's backdrop: fade it
+            // out on the same curve as the chrome while the page morphs into the mini.
+            alpha = MusicMinimizeTransitionPolicy.chromeAlpha(currentMiniProgress())
+          },
     )
     Box(
       modifier =
         Modifier
           .matchParentSize()
+          .graphicsLayer { alpha = MusicMinimizeTransitionPolicy.chromeAlpha(currentMiniProgress()) }
           .background(
             Brush.verticalGradient(
               colors = listOf(
@@ -1645,11 +1681,15 @@ fun AudioPlayerControls(
           }
         })
         .onGloballyPositioned { pageContentCoordinates[0] = it }
-        .background(
+        .drawBehind {
           // Opaque base: the browser under the sheet stops drawing once the sheet covers it,
-          // so a transparent page would read as black. Liquid glass still frosts on top.
-          MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = if (fullScreenArt && isPortrait && albumArtBitmap != null) 0f else 1f),
-        )
+          // so a transparent page would read as black. With full-screen art the base is
+          // transparent until the artwork fades back in during the minimize morph.
+          val artBackdrop = fullScreenArt && isPortrait && albumArtBitmap != null
+          val baseAlpha =
+            if (artBackdrop) MusicMinimizeTransitionPolicy.chromeAlpha(currentMiniProgress()) else 1f
+          if (baseAlpha > 0f) drawRect(baseSurfaceColor, alpha = baseAlpha)
+        }
         .drawWithCache {
           if (audioPaletteBackground && ambientModeEnabled &&
             (animatedAmbientTop != Color.Transparent || animatedAmbientBottom != Color.Transparent)) {
@@ -2012,14 +2052,7 @@ fun AudioPlayerControls(
                 shape = coverShape,
                 color = Color.Transparent,
               ) {
-                if (fullScreenArt && isPortrait && albumArtBitmap != null) {
-                  Box(
-                    modifier =
-                      Modifier
-                        .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.08f)),
-                  )
-                } else {
+                if (!(fullScreenArt && isPortrait && albumArtBitmap != null)) {
                   CoverArtCardImage(
                     bitmap = activeCoverOverride ?: albumArtBitmap,
                     artworkUrl = currentArtworkUri,
