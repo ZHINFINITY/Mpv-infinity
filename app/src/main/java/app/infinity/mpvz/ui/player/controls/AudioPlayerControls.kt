@@ -957,16 +957,13 @@ fun AudioPlayerControls(
         ?: seeded.first,
     )
   }
-  LaunchedEffect(currentAudioPresentation?.artwork, currentItem?.stableId) {
-    currentAudioPresentation?.artwork?.let {
-      lastValidArtwork = it
-      AudioPresentationMetadataCache.lastKnownGoodArtwork.set(currentArtworkUri?.takeIf { u -> u.isNotBlank() } to it)
-    }
-  }
-  LaunchedEffect(currentArtworkUri) {
-    if (!currentArtworkUri.isNullOrBlank()) {
-      lastValidArtwork = currentArtworkUri
-      AudioPresentationMetadataCache.lastKnownGoodArtwork.set(currentArtworkUri to AudioPresentationMetadataCache.lastKnownGoodArtwork.get().second)
+  LaunchedEffect(currentAudioPresentation?.artwork, currentArtworkUri) {
+    val embedded = currentAudioPresentation?.artwork
+    val url = currentArtworkUri?.takeIf { it.isNotBlank() }
+    val resolved = embedded ?: url
+    if (resolved != null) {
+      lastValidArtwork = resolved
+      AudioPresentationMetadataCache.lastKnownGoodArtwork.set(url to embedded)
     }
   }
   val albumArtBitmap = streamCover.takeIf { isRadio } ?: currentAudioPresentation?.artwork
@@ -2056,7 +2053,7 @@ fun AudioPlayerControls(
         val containerWidthPx = constraints.maxWidth.toFloat()
         val currentOffset = animatableOffsetX.value
 
-        if (showInPlaceLyrics && !forceArtwork) {
+        if (showInPlaceLyrics && !forceArtwork && !fullScreenArtActive) {
           app.infinity.mpvz.ui.player.controls.components.LyricsView(
             viewModel = viewModel,
             modifier = Modifier.fillMaxSize(),
@@ -2065,7 +2062,7 @@ fun AudioPlayerControls(
           )
         } else {
           AnimatedContent(
-            targetState = showVisualizer && !forceArtwork,
+            targetState = showVisualizer && !forceArtwork && !fullScreenArtActive,
             transitionSpec = {
               if (targetState) {
                 (fadeIn(animationSpec = tween(350, easing = FastOutSlowInEasing)) +
