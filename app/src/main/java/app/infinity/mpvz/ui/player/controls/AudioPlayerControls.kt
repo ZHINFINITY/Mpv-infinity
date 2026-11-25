@@ -1231,6 +1231,32 @@ fun AudioPlayerControls(
         .fillMaxSize()
         .background(MaterialTheme.colorScheme.surface)
         .drawWithCache {
+          val art = albumArtBitmap
+          if (isPortrait && !isAudiobook && !showVisualizer && !showInPlaceLyrics && !isLyricsFullscreen && art != null) {
+            val shader = android.graphics.BitmapShader(art, android.graphics.Shader.TileMode.CLAMP, android.graphics.Shader.TileMode.CLAMP)
+            val scale = maxOf(size.width / art.width, size.height / art.height)
+            val matrix = android.graphics.Matrix().apply {
+              setScale(scale, scale)
+              postTranslate((size.width - art.width * scale) / 2f, (size.height - art.height * scale) / 2f)
+            }
+            shader.setLocalMatrix(matrix)
+            val artBrush = androidx.compose.ui.graphics.ShaderBrush(shader)
+            val scrim = androidx.compose.ui.graphics.Brush.verticalGradient(
+              listOf(
+                Color.Black.copy(alpha = 0.55f),
+                Color.Black.copy(alpha = 0.35f),
+                Color.Black.copy(alpha = 0.72f),
+              ),
+            )
+            onDrawBehind {
+              drawRect(brush = artBrush)
+              drawRect(brush = scrim)
+            }
+          } else {
+            onDrawBehind {}
+          }
+        }
+        .drawWithCache {
           if (ambientModeEnabled && (animatedAmbientTop != Color.Transparent || animatedAmbientBottom != Color.Transparent)) {
             val topColor = animatedAmbientTop
             val bottomColor = animatedAmbientBottom
