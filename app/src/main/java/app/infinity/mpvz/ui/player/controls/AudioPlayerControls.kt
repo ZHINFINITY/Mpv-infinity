@@ -1655,6 +1655,10 @@ fun AudioPlayerControls(
   val baseSurfaceColor = MaterialTheme.colorScheme.surfaceContainerHigh
   Box(modifier = Modifier.fillMaxSize()) {
   val fullScreenArtActive = fullScreenArt && isPortrait && (lastValidArtwork != null || !currentArtworkUri.isNullOrBlank())
+  // Gold hue of the on-artwork hi-res marker, flipped in lightness against the
+  // cover's average colour so it stays visible on both dark and bright art.
+  val artworkSampleBitmap = (lastValidArtwork as? Bitmap) ?: albumArtBitmap
+  val artworkAdaptiveGold = remember(artworkSampleBitmap) { adaptiveGoldForArtwork(artworkSampleBitmap) }
   if (fullScreenArtActive) {
     // mpvrx-style immersive artwork: the cover is NOT painted behind the controls.
     // Like mpvrx's AudioPlayerControls (immersiveArtworkBackground), the art is a
@@ -1721,6 +1725,31 @@ fun AudioPlayerControls(
                 ),
               ),
         )
+        // mpvrx-style gold hi-res marker over the artwork's top corner, visible
+        // even when the LOSSLESS pill in the controls area is collapsed.
+        if (isHiRes) {
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier =
+              Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = 88.dp, end = 16.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(Color.Black.copy(alpha = 0.45f))
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+          ) {
+            HiResSquiggleMarker(
+              modifier = Modifier.size(width = 18.dp, height = 10.dp),
+              color = artworkAdaptiveGold,
+            )
+            Text(
+              text = "HI-RES",
+              style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 9.sp),
+              color = artworkAdaptiveGold,
+            )
+          }
+        }
       }
       // Light header vignette only (mpvrx artworkHeaderVignette), so the top
       // title row reads over bright covers.
@@ -1775,7 +1804,7 @@ fun AudioPlayerControls(
           // transparent only under the top artwork panel and becomes opaque below it, where
           // the controls sit (mpvrx layout); while minimizing the chrome alpha fills the
           // whole base solid so the mini player is opaque.
-          val artBackdrop = fullScreenArt && isPortrait && albumArtBitmap != null
+          val artBackdrop = fullScreenArtActive
           if (!artBackdrop) {
             drawRect(baseSurfaceColor)
           } else {
@@ -1794,7 +1823,7 @@ fun AudioPlayerControls(
         .drawWithCache {
           // With full-screen art the artwork itself is the background; the ambient palette
           // gradient would paint over it, so it is skipped in that mode.
-          val artBackdrop = fullScreenArt && isPortrait && albumArtBitmap != null
+          val artBackdrop = fullScreenArtActive
           if (!artBackdrop && audioPaletteBackground && ambientModeEnabled &&
             (animatedAmbientTop != Color.Transparent || animatedAmbientBottom != Color.Transparent)) {
             val topColor = animatedAmbientTop
@@ -3565,12 +3594,52 @@ private class MusicPageClipShape(
 }
 
 /**
+ * Gold tint for the on-artwork hi-res marker, adapted to the cover's average
+ * colour: the marker's lightness is flipped against the artwork's mean luma
+ * (darker bronze on bright art, brighter gold on dark art) so it stays visible
+ * on any cover. Falls back to the standard gold when no bitmap is available.
+ */
+internal fun adaptiveGoldForArtwork(artwork: Bitmap?): Color {
+  if (artwork == null) return Color(0xFFE8B84B)
+  return try {
+    var total = 0f
+    var count = 0
+    val stepX = (artwork.width / 16).coerceAtLeast(1)
+    val stepY = (artwork.height / 16).coerceAtLeast(1)
+    var y = 0
+    while (y < artwork.height) {
+      var x = 0
+      while (x < artwork.width) {
+        val c = artwork.getPixel(x, y)
+        total += 0.2126f * android.graphics.Color.red(c) +
+          0.7152f * android.graphics.Color.green(c) +
+          0.0722f * android.graphics.Color.blue(c)
+        count++
+        x += stepX
+      }
+      y += stepY
+    }
+    if (count == 0) return Color(0xFFE8B84B)
+    when {
+      total / count > 170f -> Color(0xFF7A5A12) // bright art: dark bronze
+      total / count < 60f -> Color(0xFFFFD97A) // dark art: bright gold
+      else -> Color(0xFFE8B84B)
+    }
+  } catch (_: Exception) {
+    Color(0xFFE8B84B)
+  }
+}
+
+/**
  * Gold hi-res marker shown beside the track title for high-resolution lossless
  * audio (deeper than 16-bit or above 48 kHz). Drawn as a vector so it stays crisp.
  */
 @Composable
-internal fun HiResSquiggleMarker(modifier: Modifier = Modifier) {
-  val gold = Color(0xFFD4AF37)
+internal fun HiResSquiggleMarker(
+  modifier: Modifier = Modifier,
+  color: Color = Color(0xFFD4AF37),
+) {
+  val gold = color
   androidx.compose.foundation.Canvas(modifier = modifier) {
     val w = size.width
     val h = size.height
