@@ -46,7 +46,7 @@ internal fun MediaBadgeProxy(badge: app.infinity.mpvz.utils.media.MediaBadge): M
   MediaBadge(
     name = badge.name,
     pattern = badge.pattern,
-    imageUrl = java.io.File(badge.assetPath).let { if (it.isFile) it.toURI().toString() else badge.assetPath },
+    imageUrl = java.io.File(badge.assetPath).let { if (it.isFile) it.toURI().toString() else badge.remoteUrl ?: badge.assetPath },
   )
 
 /**

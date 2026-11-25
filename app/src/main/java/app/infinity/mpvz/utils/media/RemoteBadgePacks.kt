@@ -5,7 +5,10 @@ package app.infinity.mpvz.utils.media
 
 import android.content.Context
 import java.io.File
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
@@ -75,29 +78,40 @@ object RemoteBadgePacks {
           val enabled = entry["isEnabled"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: true
           if (!enabled) return@mapNotNull null
           val file = File(dir, imageUrl.substringAfterLast('/'))
-          if (!file.isFile) {
-            try {
-              val resp = client.newCall(Request.Builder().url(imageUrl).build()).execute()
-              resp.body?.byteStream()?.use { input -> file.outputStream().use { input.copyTo(it) } }
-              resp.close()
-            } catch (_: Exception) {
-              return@mapNotNull null
-            }
-            if (!file.isFile || file.length() == 0L) return@mapNotNull null
-          }
           MediaBadge(
             id = id,
             name = entry["name"]?.jsonPrimitive?.content ?: id,
             groupId = entry["groupId"]?.jsonPrimitive?.content ?: "",
             assetPath = file.absolutePath,
             pattern = Regex(entry["pattern"]?.jsonPrimitive?.content ?: return@mapNotNull null),
+            remoteUrl = if (file.isFile) null else imageUrl,
           )
         }
       } catch (_: Exception) {
         emptyList()
       }
-      if (badges.isNotEmpty()) cached = styleId to badges
+      if (badges.isNotEmpty()) {
+        cached = styleId to badges
+        // Warm the on-disk cache in the background; matching and rendering below
+        // never wait on these downloads (a full pack can be hundreds of images).
+        backgroundWarm.launch {
+          badges.forEach { badge ->
+            val url = badge.remoteUrl ?: return@forEach
+            val file = File(badge.assetPath)
+            if (file.isFile && file.length() > 0L) return@forEach
+            try {
+              val resp = client.newCall(Request.Builder().url(url).build()).execute()
+              resp.body?.byteStream()?.use { input -> file.outputStream().use { input.copyTo(it) } }
+              resp.close()
+            } catch (_: Exception) {
+              // Left un-cached: the composable falls back to the remote URL.
+            }
+          }
+        }
+      }
       badges
     }
   }
+
+  private val backgroundWarm = CoroutineScope(Dispatchers.IO + SupervisorJob())
 }

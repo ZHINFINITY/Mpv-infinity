@@ -936,14 +936,18 @@ fun AudioPlayerControls(
       pathOrUri = currentMediaSource?.takeIf { isAudiobook } ?: mediaPath?.takeIf { it.isNotBlank() } ?: currentMediaSource,
       artworkUri = currentArtworkUri,
     )
-  // Keep the last artwork seen for this track: after a background round-trip the
-  // metadata properties clear until mpv re-emits them, and the cached presentation
-  // can briefly resolve to null. Holding the last value avoids an art flash/gap.
-  var lastValidArtwork by remember(currentItem?.stableId) {
+  // Keep the last artwork seen across tracks: after a swipe or a background round-trip
+  // the metadata properties clear until mpv re-emits them, and the cached presentation
+  // can briefly resolve to null. Holding the last value (not keyed to the track) avoids
+  // both the art flash/gap and a full-screen-art fallback to the boxed layout.
+  var lastValidArtwork by remember {
     mutableStateOf(currentAudioPresentation?.artwork ?: currentArtworkUri?.takeIf { it.isNotBlank() })
   }
   LaunchedEffect(currentAudioPresentation?.artwork, currentItem?.stableId) {
     currentAudioPresentation?.artwork?.let { lastValidArtwork = it }
+  }
+  LaunchedEffect(currentArtworkUri) {
+    if (!currentArtworkUri.isNullOrBlank()) lastValidArtwork = currentArtworkUri
   }
   val albumArtBitmap = streamCover.takeIf { isRadio } ?: currentAudioPresentation?.artwork
 
@@ -2140,7 +2144,8 @@ fun AudioPlayerControls(
               contentAlignment = Alignment.Center,
             ) {
               // 1. Previous Cover Art Card (Visible when dragging right -> currentOffset > 0)
-              if (currentOffset > 0f) {
+              // Hidden with full-screen art: the full-bleed background is the cover.
+              if (!fullScreenArtActive && currentOffset > 0f) {
                 Surface(
                   modifier = Modifier
                     .aspectRatio(1f)
@@ -2154,7 +2159,7 @@ fun AudioPlayerControls(
               }
 
               // 2. Next Cover Art Card (Visible when dragging left -> currentOffset < 0)
-              if (currentOffset < 0f) {
+              if (!fullScreenArtActive && currentOffset < 0f) {
                 Surface(
                   modifier = Modifier
                     .aspectRatio(1f)
