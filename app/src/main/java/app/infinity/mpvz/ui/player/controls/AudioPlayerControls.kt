@@ -1024,6 +1024,18 @@ fun AudioPlayerControls(
   }
   val playerControlsTheme by appearancePreferences.playerControlsTheme.collectAsState()
   val liquidGlassSurfaces by appearancePreferences.liquidGlassSurfaces.collectAsState()
+  val audioBadgeStyle by audioPreferences.audioBadgeStyle.collectAsState()
+  /** String the image badge patterns match against: codec, container and format tags. */
+  val badgeMatchString =
+    remember(cleanCodecName, audioFormat, isLosslessCodecOrExt, isHiRes, collapsedAudioBadgeLabel) {
+      listOfNotNull(
+        cleanCodecName,
+        audioFormat,
+        collapsedAudioBadgeLabel.ifBlank { null },
+        if (isHiRes) "hi-res" else null,
+        if (isLosslessCodecOrExt) "lossless" else null,
+      ).joinToString(" ")
+    }
   val glassSurfaceOpacity by appearancePreferences.glassSurfaceOpacity.collectAsState()
   val glassSurfaceHighlight by appearancePreferences.glassSurfaceHighlight.collectAsState()
   val customThemes by appearancePreferences.customThemes.collectAsState()
@@ -1686,12 +1698,17 @@ fun AudioPlayerControls(
           // so a transparent page would read as black. With full-screen art the base is
           // transparent until the artwork fades back in during the minimize morph.
           val artBackdrop = fullScreenArt && isPortrait && albumArtBitmap != null
+          // Transparent while expanded so the full-bleed artwork shows through; opaque once the
+          // chrome has faded (chromeAlpha reaches 0 at 40% of the morph) so the mini player is solid.
           val baseAlpha =
-            if (artBackdrop) MusicMinimizeTransitionPolicy.chromeAlpha(currentMiniProgress()) else 1f
+            if (artBackdrop) 1f - MusicMinimizeTransitionPolicy.chromeAlpha(currentMiniProgress()) else 1f
           if (baseAlpha > 0f) drawRect(baseSurfaceColor, alpha = baseAlpha)
         }
         .drawWithCache {
-          if (audioPaletteBackground && ambientModeEnabled &&
+          // With full-screen art the artwork itself is the background; the ambient palette
+          // gradient would paint over it, so it is skipped in that mode.
+          val artBackdrop = fullScreenArt && isPortrait && albumArtBitmap != null
+          if (!artBackdrop && audioPaletteBackground && ambientModeEnabled &&
             (animatedAmbientTop != Color.Transparent || animatedAmbientBottom != Color.Transparent)) {
             val topColor = animatedAmbientTop
             val bottomColor = animatedAmbientBottom
@@ -1788,43 +1805,59 @@ fun AudioPlayerControls(
     val losslessBadge = @Composable {
       if (collapsedAudioBadgeLabel.isNotBlank()) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-          if (isHiRes) {
-            // Gold hi-res marker: appears only for high-resolution lossless audio.
+          val badgeStyle = AudioBadgeStyle.fromId(audioBadgeStyle)
+          val imageBadge = AudioBadgePacks.match(badgeStyle, badgeMatchString)
+          if (badgeStyle != AudioBadgeStyle.Text && imageBadge != null) {
+            MediaBadgeImage(
+              badge = imageBadge,
+              liquidGlass = liquidGlassSurfaces,
+              modifier =
+                Modifier.clickable(
+                  interactionSource = remember { MutableInteractionSource() },
+                  indication = null,
+                ) {
+                  showLosslessDetails = !showLosslessDetails
+                },
+            )
+          } else {
+            if (isHiRes) {
+              // Gold hi-res marker: appears only for high-resolution lossless audio.
+              Text(
+                text = "✦",
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                color = Color(0xFFD4AF37),
+              )
+            }
+            Surface(
+            shape = RoundedCornerShape(4.dp),
+            color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f),
+            border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+            modifier =
+              Modifier.clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+              ) {
+                showLosslessDetails = !showLosslessDetails
+              },
+          ) {
             Text(
-              text = "✦",
-              style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-              color = Color(0xFFD4AF37),
+              text =
+                if (showLosslessDetails && fullLosslessDetailString.isNotBlank()) {
+                  fullLosslessDetailString
+                } else {
+                  collapsedAudioBadgeLabel
+                },
+              style =
+                MaterialTheme.typography.labelSmall.copy(
+                  fontWeight = FontWeight.Bold,
+                  fontSize = 8.5.sp,
+                  letterSpacing = 0.8.sp,
+                ),
+              color = MaterialTheme.colorScheme.onSecondaryContainer,
+              modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
             )
           }
-          Surface(
-          shape = RoundedCornerShape(4.dp),
-          color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f),
-          border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-          modifier =
-            Modifier.clickable(
-              interactionSource = remember { MutableInteractionSource() },
-              indication = null,
-            ) {
-              showLosslessDetails = !showLosslessDetails
-            },
-        ) {
-          Text(
-            text =
-              if (showLosslessDetails && fullLosslessDetailString.isNotBlank()) {
-                fullLosslessDetailString
-              } else {
-                collapsedAudioBadgeLabel
-              },
-            style =
-              MaterialTheme.typography.labelSmall.copy(
-                fontWeight = FontWeight.Bold,
-                fontSize = 8.5.sp,
-                letterSpacing = 0.8.sp,
-              ),
-            color = MaterialTheme.colorScheme.onSecondaryContainer,
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-          )
-        }
+          }
         }
       }
     }

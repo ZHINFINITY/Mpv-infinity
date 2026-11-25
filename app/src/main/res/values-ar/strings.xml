@@ -376,6 +376,8 @@
   <string name="pref_audio_visualizer_galaxy_credit">مستوحى من عمل Zain Raza على CodePen</string>
     <string name="pref_audio_full_screen_art_title">ألبوم بحجم الشاشة الكاملة</string>
   <string name="pref_audio_full_screen_art_summary">ملء مشغّل الموسيقى بالكامل بغلاف الألبوم مع عناصر التحكم فوقه</string>
+  <string name="pref_audio_badge_style_title">نمط شارة الوسائط</string>
+  <string name="pref_audio_badge_style_text">شريط نصي</string>
 <string name="pref_audio_ambient_mode_title">الوضع المحيطي</string>
   <string name="pref_audio_palette_background_title">خلفية لوحة ألوان الألبوم</string>
   <string name="pref_audio_palette_background_summary">استخدام الألوان المستخرجة من غلاف الأغنية الحالية كخلفية لمشغل الموسيقى بدلًا من سمة التطبيق</string>

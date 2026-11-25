@@ -368,6 +368,8 @@
   <string name="pref_audio_visualizer_galaxy_credit">Inspired மூலம் Zain Raza இயக்கம் CodePen</string>
     <string name="pref_audio_full_screen_art_title">முழுத்திரை ஆல்பம் கலை</string>
   <string name="pref_audio_full_screen_art_summary">இசைப்பயனரை முழுவதும் ஆல்பம் உறையால் நிரப்பி, கட்டுப்பாடுகள் அதன் மேல் மிதக்கும்</string>
+  <string name="pref_audio_badge_style_title">ஊடக பேட்ஜ் பாணி</string>
+  <string name="pref_audio_badge_style_text">உரை மாத்திரை</string>
 <string name="pref_audio_ambient_mode_title">சுற்றுப்புற பயன்முறை</string>
   <string name="pref_audio_palette_background_title">ஆல்பம் வண்ணத்தொகுப்பு பின்னணி</string>
   <string name="pref_audio_palette_background_summary">பயன்படுத்து வண்ணங்கள் பெறப்பட்ட இருந்து தற்போதைய பாடல் கலைப்படைப்பு ஆக இசை பிளேயர் பின்னணி பதிலாக இன் பயன்பாடு தீம்</string>

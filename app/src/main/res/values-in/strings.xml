@@ -368,6 +368,8 @@
   <string name="pref_audio_visualizer_galaxy_credit">Terinspirasi oleh Zain Raza di CodePen</string>
     <string name="pref_audio_full_screen_art_title">Seni album layar penuh</string>
   <string name="pref_audio_full_screen_art_summary">Mengisi seluruh pemutar musik dengan sampul album dan kontrol melayang di atasnya</string>
+  <string name="pref_audio_badge_style_title">Gaya lencana media</string>
+  <string name="pref_audio_badge_style_text">Pil teks</string>
 <string name="pref_audio_ambient_mode_title">Mode Sekitar</string>
   <string name="pref_audio_palette_background_title">Latar belakang palet album</string>
   <string name="pref_audio_palette_background_summary">Gunakan warna yang diekstrak dari artwork lagu saat ini sebagai latar belakang pemutar musik, bukan tema aplikasi</string>
