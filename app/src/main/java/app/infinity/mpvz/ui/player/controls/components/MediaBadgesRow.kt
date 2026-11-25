@@ -32,7 +32,7 @@ import coil3.compose.AsyncImage
 import org.koin.compose.koinInject
 
 /**
- * Transparent PNG media badges (Elite-Badges), matched the way mpvRx does it:
+ * Transparent PNG media badges (Elite-Badges), matched by release tag:
  * the release-tag patterns run over every title/name source we have (display
  * title, raw media-title, full path/URL) *and* over a synthetic string derived
  * from the live mpv stream properties (resolution, codecs, channels, bit depth,

@@ -375,7 +375,7 @@
   <string name="pref_audio_visualizer_style_particle">Частицы</string>
   <string name="pref_audio_visualizer_galaxy_credit">Вдохновлено работой Zain Raza на CodePen</string>
     <string name="pref_audio_full_screen_art_title">Обложка на весь экран</string>
-  <string name="pref_audio_full_screen_art_summary">Заполняет весь музыкальный плеер обложкой альбома, элементы управления поверх (стиль mpvRx)</string>
+  <string name="pref_audio_full_screen_art_summary">Заполняет весь музыкальный плеер обложкой альбома, элементы управления поверх</string>
 <string name="pref_audio_ambient_mode_title">Эмбиент режим</string>
   <string name="pref_audio_palette_background_title">Фон из палитры альбома</string>
   <string name="pref_audio_palette_background_summary">Использовать цвета, извлечённые из обложки текущей песни, как фон музыкального проигрывателя вместо темы приложения</string>

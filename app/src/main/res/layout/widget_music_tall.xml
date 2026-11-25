@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Portrait footprints, mpvrx-style: large rounded artwork on top, title/artist,
+<!-- Portrait footprints: large rounded artwork on top, title/artist,
      then circular skip buttons flanking a wide pill play/pause. -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
   android:id="@+id/widget_music_player_root"

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Wide pill behind the play/pause button, like the mpvrx widget. -->
+<!-- Wide pill behind the play/pause button, wide rounded pill. -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
   <solid android:color="#CCE4E7EF" />
   <corners android:radius="24dp" />

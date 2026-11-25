@@ -1404,7 +1404,7 @@ private fun SubtitleApiKeyPreference(
 private enum class FontDownloadRowState { Idle, Downloading, Done, Failed }
 
 /**
- * mpvrx-style Google Fonts browser: a searchable sheet listing every openly licensed Google family
+ * Google Fonts browser: a searchable sheet listing every openly licensed Google family
  * with its category, and one download action per row. The catalog is fetched once on open.
  */
 @Composable

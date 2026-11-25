@@ -188,7 +188,7 @@ internal fun MusicPlayerScreen(
     color = MaterialTheme.colorScheme.surface,
   ) {
     val surfaceColor = MaterialTheme.colorScheme.surface
-    // mpvRx-style backdrop: the album art itself is the background — sharp, full-bleed,
+    // Immersive backdrop: the album art itself is the background — sharp, full-bleed,
     // fading into an ambient Palette wash near the controls (no blur). The colour-gradient
     // ambience alone is the fallback when no artwork exists.
     val backdropUri = snapshot.artworkUri?.takeIf { it.isNotBlank() }?.let { runCatching { Uri.parse(it) }.getOrNull() }
@@ -324,9 +324,10 @@ internal fun MusicPlayerScreen(
             )
           }
         }
-      } else if (fullScreenArt && backdropUri != null) {
-        // mpvRx-style full-screen artwork: no foreground art card — the cover already fills
-        // the window behind, so the controls float over it.
+      } else if (fullScreenArt) {
+        // Full-screen artwork: no foreground art card — the cover fills the window
+        // behind (or the ambient gradient does when there is no artwork), so the
+        // controls float over it.
         Column(
           modifier = Modifier.fillMaxSize(),
           horizontalAlignment = Alignment.CenterHorizontally,
@@ -581,7 +582,7 @@ private fun MusicArtwork(
       .clip(RoundedCornerShape(24.dp))
       .background(MaterialTheme.colorScheme.surfaceVariant)
       .graphicsLayer {
-        // mpvRx-style parallax: the cover tilts and slides with the finger.
+        // Parallax: the cover tilts and slides with the finger.
         val fraction = (visualDrag / 420f).coerceIn(-1f, 1f)
         translationX = visualDrag * 0.55f
         rotationZ = fraction * 2.5f

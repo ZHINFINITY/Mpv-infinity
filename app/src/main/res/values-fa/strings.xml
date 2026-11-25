@@ -367,7 +367,7 @@
   <string name="pref_audio_visualizer_style_particle">ذرات</string>
   <string name="pref_audio_visualizer_galaxy_credit">کارگردان : Zain Raza در CodePen</string>
     <string name="pref_audio_full_screen_art_title">آلبوم تمام‌صفحه</string>
-  <string name="pref_audio_full_screen_art_summary">پرکردن کل پخش‌کننده موسیقی با جلد آلبوم و شناور شدن کنترل‌ها روی آن (سبک mpvRx)</string>
+  <string name="pref_audio_full_screen_art_summary">پرکردن کل پخش‌کننده موسیقی با جلد آلبوم و شناور شدن کنترل‌ها روی آن</string>
 <string name="pref_audio_ambient_mode_title">Mode</string>
   <string name="pref_audio_palette_background_title">بایگانی برچسب ها</string>
   <string name="pref_audio_palette_background_summary">استفاده از رنگ های استخراج شده از آثار آهنگ فعلی به عنوان پس زمینه پخش موسیقی به جای موضوع برنامه</string>

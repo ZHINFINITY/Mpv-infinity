@@ -375,7 +375,7 @@ Weiter: NEXT</string>
   <string name="pref_audio_visualizer_style_particle">Partikel</string>
   <string name="pref_audio_visualizer_galaxy_credit">Inspiriert von Zain Raza auf CodePen</string>
     <string name="pref_audio_full_screen_art_title">Album im Vollbild</string>
-  <string name="pref_audio_full_screen_art_summary">Füllt den ganzen Musikplayer mit dem Albumcover, Steuerungen darüber im mpvRx-Stil</string>
+  <string name="pref_audio_full_screen_art_summary">Füllt den ganzen Musikplayer mit dem Albumcover, Steuerungen darüber</string>
 <string name="pref_audio_ambient_mode_title">Ambient-Modus</string>
   <string name="pref_audio_palette_background_title">Album-Palettenhintergrund</string>
   <string name="pref_audio_palette_background_summary">Farben aus dem Cover des aktuellen Titels als Hintergrund des Musikplayers verwenden, statt des App-Themas</string>

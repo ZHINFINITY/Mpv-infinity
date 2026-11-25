@@ -367,7 +367,7 @@
   <string name="pref_audio_visualizer_style_particle">कण</string>
   <string name="pref_audio_visualizer_galaxy_credit">Zain Raza (CodePen) से प्रेरित</string>
     <string name="pref_audio_full_screen_art_title">पूर्ण स्क्रीन एल्बम आर्ट</string>
-  <string name="pref_audio_full_screen_art_summary">पूरे म्यूज़िक प्लेयर को एल्बम कवर से भरें और नियंत्रण ऊपर तैरें (mpvRx शैली)</string>
+  <string name="pref_audio_full_screen_art_summary">पूरे म्यूज़िक प्लेयर को एल्बम कवर से भरें और नियंत्रण ऊपर तैरें</string>
 <string name="pref_audio_ambient_mode_title">एम्बिएंट मोड</string>
   <string name="pref_audio_palette_background_title">एल्बम पैलेट पृष्ठभूमि</string>
   <string name="pref_audio_palette_background_summary">ऐप थीम के बजाय वर्तमान गीत की कलाकृति से निकाले गए रंगों को म्यूज़िक प्लेयर की पृष्ठभूमि के रूप में उपयोग करें</string>
