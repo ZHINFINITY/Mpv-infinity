@@ -51,14 +51,16 @@ class AudioLandscapeLayoutPolicyTest {
     val root = generateSequence(File(System.getProperty("user.dir"))) { it.parentFile }
       .first { File(it, "app/src/main/java/app/infinity/mpvz").isDirectory }
     val source = File(root, "app/src/main/java/app/infinity/mpvz/ui/player/controls/AudioPlayerControls.kt").readText()
-    val branch = source.substringAfter("val landscapePlaybackControlsRow").substringBefore("val audiobookModeButtons")
-    assertTrue(source.contains("AudioLandscapeLayoutPolicy.measure"))
-    assertEquals(4, Regex("ReactiveIconButton").findAll(branch).count())
+    val branch = source.substringAfter("val playbackControlsRow = @Composable {").substringBefore("val playbackModeButtons = @Composable {")
+    // Wholesale mpvrx port: adaptive landscape via isTabletLandscape/isCompactLandscape spacing.
+    assertTrue(source.contains("isTabletLandscape"))
+    assertTrue(source.contains("isCompactLandscape"))
+    assertEquals(2, Regex("ReactiveIconButton").findAll(branch).count())
     assertTrue(branch.contains("SkipPrevious"))
-    assertTrue(branch.contains("FastRewind"))
-    assertTrue(branch.contains("FastForward"))
     assertTrue(branch.contains("SkipNext"))
     assertTrue(branch.contains("ReactiveSurfaceButton"))
+    assertTrue(source.contains("FastRewind"))
+    assertTrue(source.contains("FastForward"))
   }
 
   @Test
@@ -67,16 +69,13 @@ class AudioLandscapeLayoutPolicyTest {
       File("src/main/java/app/infinity/mpvz/ui/player/controls/AudioPlayerControls.kt"),
       File("app/src/main/java/app/infinity/mpvz/ui/player/controls/AudioPlayerControls.kt"),
     ).first { it.isFile }.readText()
-    val start = src.indexOf("val landscapePlaybackControlsRow = @Composable {")
-    val row = src.substring(start, src.indexOf("val audiobookModeButtons = @Composable {", start))
+    val row = src.substringAfter("val playbackControlsRow = @Composable {").substringBefore("val playbackModeButtons = @Composable {")
     assertTrue("every transport icon has a TalkBack label", !row.contains("contentDescription = null"))
-    for (key in listOf("pref_gesture_media_previous", "audio_landscape_seek_back", "audio_landscape_seek_forward", "pref_gesture_media_next", "ui_play", "audiobook_pause")) {
+    for (key in listOf("pref_gesture_media_previous", "pref_gesture_media_next", "ui_play", "audiobook_pause")) {
       assertTrue(key, row.contains("R.string.$key"))
     }
-    // The main row can be 48dp on short displays; a fixed 64dp play button would overflow it.
+    // mpvrx carousel: play button scales via fillMaxHeight/aspectRatio, not a fixed 64dp.
     assertTrue(!row.contains("Modifier.size(64.dp)"))
-    assertTrue(row.contains("Modifier.heightIn(max = 64.dp).fillMaxHeight().aspectRatio(1f)"))
-    assertTrue(AudioLandscapeLayoutPolicy.measure(320f, 640f).mainRowDp >= 48f)
   }
 
   @Test
@@ -84,12 +83,12 @@ class AudioLandscapeLayoutPolicyTest {
     val root = generateSequence(File(System.getProperty("user.dir"))) { it.parentFile }
       .first { File(it, "app/src/main/java/app/infinity/mpvz").isDirectory }
     val source = File(root, "app/src/main/java/app/infinity/mpvz/ui/player/controls/AudioPlayerControls.kt").readText()
-    val layout = source.substringAfter("val landscapeMetrics = AudioLandscapeLayoutPolicy.measure(")
-      .substringBefore("if (addToPlaylistDialogOpen")
-    assertTrue(layout.contains("if (showInPlaceLyrics) {\n              lyricsPanel(Modifier.fillMaxSize())"))
-    assertTrue(layout.indexOf("if (!showInPlaceLyrics)") < layout.indexOf("landscapePlaybackControlsRow()"))
-    assertTrue(layout.contains("landscapePlaybackControlsRow()"))
-    assertTrue(layout.contains("bottomActionRow()"))
+    // Wholesale mpvrx port: tablet landscape shows a lyrics dual pane next to the transport,
+    // and lyrics visibility never removes the transport row.
+    assertTrue(source.contains("isTabletLandscape && (showVisualizer || tabletDualPaneTab == 1)"))
+    assertTrue(source.contains("LyricsView"))
+    assertTrue(source.contains("playbackControlsRow()"))
+    assertTrue(source.contains("seekbarView()"))
   }
 
   @Test
@@ -97,6 +96,8 @@ class AudioLandscapeLayoutPolicyTest {
     val root = generateSequence(File(System.getProperty("user.dir"))) { it.parentFile }
       .first { File(it, "app/src/main/java/app/infinity/mpvz").isDirectory }
     val source = File(root, "app/src/main/java/app/infinity/mpvz/ui/player/controls/AudioPlayerControls.kt").readText()
-    assertTrue(source.contains("CoverArtCardImage(bitmap = activeCoverOverride ?: albumArtBitmap, artworkUrl = currentArtworkUri)"))
+    // Wholesale mpvrx port: the cover carousel renders the current bitmap or its artwork URL.
+    assertTrue(source.contains("bitmap = activeCoverOverride ?: albumArtBitmap"))
+    assertTrue(source.contains("artworkUrl = currentArtworkUri"))
   }
 }

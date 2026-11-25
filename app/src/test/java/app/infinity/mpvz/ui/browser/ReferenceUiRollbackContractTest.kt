@@ -32,7 +32,7 @@ class ReferenceUiRollbackContractTest {
       // Mpv-infinity aspect-recovery follow-up: decoder changes can retry the remembered failed video track.
       // Local playback follow-up: suppress local-startup false buffering until the first frame while retaining remote cache stalls.
       // Native follow-up: loading-ahead does not show a buffering spinner while Media3 is playing.
-      "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "e0973083328ae3e85bc7f74e3efe5f7d7b01c22aa9eb24dbcf494077f31d8dca" /* wholesale port: glass scene removed from the music path */,
+      "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "0e4a84da95c029d2017c01a0da08135d4de6e819807e53c0eeca0a383bc3a129" /* wholesale port + foreign-branding sweep */,
       // Owner follow-up: music uses its legacy visual rail while video retains the global-glass path.
       "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/Seekbar.kt" to "5e3cbc03be3aa7b35f464e0ee313615192d8d1cdcfbc7e8a819b7a6c2331843c",
       // Build 1910: shared rimLight/thick-surface routing is intentionally owned by this stream.
@@ -638,8 +638,9 @@ half4 main(float2 p) {
     assertTrue(lyrics.contains("glassContentColor = if (onlineSelected) MaterialTheme.colorScheme.onPrimaryContainer else null"))
 
     val controls = read("app/src/main/java/app/infinity/mpvz/ui/player/controls/AudioPlayerControls.kt")
-    assertTrue(controls.contains("glassContainerColor = if (selectedTab == 0) MaterialTheme.colorScheme.primaryContainer else null"))
-    assertTrue(controls.contains("glassContentColor = if (selectedTab == 1) MaterialTheme.colorScheme.onPrimaryContainer else null"))
+    // Wholesale mpvrx port: selected chips are material3 FilterChips tinted with Material colors.
+    assertTrue(controls.contains("selectedContainerColor = MaterialTheme.colorScheme.primaryContainer"))
+    assertTrue(controls.contains("selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer"))
 
     val translation = read("app/src/main/java/app/infinity/mpvz/ui/player/controls/components/sheets/LyricsTranslateDialog.kt")
     assertTrue(translation.contains("glassContainerColor = if (displayMode == LyricsTranslationDisplayMode.DualLine) MaterialTheme.colorScheme.primaryContainer else null"))

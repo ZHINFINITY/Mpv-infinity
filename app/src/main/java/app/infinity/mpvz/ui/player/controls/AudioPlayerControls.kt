@@ -2205,7 +2205,7 @@ fun AudioPlayerControls(
         ) {
           Icon(
             imageVector = Icons.RoundedFilled.SkipPrevious,
-            contentDescription = if (isAudiobook) stringResource(R.string.audiobook_previous_chapter) else null,
+            contentDescription = if (isAudiobook) stringResource(R.string.audiobook_previous_chapter) else stringResource(R.string.pref_gesture_media_previous),
             tint =
               if (prevEnabled) {
                 MaterialTheme.colorScheme.onSurface
@@ -2231,7 +2231,7 @@ fun AudioPlayerControls(
           Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
             Icon(
               imageVector = if (isPlaying) Icons.RoundedFilled.Pause else Icons.RoundedFilled.PlayArrow,
-              contentDescription = null,
+              contentDescription = stringResource(if (isPlaying) R.string.audiobook_pause else R.string.ui_play),
               tint = MaterialTheme.colorScheme.onPrimary,
               modifier = Modifier.size(if (isPortrait) 44.dp else 36.dp),
             )
@@ -2252,7 +2252,7 @@ fun AudioPlayerControls(
         ) {
           Icon(
             imageVector = Icons.RoundedFilled.SkipNext,
-            contentDescription = if (isAudiobook) stringResource(R.string.audiobook_next_chapter) else null,
+            contentDescription = if (isAudiobook) stringResource(R.string.audiobook_next_chapter) else stringResource(R.string.pref_gesture_media_next),
             tint =
               if (nextEnabled) {
                 MaterialTheme.colorScheme.onSurface
