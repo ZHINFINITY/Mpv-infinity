@@ -27,6 +27,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.layout.ContentScale
+import coil3.compose.AsyncImage
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -152,21 +154,35 @@ fun AudioMiniPlayer(modifier: Modifier = Modifier) {
           }.padding(horizontal = 12.dp, vertical = 8.dp),
       verticalAlignment = Alignment.CenterVertically,
     ) {
-      // Music Icon Badge
-      Box(
-        modifier =
-          Modifier
-            .size(42.dp)
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.surfaceVariant),
-        contentAlignment = Alignment.Center,
-      ) {
-        MiniAudioVisualizer(
-          isPlaying = isPlaying,
-          color = MaterialTheme.colorScheme.primary,
-          modifier = Modifier.size(width = 20.dp, height = 18.dp),
-          barCount = 3,
+      // Album art (real cover when the session has one, visualizer fallback) —
+      // mpvrx's mini player always shows the artwork thumbnail, never a plain icon.
+      val artworkModel = sessionState.currentItem?.artworkUri
+      if (!artworkModel.isNullOrBlank()) {
+        AsyncImage(
+          model = artworkModel,
+          contentDescription = null,
+          contentScale = ContentScale.Crop,
+          modifier =
+            Modifier
+              .size(42.dp)
+              .clip(RoundedCornerShape(10.dp)),
         )
+      } else {
+        Box(
+          modifier =
+            Modifier
+              .size(42.dp)
+              .clip(CircleShape)
+              .background(MaterialTheme.colorScheme.surfaceVariant),
+          contentAlignment = Alignment.Center,
+        ) {
+          MiniAudioVisualizer(
+            isPlaying = isPlaying,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(width = 20.dp, height = 18.dp),
+            barCount = 3,
+          )
+        }
       }
 
       Spacer(modifier = Modifier.width(12.dp))

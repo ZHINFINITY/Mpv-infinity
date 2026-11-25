@@ -1720,7 +1720,7 @@ fun AudioPlayerControls(
               .matchParentSize()
               .background(
                 Brush.verticalGradient(
-                  0.45f to Color.Transparent,
+                  0.7f to Color.Transparent,
                   1f to baseSurfaceColor,
                 ),
               ),
@@ -1760,7 +1760,7 @@ fun AudioPlayerControls(
             .graphicsLayer { alpha = MusicMinimizeTransitionPolicy.chromeAlpha(currentMiniProgress()) }
             .background(
               Brush.verticalGradient(
-                listOf(Color.Black.copy(alpha = 0.4f), Color.Transparent, Color.Transparent),
+                listOf(Color.Black.copy(alpha = 0.25f), Color.Transparent, Color.Transparent),
               ),
             ),
       )

@@ -41,6 +41,14 @@ internal data class MediaBadge(
   val imageUrl: String,
 )
 
+/** Bridge so a cached local pack badge renders through the pack image composable. */
+internal fun MediaBadgeProxy(badge: app.infinity.mpvz.utils.media.MediaBadge): MediaBadge =
+  MediaBadge(
+    name = badge.name,
+    pattern = badge.pattern,
+    imageUrl = java.io.File(badge.assetPath).let { if (it.isFile) it.toURI().toString() else badge.assetPath },
+  )
+
 /**
  * Image media badges from the open FR-Badges and Nuvio badge kits. Each style resolves to a
  * pack; a badge matches the track's format string and renders the pack's artwork.
