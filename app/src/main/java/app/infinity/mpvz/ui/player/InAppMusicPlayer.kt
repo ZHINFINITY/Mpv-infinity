@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
  *
  * Copyright (c) 2026 ZHINFINITY. Mpv∞ Covered Code.
- * In-app music sheet derived from an AGPL-3.0-or-later codebase (see LICENSE-BOUNDARY.md).
+ * In-app music sheet adapted from mpvRx (AGPL-3.0-or-later) with permission.
  * See LICENSE-BOUNDARY.md.
  */
 

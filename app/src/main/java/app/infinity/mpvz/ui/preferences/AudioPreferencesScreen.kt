@@ -81,7 +81,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import app.infinity.mpvz.ui.browser.music.MusicTab
-import app.infinity.mpvz.ui.player.controls.AudioBadgeStyle
 
 @Serializable
 object AudioPreferencesScreen : Screen {
@@ -354,45 +353,6 @@ object AudioPreferencesScreen : Screen {
                     color = MaterialTheme.colorScheme.outline,
                   )
                 },
-              )
-
-              PreferenceDivider()
-              val audioFullScreenArt by preferences.audioFullScreenArt.collectAsState()
-              SwitchPreference(
-                modifier = Modifier.settingsSearchTarget(R.string.pref_audio_full_screen_art_title),
-                value = audioFullScreenArt,
-                onValueChange = { preferences.audioFullScreenArt.set(it) },
-                title = { Text(stringResource(R.string.pref_audio_full_screen_art_title)) },
-                summary = {
-                  Text(
-                    stringResource(R.string.pref_audio_full_screen_art_summary),
-                    color = MaterialTheme.colorScheme.outline,
-                  )
-                },
-              )
-
-              PreferenceDivider()
-              val audioBadgeStyle by preferences.audioBadgeStyle.collectAsState()
-              ListPreference(
-                value = AudioBadgeStyle.fromId(audioBadgeStyle),
-                onValueChange = { preferences.audioBadgeStyle.set(it.id) },
-                values = AudioBadgeStyle.entries.toList(),
-                title = { Text(stringResource(R.string.pref_audio_badge_style_title)) },
-                summary = {
-                  Text(
-                    when (AudioBadgeStyle.fromId(audioBadgeStyle)) {
-                      AudioBadgeStyle.Text -> stringResource(R.string.pref_audio_badge_style_text)
-                      AudioBadgeStyle.GlassVibrant -> "Glass Vibrant"
-                      AudioBadgeStyle.Neon -> "Neon"
-                      AudioBadgeStyle.Solid -> "Solid"
-                      AudioBadgeStyle.Frost -> "Frost"
-                      AudioBadgeStyle.Liquid -> "Liquid Glass"
-                      AudioBadgeStyle.Prism -> "Prism"
-                    },
-                    color = MaterialTheme.colorScheme.outline,
-                  )
-                },
-                valueToText = { AnnotatedString(it.name) },
               )
 
               PreferenceDivider()

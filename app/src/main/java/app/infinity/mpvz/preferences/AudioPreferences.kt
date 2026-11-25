@@ -36,16 +36,6 @@ class AudioPreferences(
   val audioAmbientMode = preferenceStore.getBoolean("audio_ambient_mode", true)
   /** Use artwork-derived colors for the music player background instead of the app theme. */
   val audioPaletteBackground = preferenceStore.getBoolean("audio_palette_background", true)
-  /**
-   * Full-screen artwork: the album cover fills the entire music player window and
-   * the controls float over it, instead of a separate artwork card above the controls.
-   */
-  val audioFullScreenArt = preferenceStore.getBoolean("audio_full_screen_art", true)
-  /**
-   * Media badge style for the Now Playing screen: a text pill or one of the image badge
-   * packs (matched against the track's codec/format string).
-   */
-  val audioBadgeStyle = preferenceStore.getString("audio_badge_style", "text")
   val audioStandbyMode = preferenceStore.getBoolean("audio_standby_mode", false)
   val audioStandbyDelaySeconds = preferenceStore.getInt("audio_standby_delay_seconds", 5)
   val audioWavySeekbar = preferenceStore.getBoolean("audio_wavy_seekbar", true)

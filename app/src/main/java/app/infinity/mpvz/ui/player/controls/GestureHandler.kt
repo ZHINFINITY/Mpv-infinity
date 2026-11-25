@@ -636,11 +636,9 @@ fun GestureHandler(
               getSubtitlePosition(subtitleGestureLane ?: SubtitleLane.Primary, size.width.toFloat(), size.height.toFloat())
             var lastSubtitlePosition = originalSubtitlePosition
             val brightnessGestureSens = 0.001f
-            // Smooth volume response: higher sensitivity so the slider tracks the
-            // finger, and sub-percent updates pass through (changeVolumePercentTo
-            // handles float precision internally) instead of jumping whole numbers.
-            val volumeGestureSens = 0.25f
-            val mpvVolumeGestureSens = 0.25f
+            // Match the anime4k gesture feel, but snap to whole-number volume steps.
+            val volumeGestureSens = 0.1f
+            val mpvVolumeGestureSens = 0.1f
             val subtitlePositionGestureSens = 0.08f
 
             // Original speed for long press

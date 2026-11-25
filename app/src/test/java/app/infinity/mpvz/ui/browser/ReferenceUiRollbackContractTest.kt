@@ -28,11 +28,11 @@ class ReferenceUiRollbackContractTest {
     val expected = mapOf(
       // Build 1910 smoothness: chapter index via derivedStateOf so position ticks do not recompose the whole overlay.
       // Auto-hide follow-up: loading does not pin controls; seekbar and button rows share one visibility transition.
-      // Center transport hides during buffering, matching v2.2.2, without hiding other control groups.
+      // Center transport hides during buffering, matching v2.2.2 and MPV-RX without hiding other control groups.
       // Mpv-infinity aspect-recovery follow-up: decoder changes can retry the remembered failed video track.
       // Local playback follow-up: suppress local-startup false buffering until the first frame while retaining remote cache stalls.
       // Native follow-up: loading-ahead does not show a buffering spinner while Media3 is playing.
-      "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "0e4a84da95c029d2017c01a0da08135d4de6e819807e53c0eeca0a383bc3a129" /* wholesale port + foreign-branding sweep */,
+      "app/src/main/java/app/infinity/mpvz/ui/player/controls/PlayerControls.kt" to "abb8eae51dda0bb0bab5fb53f69a73d440c147f81e29c053272ca24bf7666fdf" /* Badge size and mpv named-color parser updates; translated overlay removed with the old cue translator */,
       // Owner follow-up: music uses its legacy visual rail while video retains the global-glass path.
       "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/Seekbar.kt" to "5e3cbc03be3aa7b35f464e0ee313615192d8d1cdcfbc7e8a819b7a6c2331843c",
       // Build 1910: shared rimLight/thick-surface routing is intentionally owned by this stream.
@@ -638,9 +638,8 @@ half4 main(float2 p) {
     assertTrue(lyrics.contains("glassContentColor = if (onlineSelected) MaterialTheme.colorScheme.onPrimaryContainer else null"))
 
     val controls = read("app/src/main/java/app/infinity/mpvz/ui/player/controls/AudioPlayerControls.kt")
-    // Wholesale mpvrx port: selected chips are material3 FilterChips tinted with Material colors.
-    assertTrue(controls.contains("selectedContainerColor = MaterialTheme.colorScheme.primaryContainer"))
-    assertTrue(controls.contains("selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer"))
+    assertTrue(controls.contains("glassContainerColor = if (selectedTab == 0) MaterialTheme.colorScheme.primaryContainer else null"))
+    assertTrue(controls.contains("glassContentColor = if (selectedTab == 1) MaterialTheme.colorScheme.onPrimaryContainer else null"))
 
     val translation = read("app/src/main/java/app/infinity/mpvz/ui/player/controls/components/sheets/LyricsTranslateDialog.kt")
     assertTrue(translation.contains("glassContainerColor = if (displayMode == LyricsTranslationDisplayMode.DualLine) MaterialTheme.colorScheme.primaryContainer else null"))

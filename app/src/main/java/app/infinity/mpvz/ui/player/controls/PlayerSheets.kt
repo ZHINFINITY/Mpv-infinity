@@ -625,13 +625,6 @@ fun PlayerSheets(
       )
     }
 
-    Sheets.LyricsProvider -> {
-      app.infinity.mpvz.ui.player.controls.components.sheets.LyricsSheet(
-        viewModel = viewModel,
-        onDismiss = onDismissRequest,
-      )
-    }
-
     Sheets.AudiobookRewind,
     Sheets.AudiobookSleepTimer -> {
       app.infinity.mpvz.ui.player.controls.components.sheets.AudiobookSheet(

@@ -618,7 +618,7 @@ private fun SyncOffsetButton(
  * a stalled poll cannot run ahead.
  */
 @Composable
-internal fun rememberSmoothedPositionMs(
+private fun rememberSmoothedPositionMs(
   rawPositionMs: Long,
   isPlaying: Boolean,
   speed: Float,
@@ -647,7 +647,7 @@ internal fun rememberSmoothedPositionMs(
 
 /** Smooth karaoke fill: a glowing active layer is revealed continuously from left to right. */
 @Composable
-internal fun AnimatedLyricWord(
+private fun AnimatedLyricWord(
   word: SyncedWord,
   endTimeMs: Long,
   positionMs: State<Long>,

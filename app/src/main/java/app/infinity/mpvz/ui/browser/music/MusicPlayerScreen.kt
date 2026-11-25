@@ -9,12 +9,8 @@ import android.content.res.Configuration
 import android.net.Uri
 import android.text.format.DateUtils
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -30,7 +26,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -55,15 +51,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -73,17 +64,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import coil3.compose.AsyncImage
-import app.infinity.mpvz.preferences.AudioPreferences
-import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.ui.icons.Icon
-import app.infinity.mpvz.presentation.components.RemoteImageLoader
-import okhttp3.OkHttpClient
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.controls.components.MiniAudioVisualizer
 import app.infinity.mpvz.utils.media.MediaInfoOps
-import org.koin.compose.koinInject
 import java.util.Locale
 import kotlin.math.roundToLong
 
@@ -95,8 +79,6 @@ private enum class MusicPlayerSheet {
 private data class LoadedSourceAudioInfo(
   val codec: String,
   val format: MusicSourceAudioFormat?,
-  val channels: Int? = null,
-  val bitRateBps: Int? = null,
 )
 
 @Composable
@@ -109,26 +91,14 @@ internal fun MusicPlayerScreen(
   val context = LocalContext.current
   val configuration = LocalConfiguration.current
   val landscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-  val preferences = koinInject<AudioPreferences>()
-  val fullScreenArt by preferences.audioFullScreenArt.collectAsState()
   var loadedSourceInfo by remember(snapshot.currentUri) { mutableStateOf<LoadedSourceAudioInfo?>(null) }
   var openSheet by remember { mutableStateOf<MusicPlayerSheet?>(null) }
-  val sourceInfoCache = remember { mutableMapOf<String, LoadedSourceAudioInfo>() }
 
   LaunchedEffect(snapshot.currentUri, snapshot.title) {
-    val uriText = snapshot.currentUri ?: return@LaunchedEffect
-    sourceInfoCache[uriText]?.let {
-      loadedSourceInfo = it
-      return@LaunchedEffect
-    }
     loadedSourceInfo = null
+    val uriText = snapshot.currentUri ?: return@LaunchedEffect
     val uri = runCatching { Uri.parse(uriText) }.getOrNull() ?: return@LaunchedEffect
-    // Stream URLs (Jellyfin "stream?static=true", Navidrome "stream.view") have no useful
-    // lastPathSegment; the queue item's own extension is the better MediaInfo hint.
-    val fileName =
-      snapshot.sourceExtension?.let { "audio.$it" }
-        ?: uri.lastPathSegment?.substringAfterLast('/')?.ifBlank { null }
-        ?: "audio"
+    val fileName = uri.lastPathSegment?.substringAfterLast('/')?.ifBlank { null } ?: "audio"
     val audio =
       MediaInfoOps.getMediaInfo(context, uri, fileName)
         .getOrNull()
@@ -144,149 +114,25 @@ internal fun MusicPlayerScreen(
         MusicSourceAudioFormatPolicy.fromSourceMetadata(
           bitDepthText = it.bitDepth,
           sampleRateText = it.samplingRate,
-          formatProfileText = it.formatProfile,
         )
       }
-    val channels = audio?.channels?.trim()?.removeSuffix("ch")?.trim()?.toIntOrNull()
-    val bitRateBps = audio?.bitRate?.trim()?.toIntOrNull()?.times(1_000)
-    LoadedSourceAudioInfo(sourceCodec, sourceFormat, channels, bitRateBps).also { cached ->
-      loadedSourceInfo = cached
-      // Cache successful probes only: a failed extraction (no format, no codec, no
-      // bitrate) must stay uncached so the next visit retries instead of pinning a
-      // blank result forever.
-      if (cached.codec.isNotBlank() || cached.format != null || cached.bitRateBps != null) {
-        sourceInfoCache[uriText] = cached
-      }
-    }
+    loadedSourceInfo = LoadedSourceAudioInfo(sourceCodec, sourceFormat)
   }
 
   val losslessLabel =
     MusicSourceAudioFormatPolicy.headerLabel(
       codecOrExtension =
         loadedSourceInfo?.codec?.takeIf { it.isNotBlank() }
-          ?: snapshot.sourceExtension?.takeIf { it.isNotBlank() },
+          ?: snapshot.sourceExtension
+          ?: snapshot.currentUri?.substringAfterLast('.')?.substringBefore('?'),
       sourceFormat = loadedSourceInfo?.format,
     )
-  // Compact badge between the timestamps: "FLAC · LOSSLESS · 24-BIT · 96 KHZ".
-  val formatBadgeLabel = losslessLabel?.let { label ->
-    val codecToken =
-      loadedSourceInfo?.codec?.takeIf { it.isNotBlank() }?.trim()?.uppercase(Locale.ROOT)
-        ?: snapshot.sourceExtension?.takeIf { it.isNotBlank() }?.trim()?.uppercase(Locale.ROOT)
-    if (codecToken.isNullOrBlank() || label.startsWith(codecToken)) label else "$codecToken · $label"
-  }
-  // Hi-res audio: 24-bit or better depth, or a sample rate of 96 kHz and above.
-  val hiResAudio = loadedSourceInfo?.format?.let { format ->
-    (format.bitDepth ?: 0) >= 24 || (format.sampleRateHz ?: 0) >= 96_000
-  } ?: false
-
-  // Ambience backdrop: dominant album-art colors behind the player, for both portrait and
-  // landscape layouts. Mirrors the MPV video ambience so both engines get the treatment.
-  var ambienceColors by remember(snapshot.artworkUri) {
-    mutableStateOf<AmbienceColors?>(null)
-  }
-  LaunchedEffect(snapshot.artworkUri) {
-    val art = snapshot.artworkUri?.takeIf { it.isNotBlank() } ?: return@LaunchedEffect
-    val bitmap =
-      RemoteImageLoader.getFromMemory(art)
-        ?: RemoteImageLoader.load(context, OkHttpClient(), art)
-    val colors = bitmap?.let { withContext(Dispatchers.Default) { AmbienceColors.from(it) } }
-    if (colors != null) ambienceColors = colors
-  }
 
   BackHandler(onBack = onBackPress)
   Surface(
     modifier = Modifier.fillMaxSize(),
     color = MaterialTheme.colorScheme.surface,
   ) {
-    val surfaceColor = MaterialTheme.colorScheme.surface
-    // Immersive backdrop: the album art itself is the background — sharp, full-bleed,
-    // fading into an ambient Palette wash near the controls (no blur). The colour-gradient
-    // ambience alone is the fallback when no artwork exists.
-    val backdropUri = snapshot.artworkUri?.takeIf { it.isNotBlank() }?.let { runCatching { Uri.parse(it) }.getOrNull() }
-    val washAnimation = remember { Animatable(0f) }
-    LaunchedEffect(ambienceColors) {
-      washAnimation.animateTo(1f, animationSpec = tween(durationMillis = 800))
-    }
-    val washAlpha = washAnimation.value
-    val vibrantWash = ambienceColors?.accent?.let { Color(it) } ?: surfaceColor
-    val baseWash = ambienceColors?.base?.let(::Color) ?: surfaceColor
-    if (backdropUri != null) {
-      AsyncImage(
-        model = backdropUri,
-        contentDescription = null,
-        contentScale = ContentScale.Crop,
-        modifier = Modifier.fillMaxSize(),
-      )
-      // Ambient colour wash: vibrant up top, deep tone near the controls.
-      Box(
-        Modifier
-          .fillMaxSize()
-          .background(
-            Brush.verticalGradient(
-              colors =
-                listOf(
-                  vibrantWash.copy(alpha = 0.50f * washAlpha),
-                  vibrantWash.copy(alpha = 0.30f * washAlpha),
-                  baseWash.copy(alpha = 0.62f * washAlpha),
-                ),
-            ),
-          ),
-      )
-      // Vignette for header/control readability over bright covers, then the bottom fade
-      // that melts the cover into the wash.
-      Box(
-        Modifier
-          .fillMaxSize()
-          .background(
-            Brush.verticalGradient(
-              colors = listOf(Color.Black.copy(alpha = 0.42f), Color.Transparent, Color.Black.copy(alpha = 0.20f)),
-            ),
-          ),
-      )
-      // Full-screen art keeps the cover visible to the bottom; controls float over a dark
-      // readability gradient instead of melting into the surface.
-      if (fullScreenArt) {
-        Box(
-          Modifier
-            .fillMaxSize()
-            .background(
-              Brush.verticalGradient(
-                0f to Color.Transparent,
-                0.42f to Color.Transparent,
-                1f to Color.Black.copy(alpha = 0.72f),
-              ),
-            ),
-        )
-      } else {
-        Box(
-          Modifier
-            .fillMaxSize()
-            .background(
-              Brush.verticalGradient(
-                0f to Color.Transparent,
-                0.48f to Color.Transparent,
-                0.86f to surfaceColor.copy(alpha = 0.88f),
-                1f to surfaceColor,
-              ),
-            ),
-        )
-      }
-    } else {
-      Box(
-        Modifier
-          .fillMaxSize()
-          .background(
-            Brush.verticalGradient(
-              colors =
-                listOf(
-                  baseWash,
-                  vibrantWash.copy(alpha = 0.55f),
-                  surfaceColor,
-                ),
-            ),
-          ),
-      )
-    }
     BoxWithConstraints(
       modifier = Modifier
         .fillMaxSize()
@@ -301,8 +147,6 @@ internal fun MusicPlayerScreen(
           MusicArtwork(
             artworkUri = snapshot.artworkUri,
             isPlaying = snapshot.isPlaying,
-            onSwipeNext = { controller?.seekToNext() },
-            onSwipePrevious = { controller?.seekToPrevious() },
             modifier = Modifier
               .weight(0.36f)
               .fillMaxHeight(0.88f)
@@ -335,39 +179,6 @@ internal fun MusicPlayerScreen(
             )
           }
         }
-      } else if (fullScreenArt) {
-        // Full-screen artwork: no foreground art card — the cover fills the window
-        // behind (or the ambient gradient does when there is no artwork), so the
-        // controls float over it.
-        Column(
-          modifier = Modifier.fillMaxSize(),
-          horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-          MusicHeader(
-            landscape = false,
-            losslessLabel = losslessLabel,
-            onBackPress = onBackPress,
-            onInfo = { openSheet = MusicPlayerSheet.SOURCE_INFO },
-            modifier = Modifier.fillMaxWidth(),
-          )
-          Spacer(Modifier.weight(1f))
-          MusicTrackInfo(snapshot = snapshot, modifier = Modifier.fillMaxWidth())
-          MusicTimeline(
-            snapshot = snapshot,
-            controller = controller,
-            formatBadge = formatBadgeLabel,
-            hiRes = hiResAudio,
-            modifier = Modifier.fillMaxWidth(),
-          )
-          MusicTransport(snapshot = snapshot, controller = controller, modifier = Modifier.fillMaxWidth())
-          MusicSecondaryControls(
-            snapshot = snapshot,
-            controller = controller,
-            onQueue = { openSheet = MusicPlayerSheet.QUEUE },
-            modifier = Modifier.fillMaxWidth(),
-          )
-          Spacer(Modifier.height(8.dp))
-        }
       } else {
         Column(
           modifier = Modifier
@@ -385,13 +196,9 @@ internal fun MusicPlayerScreen(
           MusicArtwork(
             artworkUri = snapshot.artworkUri,
             isPlaying = snapshot.isPlaying,
-            onSwipeNext = { controller?.seekToNext() },
-            onSwipePrevious = { controller?.seekToPrevious() },
-            // Full-screen feel: the art dominates the portrait layout instead of a
-            // small capped square.
             modifier = Modifier
-              .fillMaxWidth()
-              .fillMaxHeight(0.62f)
+              .fillMaxWidth(0.88f)
+              .sizeIn(maxWidth = 340.dp, maxHeight = 340.dp)
               .aspectRatio(1f)
               .padding(top = 14.dp),
           )
@@ -427,7 +234,7 @@ internal fun MusicPlayerScreen(
               },
               modifier = Modifier.fillMaxWidth(),
             ) {
-              Column(modifier = Modifier.weight(1f)) {
+              Column(modifier = Modifier.fillMaxWidth()) {
                 Text(
                   text = item.title.ifBlank { "Audio Track" },
                   maxLines = 1,
@@ -443,13 +250,6 @@ internal fun MusicPlayerScreen(
                   color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
               }
-              IconButton(onClick = { controller?.removeMediaItem(index) }) {
-                Icon(
-                  Icons.RoundedFilled.Close,
-                  contentDescription = "Remove from queue",
-                  tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-              }
             }
           }
         }
@@ -459,8 +259,6 @@ internal fun MusicPlayerScreen(
         SourceInfoContent(
           codec = loadedSourceInfo?.codec?.takeIf { it.isNotBlank() } ?: snapshot.sourceExtension,
           sourceFormat = loadedSourceInfo?.format,
-          channels = loadedSourceInfo?.channels,
-          bitRateBps = loadedSourceInfo?.bitRateBps,
           modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp),
         )
       }
@@ -492,22 +290,15 @@ private fun MusicHeader(
         }
         if (losslessLabel != null) LosslessBadge(label = losslessLabel)
       }
-      Row(
-        modifier = Modifier.align(Alignment.Center).fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-      ) {
-        Spacer(modifier = Modifier.weight(0.25f))
-        Text(
-          text = "Now Playing",
-          modifier = Modifier.weight(0.5f),
-          style = MaterialTheme.typography.titleMedium,
-          textAlign = TextAlign.Center,
-          maxLines = 1,
-          overflow = TextOverflow.Ellipsis,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(modifier = Modifier.weight(0.25f))
-      }
+      Text(
+        text = "Now Playing",
+        modifier = Modifier.align(Alignment.Center).padding(horizontal = 142.dp),
+        style = MaterialTheme.typography.titleMedium,
+        textAlign = TextAlign.Center,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+      )
       IconButton(onClick = onInfo, modifier = Modifier.align(Alignment.CenterEnd)) {
         Icon(
           imageVector = Icons.RoundedFilled.Info,
@@ -580,52 +371,11 @@ private fun MusicArtwork(
   artworkUri: String?,
   isPlaying: Boolean,
   modifier: Modifier = Modifier,
-  onSwipeNext: (() -> Unit)? = null,
-  onSwipePrevious: (() -> Unit)? = null,
 ) {
-  val haptics = LocalHapticFeedback.current
-  var dragOffset by remember { mutableFloatStateOf(0f) }
-  val dragAnimation = remember { Animatable(0f) }
-  val settledDrag by animateFloatAsState(targetValue = dragOffset, animationSpec = tween(90))
-  LaunchedEffect(dragOffset) {
-    if (dragOffset == 0f && dragAnimation.value != 0f) {
-      dragAnimation.animateTo(0f, animationSpec = tween(220))
-      dragAnimation.snapTo(0f)
-    }
-  }
-  val visualDrag = if (dragOffset == 0f) dragAnimation.value else settledDrag
   Box(
     modifier = modifier
       .clip(RoundedCornerShape(24.dp))
-      .background(MaterialTheme.colorScheme.surfaceVariant)
-      .graphicsLayer {
-        // Parallax: the cover tilts and slides with the finger.
-        val fraction = (visualDrag / 420f).coerceIn(-1f, 1f)
-        translationX = visualDrag * 0.55f
-        rotationZ = fraction * 2.5f
-        val shrink = 1f - 0.05f * kotlin.math.abs(fraction)
-        scaleX = shrink
-        scaleY = shrink
-      }
-      .pointerInput(onSwipeNext, onSwipePrevious) {
-        detectHorizontalDragGestures(
-          onDragStart = { dragOffset = 0f },
-          onDragEnd = {
-            if (dragOffset > 140f) {
-              haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-              onSwipeNext?.invoke()
-            } else if (dragOffset < -140f) {
-              haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-              onSwipePrevious?.invoke()
-            }
-            dragOffset = 0f
-          },
-          onDragCancel = { dragOffset = 0f },
-        ) { change, dragAmount ->
-          change.consume()
-          dragOffset += dragAmount
-        }
-      },
+      .background(MaterialTheme.colorScheme.surfaceVariant),
     contentAlignment = Alignment.Center,
   ) {
     val parsedUri = artworkUri?.let { runCatching { Uri.parse(it) }.getOrNull() }
@@ -694,8 +444,6 @@ private fun MusicTrackInfo(
 private fun MusicTimeline(
   snapshot: MusicPlaybackSnapshot,
   controller: MediaController?,
-  formatBadge: String? = null,
-  hiRes: Boolean = false,
   modifier: Modifier = Modifier,
 ) {
   val duration = snapshot.durationMs
@@ -716,48 +464,10 @@ private fun MusicTimeline(
       },
       enabled = duration > 0L,
     )
-    Box(modifier = Modifier.fillMaxWidth()) {
-      Text(
-        text = formatTime((progress * duration).toLong()),
-        style = MaterialTheme.typography.labelMedium,
-        modifier = Modifier.align(Alignment.CenterStart),
-      )
-      Text(
-        text = formatTime(duration),
-        style = MaterialTheme.typography.labelMedium,
-        modifier = Modifier.align(Alignment.CenterEnd),
-      )
-      if (hiRes || !formatBadge.isNullOrBlank()) {
-        Row(
-          modifier = Modifier.align(Alignment.Center),
-          horizontalArrangement = Arrangement.spacedBy(6.dp),
-          verticalAlignment = Alignment.CenterVertically,
-        ) {
-          if (hiRes) HiResBadge()
-          if (!formatBadge.isNullOrBlank()) LosslessBadge(label = formatBadge)
-        }
-      }
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+      Text(formatTime((progress * duration).toLong()), style = MaterialTheme.typography.labelMedium)
+      Text(formatTime(duration), style = MaterialTheme.typography.labelMedium)
     }
-  }
-}
-
-@Composable
-private fun HiResBadge(modifier: Modifier = Modifier) {
-  Surface(
-    modifier = modifier,
-    shape = RoundedCornerShape(7.dp),
-    color = Color(0xFF14120A).copy(alpha = 0.82f),
-    border = BorderStroke(1.dp, Color(0xFFC9A227).copy(alpha = 0.8f)),
-  ) {
-    Text(
-      text = "HI-RES",
-      modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-      style = MaterialTheme.typography.labelSmall,
-      fontSize = 10.sp,
-      fontWeight = FontWeight.Bold,
-      maxLines = 1,
-      color = Color(0xFFE5C24B),
-    )
   }
 }
 
@@ -855,17 +565,13 @@ private fun MusicSecondaryControls(
 private fun SourceInfoContent(
   codec: String?,
   sourceFormat: MusicSourceAudioFormat?,
-  channels: Int? = null,
-  bitRateBps: Int? = null,
   modifier: Modifier = Modifier,
 ) {
   Column(modifier = modifier.padding(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
     Text("Source audio", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
     Text("Codec: ${codec?.takeIf { it.isNotBlank() }?.uppercase(Locale.ROOT) ?: "Not reported"}")
-    Text("Source bit depth: ${sourceFormat?.bitDepth?.let { if (sourceFormat.isFloat) "$it-bit float" else "$it-bit" } ?: "Not reported"}")
+    Text("Source bit depth: ${sourceFormat?.bitDepth?.let { "$it-bit" } ?: "Not reported"}")
     Text("Source sample rate: ${sourceFormat?.sampleRateHz?.let(::formatSampleRate) ?: "Not reported"}")
-    Text("Channels: ${channels?.let { "$it" } ?: "Not reported"}")
-    Text("Bit rate: ${bitRateBps?.let { "${it / 1_000} kbps" } ?: "Not reported"}")
     if (codec.isNullOrBlank() && sourceFormat == null) {
       Text("Source metadata is not available yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
