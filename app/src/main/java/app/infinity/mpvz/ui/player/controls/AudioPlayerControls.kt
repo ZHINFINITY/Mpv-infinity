@@ -1672,10 +1672,13 @@ fun AudioPlayerControls(
     }
   }
   var activeCoverOverride by remember { mutableStateOf<Bitmap?>(null) }
-  val fullScreenArt by audioPreferences.audioFullScreenArt.collectAsState()
   val baseSurfaceColor = MaterialTheme.colorScheme.surfaceContainerHigh
   Box(modifier = Modifier.fillMaxSize()) {
-  val fullScreenArtActive = fullScreenArt && isPortrait && (lastValidArtwork != null || !currentArtworkUri.isNullOrBlank())
+  // mpvrx has no full-bleed art mode: the Now Playing page always shows the square
+  // cover-card carousel in the centre, over an opaque surface with ambient gradients.
+  // Every "art hidden / visible only while minimizing / transparent background" bug
+  // came from the full-bleed panel layer, so it is disabled outright.
+  val fullScreenArtActive = false
   // Gold hue of the on-artwork hi-res marker, flipped in lightness against the
   // cover's average colour so it stays visible on both dark and bright art.
   val artworkSampleBitmap = (lastValidArtwork as? Bitmap) ?: albumArtBitmap
@@ -2225,13 +2228,21 @@ fun AudioPlayerControls(
                 shape = coverShape,
                 color = Color.Transparent,
               ) {
-                if (!fullScreenArtActive) {
+                Box(modifier = Modifier.fillMaxSize()) {
                   CoverArtCardImage(
                     bitmap = activeCoverOverride ?: albumArtBitmap,
                     artworkUrl = currentArtworkUri,
                     motionArtwork = currentAudioPresentation?.motionArtwork?.takeIf { activeCoverOverride == null && !(isRadio && streamCover != null) },
                     isPlaying = paused != true && !coverShown,
                   )
+                  // Adaptive gold hi-res marker rides on the cover card itself, like
+                  // mpvrx's on-art badge, and follows the artwork's own colour.
+                  Box(modifier = Modifier.align(Alignment.TopEnd).padding(14.dp)) {
+                    HiResSquiggleMarker(
+                      modifier = Modifier.size(width = 44.dp, height = 24.dp),
+                      color = artworkAdaptiveGold,
+                    )
+                  }
                 }
               }
             }
