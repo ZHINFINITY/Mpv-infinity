@@ -2086,6 +2086,11 @@
   <string name="lyrics_translation_failed">Lyrics could not be translated. Try again.</string>
   <string name="lyrics_translation_partial">Some lyric lines could not be translated.</string>
   <string name="lyrics_select_language">Select Target Language</string>
+  <string name="lyrics_loading_label">Fetching lyrics…</string>
+  <string name="instrumental">Instrumental</string>
+  <string name="lyrics_provider_auto">Auto</string>
+  <string name="lyrics_provider_auto_with">Auto (%1$s)</string>
+  <string name="lyrics_by">Lyrics by %1$s</string>
 
   <!-- Clip -->
   <string name="clip_end_short">End</string>

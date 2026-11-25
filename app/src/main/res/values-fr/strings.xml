@@ -1994,6 +1994,11 @@ Veuillez redémarrer l’application pour appliquer toutes les modifications.</s
   <string name="lyrics_translation_failed">Les paroles n’ont pas pu être traduites. Réessayez.</string>
   <string name="lyrics_translation_partial">Certaines lignes des paroles n’ont pas pu être traduites.</string>
   <string name="lyrics_select_language">Sélectionner la langue cible</string>
+  <string name="lyrics_loading_label">Récupération des paroles…</string>
+  <string name="instrumental">Instrumental</string>
+  <string name="lyrics_provider_auto">Auto</string>
+  <string name="lyrics_provider_auto_with">Auto (%1$s)</string>
+  <string name="lyrics_by">Paroles par %1$s</string>
   <string name="clip_end_short">Fin</string>
   <string name="clip_start_short">Début</string>
   <string name="clip_action">Créer un clip</string>

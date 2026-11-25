@@ -1994,6 +1994,11 @@ Reinicie o aplicativo para que todas as alterações entrem em vigor.</string>
   <string name="lyrics_translation_failed">Não foi possível traduzir a letra. Tente novamente.</string>
   <string name="lyrics_translation_partial">Não foi possível traduzir alguns versos.</string>
   <string name="lyrics_select_language">Selecionar idioma de destino</string>
+  <string name="lyrics_loading_label">Buscando a letra…</string>
+  <string name="instrumental">Instrumental</string>
+  <string name="lyrics_provider_auto">Automático</string>
+  <string name="lyrics_provider_auto_with">Automático (%1$s)</string>
+  <string name="lyrics_by">Letra de %1$s</string>
   <string name="clip_end_short">Fim</string>
   <string name="clip_start_short">Início</string>
   <string name="clip_action">Criar clipe</string>

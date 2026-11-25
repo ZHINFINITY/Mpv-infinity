@@ -269,34 +269,26 @@ internal fun AudioPlayerScreen(
   val speedPresets by playerPreferences.speedPresets.collectAsState()
   val sortedSpeedPresets = remember(speedPresets) { speedPresets.map { it.toFloat() }.sorted() }
 
-  var audioGlassPalette by remember { mutableStateOf<Pair<Int, Int>?>(null) }
-  AudioPaletteGlassScene(
-    topArgb = audioGlassPalette?.first ?: MaterialTheme.colorScheme.primary.toArgb(),
-    bottomArgb = audioGlassPalette?.second ?: MaterialTheme.colorScheme.secondary.toArgb(),
-    enabled = liquidGlassSurfaces,
+  AudioPlayerControls(
+    viewModel = viewModel,
+    mediaTitle = mediaTitle,
+    onBackPress = onBackPress,
+    onOpenSheet = onOpenSheet,
+    onOpenPanel = onOpenPanel,
     modifier = modifier.fillMaxSize(),
-  ) {
-    AudioPlayerControls(
-      viewModel = viewModel,
-      mediaTitle = mediaTitle,
-      onBackPress = onBackPress,
-      onOpenSheet = onOpenSheet,
-      onOpenPanel = onOpenPanel,
-      onGlassPaletteChanged = { top, bottom -> audioGlassPalette = top to bottom },
-      inAppSheet = inAppSheet,
-    )
+  )
 
-    PlayerSheets(
-      viewModel = viewModel,
-      sheetShown = sheetShown,
-      subtitles = subtitles.toImmutableList(),
-      onAddSubtitle = viewModel::addSubtitle,
-      onToggleSubtitle = viewModel::toggleSubtitle,
-      isSubtitleSelected = viewModel::isSubtitleSelected,
-      subtitleSelectionIndicator = viewModel::subtitleSelectionIndicator,
-      onRemoveSubtitle = viewModel::removeSubtitle,
-      audioTracks = audioTracks.toImmutableList(),
-      onAddAudio = viewModel::addAudio,
+  PlayerSheets(
+    viewModel = viewModel,
+    sheetShown = sheetShown,
+    subtitles = subtitles.toImmutableList(),
+    onAddSubtitle = viewModel::addSubtitle,
+    onToggleSubtitle = viewModel::toggleSubtitle,
+    isSubtitleSelected = viewModel::isSubtitleSelected,
+    subtitleSelectionIndicator = viewModel::subtitleSelectionIndicator,
+    onRemoveSubtitle = viewModel::removeSubtitle,
+    audioTracks = audioTracks.toImmutableList(),
+    onAddAudio = viewModel::addAudio,
       onSelectAudio = viewModel::selectAudioTrack,
       chapter = chapters.getOrNull(currentChapter ?: 0),
       chapters = chapters.toImmutableList(),
@@ -340,15 +332,14 @@ internal fun AudioPlayerScreen(
       nativeSnapshot = nativeSnapshot,
       onDisableNativeSubtitles = { activity?.nativeDisableSubtitles() },
       onDismissRequest = { onOpenSheet(Sheets.None) },
-    )
+  )
 
-    val panel by viewModel.panelShown.collectAsState()
-    PlayerPanels(
-      panelShown = panel,
-      viewModel = viewModel,
-      onDismissRequest = { onOpenPanel(Panels.None) },
-    )
-  }
+  val panel by viewModel.panelShown.collectAsState()
+  PlayerPanels(
+    panelShown = panel,
+    viewModel = viewModel,
+    onDismissRequest = { onOpenPanel(Panels.None) },
+  )
 }
 
 @OptIn(

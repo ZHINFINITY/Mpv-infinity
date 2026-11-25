@@ -1979,6 +1979,11 @@
   <string name="lyrics_translation_failed">बोलों का अनुवाद नहीं हो सका। फिर से कोशिश करें।</string>
   <string name="lyrics_translation_partial">बोलों की कुछ पंक्तियों का अनुवाद नहीं हो सका।</string>
   <string name="lyrics_select_language">लक्षित भाषा चुनें</string>
+  <string name="lyrics_loading_label">गीत के बोल लाए जा रहे हैं…</string>
+  <string name="instrumental">वाद्य संगीत</string>
+  <string name="lyrics_provider_auto">स्वतः</string>
+  <string name="lyrics_provider_auto_with">स्वतः (%1$s)</string>
+  <string name="lyrics_by">%1$s के बोल</string>
   <string name="clip_end_short">अंत</string>
   <string name="clip_start_short">आरंभ</string>
   <string name="clip_action">क्लिप बनाएँ</string>

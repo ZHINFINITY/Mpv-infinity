@@ -1994,6 +1994,11 @@
   <string name="lyrics_translation_failed">无法翻译歌词，请重试。</string>
   <string name="lyrics_translation_partial">部分歌词未能翻译。</string>
   <string name="lyrics_select_language">选择目标语言</string>
+  <string name="lyrics_loading_label">正在获取歌词…</string>
+  <string name="instrumental">纯音乐</string>
+  <string name="lyrics_provider_auto">自动</string>
+  <string name="lyrics_provider_auto_with">自动（%1$s）</string>
+  <string name="lyrics_by">歌词提供：%1$s</string>
   <string name="clip_end_short">结束</string>
   <string name="clip_start_short">开始</string>
   <string name="clip_action">创建片段</string>

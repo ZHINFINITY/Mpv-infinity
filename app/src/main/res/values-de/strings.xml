@@ -1994,6 +1994,11 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="lyrics_translation_failed">Der Songtext konnte nicht übersetzt werden. Versuche es erneut.</string>
   <string name="lyrics_translation_partial">Einige Songtextzeilen konnten nicht übersetzt werden.</string>
   <string name="lyrics_select_language">Zielsprache auswählen</string>
+  <string name="lyrics_loading_label">Liedtexte werden geladen…</string>
+  <string name="instrumental">Instrumental</string>
+  <string name="lyrics_provider_auto">Automatisch</string>
+  <string name="lyrics_provider_auto_with">Automatisch (%1$s)</string>
+  <string name="lyrics_by">Liedtexte von %1$s</string>
   <string name="clip_end_short">Ende</string>
   <string name="clip_start_short">Start</string>
   <string name="clip_action">Clip erstellen</string>

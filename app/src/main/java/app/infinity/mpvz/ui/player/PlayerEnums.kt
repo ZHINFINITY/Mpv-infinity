@@ -136,6 +136,7 @@ enum class Sheets {
   AudioProperties,
   VisualizerStyle,
   Lyrics,
+  LyricsProvider,
   AudiobookRewind,
   AudiobookSleepTimer,
   FrameInterpolationFps,

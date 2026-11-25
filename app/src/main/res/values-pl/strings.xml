@@ -1995,6 +1995,11 @@
   <string name="lyrics_translation_failed">Teksty could nie być translated. Try again.</string>
   <string name="lyrics_translation_partial">Some lyric lines could nie być translated.</string>
   <string name="lyrics_select_language">Wybierz Target Język</string>
+  <string name="lyrics_loading_label">Pobieranie tekstu…</string>
+  <string name="instrumental">Instrumentalny</string>
+  <string name="lyrics_provider_auto">Auto</string>
+  <string name="lyrics_provider_auto_with">Auto (%1$s)</string>
+  <string name="lyrics_by">Tekst: %1$s</string>
   <string name="clip_end_short">Koniec</string>
   <string name="clip_start_short">Uruchom</string>
   <string name="clip_action">Utwórz clip</string>

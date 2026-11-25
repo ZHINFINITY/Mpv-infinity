@@ -1983,6 +1983,11 @@
   <string name="lyrics_translation_failed">ترانه ها نمی توانند ترجمه شوند. دوباره امتحان کنید.</string>
   <string name="lyrics_translation_partial">برخی از خطوط را نمی توان ترجمه کرد.</string>
   <string name="lyrics_select_language">انتخاب زبان مقصد</string>
+  <string name="lyrics_loading_label">در حال دریافت متن ترانه…</string>
+  <string name="instrumental">بی‌کلام</string>
+  <string name="lyrics_provider_auto">خودکار</string>
+  <string name="lyrics_provider_auto_with">خودکار (%1$s)</string>
+  <string name="lyrics_by">متن ترانه از %1$s</string>
   <string name="clip_end_short">پایان پایان</string>
   <string name="clip_start_short">شروع کار</string>
   <string name="clip_action">ایجاد کلیپ</string>

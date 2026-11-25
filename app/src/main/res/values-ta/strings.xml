@@ -1983,6 +1983,11 @@
   <string name="lyrics_translation_failed">பாடல் வரிகள் could not be translated. மீண்டும் முயற்சி செய்.</string>
   <string name="lyrics_translation_partial">விருப்பம்: Some lyric lines could not be translated.</string>
   <string name="lyrics_select_language">இலக்கு மொழியைத் தேர்ந்தெடு</string>
+  <string name="lyrics_loading_label">பாடல் வரிகள் பெறப்படுகின்றன…</string>
+  <string name="instrumental">இசை மட்டும்</string>
+  <string name="lyrics_provider_auto">தானியங்கி</string>
+  <string name="lyrics_provider_auto_with">தானியங்கி (%1$s)</string>
+  <string name="lyrics_by">%1$s பாடல் வரிகள்</string>
   <string name="clip_end_short">முடிவு</string>
   <string name="clip_start_short">தொடக்கம்</string>
   <string name="clip_action">கிளிப்பை உருவாக்கு</string>

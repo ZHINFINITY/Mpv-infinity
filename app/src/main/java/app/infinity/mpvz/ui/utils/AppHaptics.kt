@@ -7,6 +7,12 @@ class AppHaptics {
   fun selection(enabled: Boolean) {
     // Selection feedback is intentionally optional; the setting remains functional without it.
   }
+
+  fun pickup() {}
+
+  fun confirm() {}
+
+  fun tick() {}
 }
 
 @Composable

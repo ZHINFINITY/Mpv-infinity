@@ -1994,6 +1994,11 @@
   <string name="lyrics_translation_failed">歌詞を翻訳できませんでした。もう一度お試しください。</string>
   <string name="lyrics_translation_partial">一部の歌詞を翻訳できませんでした。</string>
   <string name="lyrics_select_language">翻訳先言語を選択</string>
+  <string name="lyrics_loading_label">歌詞を取得しています…</string>
+  <string name="instrumental">インストゥルメンタル</string>
+  <string name="lyrics_provider_auto">自動</string>
+  <string name="lyrics_provider_auto_with">自動（%1$s）</string>
+  <string name="lyrics_by">歌詞提供: %1$s</string>
   <string name="clip_end_short">終了</string>
   <string name="clip_start_short">開始</string>
   <string name="clip_action">クリップを作成</string>

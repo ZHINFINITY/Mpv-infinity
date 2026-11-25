@@ -1994,6 +1994,11 @@
   <string name="lyrics_translation_failed">Не удалось перевести текст песни. Попробуйте ещё раз.</string>
   <string name="lyrics_translation_partial">Не удалось перевести некоторые строки.</string>
   <string name="lyrics_select_language">Выбрать язык перевода</string>
+  <string name="lyrics_loading_label">Загрузка текста песни…</string>
+  <string name="instrumental">Инструментал</string>
+  <string name="lyrics_provider_auto">Авто</string>
+  <string name="lyrics_provider_auto_with">Авто (%1$s)</string>
+  <string name="lyrics_by">Текст песни: %1$s</string>
   <string name="clip_end_short">Конец</string>
   <string name="clip_start_short">Начало</string>
   <string name="clip_action">Создать клип</string>

@@ -1994,6 +1994,11 @@
   <string name="lyrics_translation_failed">تعذّرت ترجمة كلمات الأغنية. حاول مرة أخرى.</string>
   <string name="lyrics_translation_partial">تعذّرت ترجمة بعض أسطر كلمات الأغنية.</string>
   <string name="lyrics_select_language">تحديد اللغة المستهدفة</string>
+  <string name="lyrics_loading_label">جارٍ جلب كلمات الأغاني…</string>
+  <string name="instrumental">مقطوعة موسيقية</string>
+  <string name="lyrics_provider_auto">تلقائي</string>
+  <string name="lyrics_provider_auto_with">تلقائي (%1$s)</string>
+  <string name="lyrics_by">كلمات اثرها %1$s</string>
   <string name="clip_end_short">النهاية</string>
   <string name="clip_start_short">البداية</string>
   <string name="clip_action">إنشاء مقطع</string>

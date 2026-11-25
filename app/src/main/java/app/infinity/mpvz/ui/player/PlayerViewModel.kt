@@ -1018,6 +1018,8 @@ class PlayerViewModel(
       }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, persistentListOf())
 
+  val playbackChapters: StateFlow<List<dev.vivvvek.seeker.Segment>> = chapters
+
   // Audio player UI state
   val albumArtBounds = MutableStateFlow<android.graphics.Rect?>(null)
   // The style and artwork/visualizer display choice are persisted via audioPreferences.
@@ -1040,6 +1042,8 @@ class PlayerViewModel(
     val availableSources: List<app.infinity.mpvz.domain.lyrics.LyricsSourceType> = emptyList(),
     val syncOffsetMs: Int = 0,
     val errorMessage: String? = null,
+    val preferredProvider: app.infinity.mpvz.domain.lyrics.LyricsProvider? = null,
+    val onlineProvider: app.infinity.mpvz.domain.lyrics.LyricsProvider? = null,
   )
 
   val lyricsUiState = MutableStateFlow(LyricsUiState())

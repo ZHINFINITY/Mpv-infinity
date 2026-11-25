@@ -1983,6 +1983,11 @@
   <string name="lyrics_translation_failed">Lirik tidak dapat diterjemahkan. Coba lagi.</string>
   <string name="lyrics_translation_partial">Beberapa baris lirik tidak dapat diterjemahkan.</string>
   <string name="lyrics_select_language">Pilih Bahasa Sasaran</string>
+  <string name="lyrics_loading_label">Mengambil lirik…</string>
+  <string name="instrumental">Instrumental</string>
+  <string name="lyrics_provider_auto">Otomatis</string>
+  <string name="lyrics_provider_auto_with">Otomatis (%1$s)</string>
+  <string name="lyrics_by">Lirik oleh %1$s</string>
   <string name="clip_end_short">Akhir</string>
   <string name="clip_start_short">Mulai</string>
   <string name="clip_action">Buat klip</string>
