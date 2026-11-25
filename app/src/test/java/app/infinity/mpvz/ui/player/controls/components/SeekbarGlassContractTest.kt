@@ -36,7 +36,9 @@ class SeekbarGlassContractTest {
     val audio = source("ui/player/controls/AudioPlayerControls.kt")
     val musicSeekbar = audio.substringAfter("val seekbarView = @Composable {")
       .substringBefore("val playbackControlsRow = @Composable {")
-    assertTrue(musicSeekbar.contains("glassTrackEnabled = false"))
+    // Wholesale mpvrx port: the music seekbar is mpvrx's SeekbarWithTimers; the glass track
+    // gate lives in Seekbar.kt, not at the call site.
+    assertTrue(musicSeekbar.contains("SeekbarWithTimers("))
 
     val musicLibrary = source("ui/browser/music/MusicLibraryViewModel.kt")
     val playSong = musicLibrary.substringAfter("fun playSong(").substringBefore("fun playAllSongs(")

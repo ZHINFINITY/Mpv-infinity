@@ -17,13 +17,12 @@ class AudioPlayerControlsWiringTest {
   @Test
   fun fullPlayerUsesSharedPaletteWithoutOpaqueEnabledSurfaceOrCompetingBackSwipe() {
     val controls = source("app/src/main/java/app/infinity/mpvz/ui/player/controls/AudioPlayerControls.kt")
-    assertTrue(controls.contains("MiniPlayerDragController"))
-    assertTrue(controls.contains("nestedGestureController.nestedScrollConnection"))
-    assertTrue(controls.contains("Modifier.browserMusicSheetDrag("))
-    assertFalse(controls.contains("mpvRx"))
+    // Wholesale mpvrx port: cover-card carousel with horizontal drag + threshold, and a
+    // back handler scoped to the lyrics views instead of a competing sheet swipe.
+    assertTrue(controls.contains("detectHorizontalDragGestures"))
+    assertTrue(controls.contains("BackHandler(enabled = isLyricsFullscreen || showInPlaceLyrics)"))
     assertTrue(controls.contains("MaterialTheme.colorScheme.surface"))
-    assertTrue(controls.contains("if (inAppSheet != null)"))
-    assertFalse(controls.contains("if (totalDrag > 160f) onBackPress()"))
+    assertFalse(controls.contains("mpvRx"))
   }
 
   @Test

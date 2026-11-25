@@ -24,9 +24,11 @@ class PlayerControlsPositionSubscriptionTest {
   }
 
   @Test fun aNewGestureCancelsThePreviousReleaseWatchdog() {
+    // Wholesale mpvrx port: the carousel drives a single Animatable offset; snapTo() on a
+    // new gesture cancels any in-flight release animation, so no separate watchdog is needed.
     val text = source("app/src/main/java/app/infinity/mpvz/ui/player/controls/AudioPlayerControls.kt")
-    assertTrue(text.contains("var releaseWatchdogJob by remember"))
-    assertTrue(text.contains("releaseWatchdogJob?.cancel()"))
-    assertTrue(text.contains("releaseWatchdogJob = releaseWatchdogScope.launch"))
+    assertTrue(text.contains("val animatableOffsetX = remember { Animatable(0f) }"))
+    assertTrue(text.contains("animatableOffsetX.snapTo(animatableOffsetX.value + dragAmount)"))
+    assertTrue(text.contains("animatableOffsetX.animateTo("))
   }
 }
