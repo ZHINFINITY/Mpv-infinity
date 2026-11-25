@@ -23,9 +23,13 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.preferences.AppearancePreferences
+import app.infinity.mpvz.preferences.AudioPreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.ui.player.NativeMediaMetadata
 import app.infinity.mpvz.ui.player.PlaybackSession
+import app.infinity.mpvz.ui.player.controls.AudioBadgePacks
+import app.infinity.mpvz.ui.player.controls.AudioBadgeStyle
+import app.infinity.mpvz.ui.player.controls.MediaBadgeImage
 import app.infinity.mpvz.utils.media.MediaBadge
 import app.infinity.mpvz.utils.media.MediaBadges
 import coil3.compose.AsyncImage
@@ -46,7 +50,11 @@ fun MediaBadgesRow(
 ) {
   val context = LocalContext.current
   val preferences = koinInject<AppearancePreferences>()
+  val audioPreferences = koinInject<AudioPreferences>()
   val showMediaBadges by preferences.showMediaBadges.collectAsState()
+  val liquidGlassSurfaces by preferences.liquidGlassSurfaces.collectAsState()
+  val audioBadgeStyle by audioPreferences.audioBadgeStyle.collectAsState()
+  val badgeStyle = AudioBadgeStyle.fromId(audioBadgeStyle)
 
   val rawMediaTitle by PlaybackSession.propString["media-title"].collectAsState()
   val videoHeightProp by PlaybackSession.propInt["video-params/h"].collectAsState()
@@ -100,9 +108,29 @@ fun MediaBadgesRow(
       }.distinctBy { it.id }
   }
 
-  if (badges.isEmpty()) return
+  if (badges.isEmpty() && badgeStyle == AudioBadgeStyle.Text) return
   val badgeHeight = 28.dp
   val badgeGap = 8.dp
+  // Same match string the audio player uses, built from the video session's
+  // codecs plus the release-tag sources, so the chosen image pack also badges
+  // video playback (FLAC/DTS/Atmos etc.); unmatched styles fall back to the
+  // built-in asset badges below.
+  val packBadge =
+    if (badgeStyle == AudioBadgeStyle.Text) {
+      null
+    } else {
+      val matchString =
+        listOfNotNull(
+            mediaTitle,
+            mediaPath,
+            videoCodec,
+            audioCodec,
+            if (badges.any { it.id.contains("lossless", ignoreCase = true) }) "lossless" else null,
+          )
+          .joinToString(" ")
+      AudioBadgePacks.match(badgeStyle, matchString)
+    }
+  if (badges.isEmpty() && packBadge == null) return
   // Badges keep a fixed height in every video. The strip can be wider than the
   // top-bar column it lives in (sized to the title pill), so it scrolls
   // horizontally instead of shrinking — one line, full size, never cut off.
@@ -117,6 +145,13 @@ fun MediaBadgesRow(
     horizontalArrangement = Arrangement.spacedBy(badgeGap),
     verticalAlignment = Alignment.CenterVertically,
   ) {
+    if (packBadge != null) {
+      MediaBadgeImage(
+        badge = packBadge,
+        liquidGlass = liquidGlassSurfaces,
+        modifier = Modifier.fillMaxHeight(),
+      )
+    }
     badges.forEach { badge ->
       AsyncImage(
         model = "file:///android_asset/${badge.assetPath}", // assetPath already includes "badges/"
