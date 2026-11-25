@@ -1821,7 +1821,11 @@ fun AudioPlayerControls(
                 1f to baseSurfaceColor,
               ),
             )
-            if (chrome > 0f) drawRect(baseSurfaceColor, alpha = chrome)
+            // chromeAlpha is 1 while the page is open and 0 once it lands on the mini
+            // player, so the opaque mini base is its inverse: 0 while the art panel must
+            // stay visible, 1 while the shrinking page must be opaque.
+            val miniBase = 1f - chrome
+            if (miniBase > 0f) drawRect(baseSurfaceColor, alpha = miniBase)
           }
         }
         .drawWithCache {
