@@ -366,7 +366,9 @@
   <string name="pref_audio_visualizer_style_cuboid">Prostopadłościan</string>
   <string name="pref_audio_visualizer_style_particle">Cząsteczki</string>
   <string name="pref_audio_visualizer_galaxy_credit">Inspired przez Zain Raza Włączone CodePen</string>
-  <string name="pref_audio_ambient_mode_title">Ambient Tryb</string>
+    <string name="pref_audio_full_screen_art_title">Okładka na pełnym ekranie</string>
+  <string name="pref_audio_full_screen_art_summary">Wypełnia cały odtwarzacz muzyczny okładką, a sterowania unoszą się nad nią (styl mpvRx)</string>
+<string name="pref_audio_ambient_mode_title">Ambient Tryb</string>
   <string name="pref_audio_palette_background_title">Album palette tło</string>
   <string name="pref_audio_palette_background_summary">Używaj kolory wyodrębnione z ten bieżący utwór artwork jako ten muzyka odtwarzacz tło zamiast — ten aplikacja motyw</string>
   <string name="pref_audio_ambient_mode_summary">Wyświetl dynamic kolor gradienty pochodzące z album okładka grafika w muzyka odtwarzacz (Wyłączone gdy wizualizator jest aktywny)</string>

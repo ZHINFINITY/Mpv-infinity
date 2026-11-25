@@ -374,7 +374,9 @@ Próximo: NEXT</string>
   <string name="pref_audio_visualizer_style_cuboid">Cuboide</string>
   <string name="pref_audio_visualizer_style_particle">Partículas</string>
   <string name="pref_audio_visualizer_galaxy_credit">Inspirado por Zain Raza no CodePen</string>
-  <string name="pref_audio_ambient_mode_title">Modo ambiente</string>
+    <string name="pref_audio_full_screen_art_title">Arte do álbum em tela cheia</string>
+  <string name="pref_audio_full_screen_art_summary">Preenche todo o reprodutor de música com a capa do álbum e os controles flutuando sobre ela (estilo mpvRx)</string>
+<string name="pref_audio_ambient_mode_title">Modo ambiente</string>
   <string name="pref_audio_palette_background_title">Fundo da paleta do álbum</string>
   <string name="pref_audio_palette_background_summary">Usar como fundo do player de música as cores extraídas da arte da música atual em vez do tema do app</string>
   <string name="pref_audio_ambient_mode_summary">Exibir gradientes de cores dinâmicos derivados da capa do álbum no reprodutor de música (desativado quando o visualizador está ativo)</string>

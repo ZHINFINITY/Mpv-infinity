@@ -374,7 +374,9 @@ Suivant : NEXT</string>
   <string name="pref_audio_visualizer_style_cuboid">Cuboïde</string>
   <string name="pref_audio_visualizer_style_particle">Particules</string>
   <string name="pref_audio_visualizer_galaxy_credit">Inspiré par Zain Raza sur CodePen</string>
-  <string name="pref_audio_ambient_mode_title">Mode ambiant</string>
+    <string name="pref_audio_full_screen_art_title">Pochette plein écran</string>
+  <string name="pref_audio_full_screen_art_summary">Remplit tout le lecteur de musique avec la pochette et affiche les commandes par-dessus (style mpvRx)</string>
+<string name="pref_audio_ambient_mode_title">Mode ambiant</string>
   <string name="pref_audio_palette_background_title">Arrière-plan basé sur la palette de l’album</string>
   <string name="pref_audio_palette_background_summary">Utiliser les couleurs extraites de la pochette du morceau actuel comme arrière-plan du lecteur de musique au lieu du thème de l’application</string>
   <string name="pref_audio_ambient_mode_summary">Afficher des dégradés de couleurs dynamiques issus de la pochette d\'album dans le lecteur de musique (désactivé lorsque le visualiseur est actif)</string>

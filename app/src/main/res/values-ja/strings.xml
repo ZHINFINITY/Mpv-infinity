@@ -374,7 +374,9 @@
   <string name="pref_audio_visualizer_style_cuboid">キューボイド</string>
   <string name="pref_audio_visualizer_style_particle">粒子</string>
   <string name="pref_audio_visualizer_galaxy_credit">CodePenのZain Razaに着想を得ています</string>
-  <string name="pref_audio_ambient_mode_title">アンビエントモード</string>
+    <string name="pref_audio_full_screen_art_title">フルスクリーンアルバムアート</string>
+  <string name="pref_audio_full_screen_art_summary">アルバムジャケットでミュージックプレーヤー全体を埋め、コントロールを重ねて表示（mpvRxスタイル）</string>
+<string name="pref_audio_ambient_mode_title">アンビエントモード</string>
   <string name="pref_audio_palette_background_title">アルバムパレットの背景</string>
   <string name="pref_audio_palette_background_summary">現在の曲のアートワークから抽出した色を音楽プレーヤーの背景に使用（アプリテーマは使用しない）</string>
   <string name="pref_audio_ambient_mode_summary">音楽プレーヤーでアルバムのアートワークから抽出したダイナミックなグラデーションを表示（ビジュアライザー有効時は無効）</string>

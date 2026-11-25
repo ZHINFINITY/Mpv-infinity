@@ -356,6 +356,21 @@ object AudioPreferencesScreen : Screen {
               )
 
               PreferenceDivider()
+              val audioFullScreenArt by preferences.audioFullScreenArt.collectAsState()
+              SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_audio_full_screen_art_title),
+                value = audioFullScreenArt,
+                onValueChange = { preferences.audioFullScreenArt.set(it) },
+                title = { Text(stringResource(R.string.pref_audio_full_screen_art_title)) },
+                summary = {
+                  Text(
+                    stringResource(R.string.pref_audio_full_screen_art_summary),
+                    color = MaterialTheme.colorScheme.outline,
+                  )
+                },
+              )
+
+              PreferenceDivider()
               val audioAmbientMode by preferences.audioAmbientMode.collectAsState()
               SwitchPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.pref_audio_ambient_mode_title),

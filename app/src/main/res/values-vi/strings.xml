@@ -366,7 +366,9 @@
   <string name="pref_audio_visualizer_style_cuboid">hình khối</string>
   <string name="pref_audio_visualizer_style_particle">hạt</string>
   <string name="pref_audio_visualizer_galaxy_credit">Lấy cảm hứng từ Zain Raza trên CodePen</string>
-  <string name="pref_audio_ambient_mode_title">Chế độ môi trường xung quanh</string>
+    <string name="pref_audio_full_screen_art_title">Ảnh bìa toàn màn hình</string>
+  <string name="pref_audio_full_screen_art_summary">Lấp toàn bộ trình phát nhạc bằng bìa album, các nút điều khiển nổi phía trên (kiểu mpvRx)</string>
+<string name="pref_audio_ambient_mode_title">Chế độ môi trường xung quanh</string>
   <string name="pref_audio_palette_background_title">Nền bảng màu album</string>
   <string name="pref_audio_palette_background_summary">Dùng màu trích xuất từ ảnh bìa bài hát hiện tại làm nền trình phát nhạc thay cho giao diện ứng dụng</string>
   <string name="pref_audio_ambient_mode_summary">Hiển thị độ dốc màu động bắt nguồn từ ảnh bìa album trong trình phát nhạc (bị tắt khi trình hiển thị trực quan đang hoạt động)</string>

@@ -374,7 +374,9 @@
   <string name="pref_audio_visualizer_style_cuboid">مكعباني</string>
   <string name="pref_audio_visualizer_style_particle">جسيمات</string>
   <string name="pref_audio_visualizer_galaxy_credit">مستوحى من عمل Zain Raza على CodePen</string>
-  <string name="pref_audio_ambient_mode_title">الوضع المحيطي</string>
+    <string name="pref_audio_full_screen_art_title">ألبوم بحجم الشاشة الكاملة</string>
+  <string name="pref_audio_full_screen_art_summary">ملء مشغّل الموسيقى بالكامل بغلاف الألبوم مع عناصر التحكم فوقه بأسلوب mpvRx</string>
+<string name="pref_audio_ambient_mode_title">الوضع المحيطي</string>
   <string name="pref_audio_palette_background_title">خلفية لوحة ألوان الألبوم</string>
   <string name="pref_audio_palette_background_summary">استخدام الألوان المستخرجة من غلاف الأغنية الحالية كخلفية لمشغل الموسيقى بدلًا من سمة التطبيق</string>
   <string name="pref_audio_ambient_mode_summary">عرض تدرجات ألوان ديناميكية مستمدة من غلاف الألبوم في مشغل الموسيقى (معطل عند تفعيل المؤثر البصري)</string>

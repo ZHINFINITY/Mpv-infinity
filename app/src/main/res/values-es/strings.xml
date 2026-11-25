@@ -374,7 +374,9 @@ Siguiente: NEXT</string>
   <string name="pref_audio_visualizer_style_cuboid">Cuboide</string>
   <string name="pref_audio_visualizer_style_particle">Partículas</string>
   <string name="pref_audio_visualizer_galaxy_credit">Inspirado en Zain Raza en CodePen</string>
-  <string name="pref_audio_ambient_mode_title">Modo ambiente</string>
+    <string name="pref_audio_full_screen_art_title">Portada a pantalla completa</string>
+  <string name="pref_audio_full_screen_art_summary">Llena todo el reproductor de música con la portada y flotar los controles encima (estilo mpvRx)</string>
+<string name="pref_audio_ambient_mode_title">Modo ambiente</string>
   <string name="pref_audio_palette_background_title">Fondo con paleta del álbum</string>
   <string name="pref_audio_palette_background_summary">Usar como fondo del reproductor de música los colores extraídos de la carátula de la canción actual en lugar del tema de la aplicación</string>
   <string name="pref_audio_ambient_mode_summary">Mostrar gradientes de color dinámicos derivados de la portada del álbum en el reproductor de música (desactivado cuando el visualizador está activo)</string>

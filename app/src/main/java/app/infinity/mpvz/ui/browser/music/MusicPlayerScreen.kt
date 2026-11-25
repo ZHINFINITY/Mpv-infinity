@@ -73,6 +73,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import coil3.compose.AsyncImage
+import app.infinity.mpvz.preferences.AudioPreferences
+import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.presentation.components.RemoteImageLoader
 import okhttp3.OkHttpClient
@@ -81,6 +83,7 @@ import kotlinx.coroutines.withContext
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.controls.components.MiniAudioVisualizer
 import app.infinity.mpvz.utils.media.MediaInfoOps
+import org.koin.compose.koinInject
 import java.util.Locale
 import kotlin.math.roundToLong
 
@@ -106,6 +109,8 @@ internal fun MusicPlayerScreen(
   val context = LocalContext.current
   val configuration = LocalConfiguration.current
   val landscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+  val preferences = koinInject<AudioPreferences>()
+  val fullScreenArt by preferences.audioFullScreenArt.collectAsState()
   var loadedSourceInfo by remember(snapshot.currentUri) { mutableStateOf<LoadedSourceAudioInfo?>(null) }
   var openSheet by remember { mutableStateOf<MusicPlayerSheet?>(null) }
   val sourceInfoCache = remember { mutableMapOf<String, LoadedSourceAudioInfo>() }
@@ -227,18 +232,34 @@ internal fun MusicPlayerScreen(
             ),
           ),
       )
-      Box(
-        Modifier
-          .fillMaxSize()
-          .background(
-            Brush.verticalGradient(
-              0f to Color.Transparent,
-              0.48f to Color.Transparent,
-              0.86f to surfaceColor.copy(alpha = 0.88f),
-              1f to surfaceColor,
+      // Full-screen art keeps the cover visible to the bottom; controls float over a dark
+      // readability gradient instead of melting into the surface.
+      if (fullScreenArt) {
+        Box(
+          Modifier
+            .fillMaxSize()
+            .background(
+              Brush.verticalGradient(
+                0f to Color.Transparent,
+                0.42f to Color.Transparent,
+                1f to Color.Black.copy(alpha = 0.72f),
+              ),
             ),
-          ),
-      )
+        )
+      } else {
+        Box(
+          Modifier
+            .fillMaxSize()
+            .background(
+              Brush.verticalGradient(
+                0f to Color.Transparent,
+                0.48f to Color.Transparent,
+                0.86f to surfaceColor.copy(alpha = 0.88f),
+                1f to surfaceColor,
+              ),
+            ),
+        )
+      }
     } else {
       Box(
         Modifier
@@ -302,6 +323,32 @@ internal fun MusicPlayerScreen(
               modifier = Modifier.fillMaxWidth(),
             )
           }
+        }
+      } else if (fullScreenArt && backdropUri != null) {
+        // mpvRx-style full-screen artwork: no foreground art card — the cover already fills
+        // the window behind, so the controls float over it.
+        Column(
+          modifier = Modifier.fillMaxSize(),
+          horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+          MusicHeader(
+            landscape = false,
+            losslessLabel = losslessLabel,
+            onBackPress = onBackPress,
+            onInfo = { openSheet = MusicPlayerSheet.SOURCE_INFO },
+            modifier = Modifier.fillMaxWidth(),
+          )
+          Spacer(Modifier.weight(1f))
+          MusicTrackInfo(snapshot = snapshot, modifier = Modifier.fillMaxWidth())
+          MusicTimeline(snapshot = snapshot, controller = controller, modifier = Modifier.fillMaxWidth())
+          MusicTransport(snapshot = snapshot, controller = controller, modifier = Modifier.fillMaxWidth())
+          MusicSecondaryControls(
+            snapshot = snapshot,
+            controller = controller,
+            onQueue = { openSheet = MusicPlayerSheet.QUEUE },
+            modifier = Modifier.fillMaxWidth(),
+          )
+          Spacer(Modifier.height(8.dp))
         }
       } else {
         Column(
