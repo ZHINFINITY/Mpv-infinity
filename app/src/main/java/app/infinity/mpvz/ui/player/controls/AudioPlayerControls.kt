@@ -936,6 +936,15 @@ fun AudioPlayerControls(
       pathOrUri = currentMediaSource?.takeIf { isAudiobook } ?: mediaPath?.takeIf { it.isNotBlank() } ?: currentMediaSource,
       artworkUri = currentArtworkUri,
     )
+  // Keep the last artwork seen for this track: after a background round-trip the
+  // metadata properties clear until mpv re-emits them, and the cached presentation
+  // can briefly resolve to null. Holding the last value avoids an art flash/gap.
+  var lastValidArtwork by remember(currentItem?.stableId) {
+    mutableStateOf(currentAudioPresentation?.artwork ?: currentArtworkUri?.takeIf { it.isNotBlank() })
+  }
+  LaunchedEffect(currentAudioPresentation?.artwork, currentItem?.stableId) {
+    currentAudioPresentation?.artwork?.let { lastValidArtwork = it }
+  }
   val albumArtBitmap = streamCover.takeIf { isRadio } ?: currentAudioPresentation?.artwork
 
   fun cleanSongTitle(
@@ -990,6 +999,17 @@ fun AudioPlayerControls(
   val rawPerformer by PlaybackSession.propString["metadata/by-key/PERFORMER"].collectAsState()
   val retrievedArtist = currentAudioPresentation?.artist
 
+  // Background return can clear the mpv metadata properties (the core is retired and
+  // re-created, and every load clears `metadata/*` until mpv re-emits them). The title
+  // already survives this via lastValidTitle; keep the last-known-good artist the
+  // same way so the player doesn't flash "Unknown Artist".
+  var lastValidArtist by remember(currentItem?.stableId) {
+    mutableStateOf(
+      currentItem?.artist?.takeIf { it.isNotBlank() }
+        ?: audiobook?.book?.author?.takeIf { it.isNotBlank() },
+    )
+  }
+
   val displayArtist =
     remember(isRadio, radioPresentation, stationHeaders, rawIcyName, audiobook?.book?.author, currentItem?.title, currentItem?.artist, rawArtist, rawArtistUpper, rawArtistLower, rawArtistAlt, rawAlbumArtist, rawPerformer, retrievedArtist) {
       if (isRadio) {
@@ -999,10 +1019,16 @@ fun AudioPlayerControls(
         radioPresentation.artist ?: station?.takeIf { it != radioPresentation.title }
           ?: "No track details provided by this station"
       } else {
-        sequenceOf(audiobook?.book?.author, currentItem?.artist, rawArtist, rawArtistUpper, rawArtistLower, rawArtistAlt, rawAlbumArtist, rawPerformer, retrievedArtist)
+        sequenceOf(audiobook?.book?.author, currentItem?.artist, rawArtist, rawArtistUpper, rawArtistLower, rawArtistAlt, rawAlbumArtist, rawPerformer, retrievedArtist, lastValidArtist)
           .filterNotNull().firstOrNull { it.isNotBlank() } ?: "Unknown Artist"
       }
     }
+
+  LaunchedEffect(displayArtist, currentItem?.stableId) {
+    if (displayArtist.isNotBlank() && displayArtist != "Unknown Artist" && displayArtist != "No track details provided by this station") {
+      lastValidArtist = displayArtist
+    }
+  }
 
   val audioPreferences = koinInject<AudioPreferences>()
   val appearancePreferences = koinInject<AppearancePreferences>()
@@ -1628,14 +1654,15 @@ fun AudioPlayerControls(
   val fullScreenArt by audioPreferences.audioFullScreenArt.collectAsState()
   val baseSurfaceColor = MaterialTheme.colorScheme.surfaceContainerHigh
   Box(modifier = Modifier.fillMaxSize()) {
-  val fullScreenArtActive = fullScreenArt && isPortrait && (albumArtBitmap != null || !currentArtworkUri.isNullOrBlank())
+  val fullScreenArtActive = fullScreenArt && isPortrait && (lastValidArtwork != null || !currentArtworkUri.isNullOrBlank())
   if (fullScreenArtActive) {
     // Full-screen album art: the cover is the entire background. A dark scrim keeps
     // the header, badge and floating controls legible over any artwork. The art is
     // NOT a static backdrop: it carries the same page-morph transform as the player
     // sheet, so when minimizing it shrinks together with the player into the mini
     // rect instead of fading out in place (no art-coloured background left behind).
-    // CoverArtCardImage also covers URL-only artwork (streams) that has no bitmap.
+    // lastValidArtwork covers the background-return gap: mpv metadata clears until
+    // it re-emits, and without the retained value the art would flash empty.
     Box(
       modifier =
         Modifier
@@ -1661,7 +1688,18 @@ fun AudioPlayerControls(
             }
           },
     ) {
-      CoverArtCardImage(bitmap = albumArtBitmap, artworkUrl = currentArtworkUri)
+      if (lastValidArtwork is Bitmap) {
+        @Suppress("USELESS_ELVIS")
+        Image(
+          bitmap = (lastValidArtwork as? Bitmap)?.asImageBitmap()
+            ?: albumArtBitmap!!.asImageBitmap(),
+          contentDescription = null,
+          contentScale = ContentScale.Crop,
+          modifier = Modifier.matchParentSize(),
+        )
+      } else {
+        CoverArtCardImage(bitmap = lastValidArtwork as? Bitmap, artworkUrl = currentArtworkUri)
+      }
     }
     Box(
       modifier =
@@ -1840,12 +1878,7 @@ fun AudioPlayerControls(
             )
           } else {
             if (isHiRes) {
-              // Gold hi-res marker: appears only for high-resolution lossless audio.
-              Text(
-                text = "✦",
-                style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-                color = Color(0xFFD4AF37),
-              )
+              HiResSquiggleMarker(modifier = Modifier.size(width = 22.dp, height = 12.dp))
             }
             Surface(
             shape = RoundedCornerShape(4.dp),
@@ -2141,16 +2174,26 @@ fun AudioPlayerControls(
             title.contains("/API/", ignoreCase = true) || title.contains("/ITEMS/", ignoreCase = true) || title.contains("/FILE/", ignoreCase = true)
           }.orEmpty()
 
-        // 1. Song Title Only
-        Text(
-          text = displayTitle,
-          style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.ExtraBold),
-          fontFamily = fontFamilyForText(displayTitle),
-          color = MaterialTheme.colorScheme.onSurface,
-          maxLines = 1,
-          overflow = TextOverflow.Ellipsis,
-          modifier = Modifier.audioMarqueeFade().basicMarquee(iterations = Int.MAX_VALUE),
-        )
+        // 1. Song Title Only (with gold hi-res squiggle marker beside it)
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+          Text(
+            text = displayTitle,
+            style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.ExtraBold),
+            fontFamily = fontFamilyForText(displayTitle),
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false).audioMarqueeFade().basicMarquee(iterations = Int.MAX_VALUE),
+          )
+          if (isHiRes) {
+            HiResSquiggleMarker(
+              modifier = Modifier.size(width = 34.dp, height = 18.dp),
+            )
+          }
+        }
         Spacer(modifier = Modifier.height(2.dp))
 
         // 2. Singer / Artist Name
@@ -3489,4 +3532,42 @@ private class MusicPageClipShape(
       androidx.compose.ui.geometry.CornerRadius(cornerRadiusPx),
     ),
   )
+}
+
+/**
+ * Gold hi-res marker shown beside the track title for high-resolution lossless
+ * audio (deeper than 16-bit or above 48 kHz). Drawn as a vector so it stays crisp.
+ */
+@Composable
+internal fun HiResSquiggleMarker(modifier: Modifier = Modifier) {
+  val gold = Color(0xFFD4AF37)
+  androidx.compose.foundation.Canvas(modifier = modifier) {
+    val w = size.width
+    val h = size.height
+    val midY = h * 0.62f
+    val cap = androidx.compose.ui.graphics.StrokeCap.Round
+    val style = androidx.compose.ui.graphics.drawscope.Stroke(width = h * 0.14f, cap = cap)
+    drawLine(
+      color = gold,
+      start = Offset(w * 0.04f, midY - h * 0.10f),
+      end = Offset(w * 0.04f, midY + h * 0.10f),
+      strokeWidth = h * 0.14f,
+      cap = cap,
+    )
+    val arcWidth = w * 0.26f
+    for (i in 0..2) {
+      val left = w * 0.10f + i * arcWidth
+      val bump = h * (0.28f - i * 0.05f)
+      drawArc(
+        color = gold,
+        startAngle = 180f,
+        sweepAngle = 180f,
+        useCenter = false,
+        topLeft = Offset(left, midY - bump),
+        size = androidx.compose.ui.geometry.Size(arcWidth, bump * 2f),
+        style = style,
+      )
+    }
+    drawCircle(color = gold, radius = h * 0.10f, center = Offset(w * 0.93f, midY))
+  }
 }
