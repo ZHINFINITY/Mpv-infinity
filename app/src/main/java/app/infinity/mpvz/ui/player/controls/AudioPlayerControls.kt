@@ -1674,11 +1674,11 @@ fun AudioPlayerControls(
   var activeCoverOverride by remember { mutableStateOf<Bitmap?>(null) }
   val baseSurfaceColor = MaterialTheme.colorScheme.surfaceContainerHigh
   Box(modifier = Modifier.fillMaxSize()) {
-  // mpvrx has no full-bleed art mode: the Now Playing page always shows the square
-  // cover-card carousel in the centre, over an opaque surface with ambient gradients.
-  // Every "art hidden / visible only while minimizing / transparent background" bug
-  // came from the full-bleed panel layer, so it is disabled outright.
-  val fullScreenArtActive = false
+  // mpvrx-style immersive artwork, gated on the "Full-screen album art" setting the
+  // Appearance page exposes (default on, like mpvrx). The earlier art-hidden bugs came
+  // from the opaque base fill painted over the panel, not from this layer itself — the
+  // base fill below now stays transparent while the player is open.
+  val fullScreenArtActive by audioPreferences.audioFullScreenArt.collectAsState()
   // Gold hue of the on-artwork hi-res marker, flipped in lightness against the
   // cover's average colour so it stays visible on both dark and bright art.
   val artworkSampleBitmap = (lastValidArtwork as? Bitmap) ?: albumArtBitmap
