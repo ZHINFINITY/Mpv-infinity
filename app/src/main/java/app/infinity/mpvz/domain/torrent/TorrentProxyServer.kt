@@ -41,7 +41,11 @@ class TorrentProxyServer(
 
   companion object {
     private const val TAG = "TorrentProxyServer"
-    private const val READ_AHEAD_BYTES = 32L * 1024L * 1024L
+    // Read-ahead scales with the file's bitrate: ~90 seconds of media, clamped. A byte constant
+    // over-reads low-bitrate audio (wasting swarm capacity) and under-reads 4K remuxes.
+    private const val READ_AHEAD_MIN_BYTES = 32L * 1024L * 1024L
+    private const val READ_AHEAD_MAX_BYTES = 256L * 1024L * 1024L
+    private const val READ_AHEAD_SECONDS = 90L
     private const val PIECE_WAIT_TIMEOUT_MS = 120_000L
     private const val PIECE_POLL_INTERVAL_MS = 40L
   }
@@ -118,11 +122,14 @@ class TorrentProxyServer(
 
   private fun prioritize(relativeOffset: Long) {
     val absoluteStart = target.fileOffset + relativeOffset
+    val readAheadBytes =
+      (target.fileSize / READ_AHEAD_SECONDS)
+        .coerceIn(READ_AHEAD_MIN_BYTES, READ_AHEAD_MAX_BYTES)
     val first = (absoluteStart / target.pieceLength).toInt().coerceIn(target.firstPiece, target.lastPiece)
     val absoluteEnd =
       min(
         target.fileOffset + target.fileSize - 1L,
-        absoluteStart + READ_AHEAD_BYTES - 1L,
+        absoluteStart + readAheadBytes - 1L,
       )
     val last = (absoluteEnd / target.pieceLength).toInt().coerceIn(first, target.lastPiece)
 

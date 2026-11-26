@@ -843,6 +843,12 @@ class MPVView(
     // After an underrun, wait for more than two seconds of buffer before resuming, so flaky
     // sources do not stall-stop-stall in a loop.
     PlaybackSession.setOptionString("cache-pause-wait", "4")
+    // Hold the first frames until a small buffer is in, so playback doesn't stutter in its
+    // first seconds on a slow-start source.
+    PlaybackSession.setOptionString("cache-pause-initial", "yes")
+    // mpv's own network profile: read ahead this many seconds regardless of how little the
+    // demuxer thinks it needs, up to demuxer-max-bytes.
+    PlaybackSession.setOptionString("demuxer-readahead-secs", "20")
     // Recover boundedly from transient HTTP/TLS disconnects, including non-seekable live inputs.
     // Do not use reconnect_at_eof globally: a legitimate VOD EOF must still finish normally.
     // The http protocol options live in stream-lavf-o: libavformat applies that dict to the opened

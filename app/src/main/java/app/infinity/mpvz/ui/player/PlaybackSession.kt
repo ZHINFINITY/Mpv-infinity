@@ -15,6 +15,7 @@ import android.os.Looper
 import android.util.Log
 import android.view.Surface
 import app.infinity.mpvz.data.network.proxy.HlsStreamingProxy
+import app.infinity.mpvz.data.network.proxy.DirectLinkProxy
 import app.infinity.mpvz.data.network.proxy.NetworkStreamingProxy
 import app.infinity.mpvz.domain.network.NetworkPlaybackUri
 import app.infinity.mpvz.preferences.MpvConfigOverridePolicy
@@ -177,6 +178,7 @@ object PlaybackSession : MPVLib.EventObserver {
   private data class NetworkStreamRegistration(
     val proxy: NetworkStreamingProxy? = null,
     val hlsProxy: HlsStreamingProxy? = null,
+    val directLinkProxy: DirectLinkProxy? = null,
     val streamId: String,
   )
 
@@ -2273,6 +2275,29 @@ object PlaybackSession : MPVLib.EventObserver {
     return resolved.uri
   }
 
+  /**
+   * Routes plain http(s) direct links through the parallel-range proxy when the server supports
+   * byte ranges; returns null (callers fall back to the plain URL) for anything else. mpv opens
+   * the loopback URL, so remote credentials-free links gain multi-connection throughput.
+   */
+  private fun resolveDirectLinkViaProxy(item: PlaybackItem): ResolvedPlayable? {
+    val url = item.playableUri
+    if (!url.startsWith("http://", true) && !url.startsWith("https://", true)) return null
+    val eligibility = DirectLinkProxy.probe(url) ?: return null
+    val proxy = DirectLinkProxy.getInstance()
+    val proxyUrl =
+      proxy.register(
+        url = url,
+        fileSize = eligibility.contentLength,
+        mimeType = item.mimeType ?: "application/octet-stream",
+      )
+    Log.d(TAG, "Routing direct link through DirectLinkProxy (parallel range fetch)")
+    return ResolvedPlayable(
+      proxyUrl,
+      NetworkStreamRegistration(directLinkProxy = proxy, streamId = proxyUrl),
+    )
+  }
+
   private fun resolvePlayableUri(item: PlaybackItem): ResolvedPlayable {
     val reference =
       NetworkPlaybackUri.parse(item.playableUri)
@@ -2306,6 +2331,8 @@ object PlaybackSession : MPVLib.EventObserver {
       Log.d(TAG, "Routing HLS stream through HlsStreamingProxy: $uri")
       return ResolvedPlayable(uri, NetworkStreamRegistration(hlsProxy = hlsProxy, streamId = streamId))
     }
+
+    resolveDirectLinkViaProxy(item)?.let { return it }
 
     // fdclose:// descriptors are single-use: mpv closes them after their first load. Replays
     // of queue items or persisted sessions must re-open a fresh descriptor from the content URI.
@@ -2373,6 +2400,8 @@ object PlaybackSession : MPVLib.EventObserver {
         )
       return ResolvedPlayable(uri, NetworkStreamRegistration(hlsProxy = hlsProxy, streamId = streamId))
     }
+
+    resolveDirectLinkViaProxy(item)?.let { return it }
 
     val context = applicationContext
     if (item.playableUri.startsWith("fd://") && item.originalUri.startsWith("content://")) {
@@ -2467,6 +2496,7 @@ object PlaybackSession : MPVLib.EventObserver {
     runCatching {
       registration.proxy?.unregisterStream(registration.streamId)
       registration.hlsProxy?.unregisterStream(registration.streamId)
+      registration.directLinkProxy?.unregister(registration.streamId)
     }.onFailure { error -> Log.w(TAG, "Failed to release network stream", error) }
   }
 
