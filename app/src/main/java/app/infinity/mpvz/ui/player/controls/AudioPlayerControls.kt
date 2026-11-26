@@ -639,7 +639,10 @@ private fun ImmersiveArtworkBackground(
     }
   }
   BoxWithConstraints(Modifier.fillMaxSize().clipToBounds()) {
-    val artworkHeight = minOf(maxHeight * 0.64f, maxWidth * 1.7f)
+    // Upstream: the art layer spans the full scene so the artwork runs edge to edge
+    // horizontally AND covers most of the screen vertically; the DstIn mask below
+    // fades it into the page instead of a hard cut.
+    val artworkHeight = maxHeight
     val viewportWidth = constraints.maxWidth.toFloat()
     Box(
       Modifier
@@ -651,6 +654,7 @@ private fun ImmersiveArtworkBackground(
             Brush.verticalGradient(
               0f to Color.White,
               0.48f to Color.White,
+              0.82f to Color.White.copy(alpha = 0.55f),
               1f to Color.Transparent,
             )
           onDrawWithContent {
@@ -2052,7 +2056,7 @@ fun AudioPlayerControls(
               contentAlignment = Alignment.Center,
             ) {
               // 1. Previous Cover Art Card (Visible when dragging right -> currentOffset > 0)
-              if (currentOffset > 0f) {
+              if (currentOffset > 0f && !showImmersiveArtwork) {
                 Surface(
                   modifier = Modifier
                     .aspectRatio(1f)
@@ -2066,7 +2070,7 @@ fun AudioPlayerControls(
               }
 
               // 2. Next Cover Art Card (Visible when dragging left -> currentOffset < 0)
-              if (currentOffset < 0f) {
+              if (currentOffset < 0f && !showImmersiveArtwork) {
                 Surface(
                   modifier = Modifier
                     .aspectRatio(1f)
@@ -2106,12 +2110,16 @@ fun AudioPlayerControls(
                 shape = coverShape,
                 color = Color.Transparent,
               ) {
-                CoverArtCardImage(
-                  bitmap = activeCoverOverride ?: albumArtBitmap,
-                  artworkUrl = currentArtworkUri,
-                  motionArtwork = currentAudioPresentation?.motionArtwork?.takeIf { activeCoverOverride == null && !(isRadio && streamCover != null) },
-                  isPlaying = paused != true && !coverShown,
-                )
+                // Upstream behavior: when the immersive full-bleed layer is showing, the
+                // in-column cover card draws nothing — the background IS the artwork.
+                if (!showImmersiveArtwork) {
+                  CoverArtCardImage(
+                    bitmap = activeCoverOverride ?: albumArtBitmap,
+                    artworkUrl = currentArtworkUri,
+                    motionArtwork = currentAudioPresentation?.motionArtwork?.takeIf { activeCoverOverride == null && !(isRadio && streamCover != null) },
+                    isPlaying = paused != true && !coverShown,
+                  )
+                }
               }
             }
           }
