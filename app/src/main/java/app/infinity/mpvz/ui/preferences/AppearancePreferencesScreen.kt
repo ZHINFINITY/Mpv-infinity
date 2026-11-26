@@ -89,6 +89,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
+import app.infinity.mpvz.ui.player.controls.AudioBadgeStyle
 import app.infinity.mpvz.ui.preferences.components.ListPreference
 import me.zhanghai.compose.preference.ProvidePreferenceLocals
 import app.infinity.mpvz.ui.preferences.components.SliderPreference
@@ -729,6 +730,29 @@ object AppearancePreferencesScreen : Screen {
                     color = MaterialTheme.colorScheme.outline,
                   )
                 },
+              )
+              PreferenceDivider()
+              val videoBadgeStyle by preferences.videoBadgeStyle.collectAsState()
+              ListPreference(
+                value = AudioBadgeStyle.fromId(videoBadgeStyle),
+                onValueChange = { preferences.videoBadgeStyle.set(it.id) },
+                values = AudioBadgeStyle.entries.toList(),
+                title = { Text(stringResource(R.string.pref_video_badge_style_title)) },
+                summary = {
+                  Text(
+                    when (AudioBadgeStyle.fromId(videoBadgeStyle)) {
+                      AudioBadgeStyle.Text -> stringResource(R.string.pref_audio_badge_style_text)
+                      AudioBadgeStyle.GlassVibrant -> "Glass Vibrant"
+                      AudioBadgeStyle.Neon -> "Neon"
+                      AudioBadgeStyle.Solid -> "Solid"
+                      AudioBadgeStyle.Frost -> "Frost"
+                      AudioBadgeStyle.Liquid -> "Liquid Glass"
+                      AudioBadgeStyle.Prism -> "Prism"
+                    },
+                    color = MaterialTheme.colorScheme.outline,
+                  )
+                },
+                valueToText = { AnnotatedString(it.name) },
               )
             }
           }
