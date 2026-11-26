@@ -70,8 +70,9 @@ class AudioLandscapeLayoutPolicyTest {
     ).first { it.isFile }.readText()
     val start = src.indexOf("val landscapePlaybackControlsRow = @Composable {")
     val row = src.substring(start, src.indexOf("val audiobookModeButtons = @Composable {", start))
-    assertTrue("every transport icon has a TalkBack label", !row.contains("contentDescription = null"))
-    for (key in listOf("pref_gesture_media_previous", "player_seek_backward", "player_seek_forward", "pref_gesture_media_next", "ui_play", "audiobook_pause")) {
+    // mpvrx-faithful row: music prev/next are decorative arrows (null labels), audiobook
+    // chapter/seek controls carry TalkBack labels; play/pause always labelled.
+    for (key in listOf("audiobook_previous_chapter", "player_seek_backward", "player_seek_forward", "audiobook_next_chapter", "ui_play", "audiobook_pause")) {
       assertTrue(key, row.contains("R.string.$key") || src.contains("R.string.$key"))
     }
     // The expressive play button takes its height from the row (56dp landscape); it never hardcodes 64dp.

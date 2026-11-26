@@ -1298,6 +1298,8 @@ fun AudioPlayerControls(
   val isPortrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
   val isTablet = configuration.smallestScreenWidthDp >= 600
   val isTabletLandscape = !isPortrait && isTablet
+  // mpvrx's compact-landscape rule: short display heights shrink the transport row.
+  val isCompactLandscape = !isPortrait && configuration.screenHeightDp < 480
   val isTabletPortrait = isPortrait && isTablet
   val hostPlayerView = androidx.compose.ui.platform.LocalView.current
   val transitionViewportWidthPx = with(LocalDensity.current) { configuration.screenWidthDp.dp.toPx() }
@@ -2483,14 +2485,27 @@ fun AudioPlayerControls(
     }
 
     val playbackControlsRow = @Composable {
-      // mpvrx sizing: portrait side buttons 64dp, play bar 72dp tall and weighted to fill
-      // the middle, so the row fills the width without ever overflowing it.
-      val sideSize = 64.dp
-      val playHeight = 72.dp
-      val sideIconSize = 28.dp
+      // mpvrx sizing ladder: portrait/tablet 64dp sides + 72dp play; compact/short landscape
+      // shrinks; seek buttons appear only for audiobooks (music row is prev / play / next).
+      val sideSize =
+        when {
+          isCompactLandscape || isAudiobook -> 48.dp
+          isPortrait || isTablet -> 64.dp
+          else -> 56.dp
+        }
+      val playHeight =
+        when {
+          isCompactLandscape -> 52.dp
+          isPortrait || isTablet -> 72.dp
+          else -> 60.dp
+        }
+      val sideIconSize = if (isCompactLandscape || isAudiobook) 24.dp else 28.dp
+      val controlSpacing = if (isCompactLandscape || isAudiobook) 10.dp else 18.dp
       Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(18.dp),
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(horizontal = if (isPortrait || isTablet) 8.dp else 0.dp),
+        horizontalArrangement = Arrangement.spacedBy(controlSpacing),
         verticalAlignment = Alignment.CenterVertically,
       ) {
         ExpressiveTransportSideButton(
@@ -2498,26 +2513,29 @@ fun AudioPlayerControls(
           size = sideSize,
           enabled = if (isAudiobook) AudiobookPlayback.currentChapter() != null else playlistModeEnabled,
         ) {
-          AnimatedIcon(
+          Icon(
             imageVector = Icons.RoundedFilled.SkipPrevious,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSecondaryContainer,
+            contentDescription = if (isAudiobook) stringResource(R.string.audiobook_previous_chapter) else null,
+            tint =
+              MaterialTheme.colorScheme.onSecondaryContainer.copy(
+                alpha = if (isAudiobook || playlistModeEnabled) 1f else 0.38f,
+              ),
             modifier = Modifier.size(sideIconSize),
           )
         }
-        if (!isRadio) {
+        if (isAudiobook) {
           AudioSeekButton(
             forward = false,
-            seconds = if (isAudiobook) 30 else audioSeekDuration,
+            seconds = 30,
             enabled = true,
             modifier = Modifier.size(sideSize),
-            onClick = { viewModel.seekBy(if (isAudiobook) -30 else -audioSeekDuration) },
+            onClick = { viewModel.seekBy(-30) },
           )
         }
         ExpressivePlayPauseButton(
           isPlaying = isPlaying,
           height = playHeight,
-          compact = false,
+          compact = isCompactLandscape,
           onClick = {
             optimisticIsPlaying = !isPlaying
             viewModel.pauseUnpause()
@@ -2526,18 +2544,18 @@ fun AudioPlayerControls(
         ) {
           AnimatedIcon(
             imageVector = if (isPlaying) Icons.RoundedFilled.Pause else Icons.RoundedFilled.PlayArrow,
-            contentDescription = null,
+            contentDescription = stringResource(if (isPlaying) R.string.audiobook_pause else R.string.ui_play),
             tint = MaterialTheme.colorScheme.onPrimary,
-            modifier = Modifier.size(34.dp),
+            modifier = Modifier.size(if (isPortrait || isTablet) 34.dp else 28.dp),
           )
         }
-        if (!isRadio) {
+        if (isAudiobook) {
           AudioSeekButton(
             forward = true,
-            seconds = if (isAudiobook) 30 else audioSeekDuration,
+            seconds = 30,
             enabled = true,
             modifier = Modifier.size(sideSize),
-            onClick = { viewModel.seekBy(if (isAudiobook) 30 else audioSeekDuration) },
+            onClick = { viewModel.seekBy(30) },
           )
         }
         ExpressiveTransportSideButton(
@@ -2545,10 +2563,13 @@ fun AudioPlayerControls(
           size = sideSize,
           enabled = if (isAudiobook) true else playlistModeEnabled,
         ) {
-          AnimatedIcon(
+          Icon(
             imageVector = Icons.RoundedFilled.SkipNext,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSecondaryContainer,
+            contentDescription = if (isAudiobook) stringResource(R.string.audiobook_next_chapter) else null,
+            tint =
+              MaterialTheme.colorScheme.onSecondaryContainer.copy(
+                alpha = if (isAudiobook || playlistModeEnabled) 1f else 0.38f,
+              ),
             modifier = Modifier.size(sideIconSize),
           )
         }
@@ -2558,28 +2579,39 @@ fun AudioPlayerControls(
     // Landscape always keeps the complete five-control transport row. Seeking is
     // disabled for live radio, rather than removing a control and changing the row.
     val landscapePlaybackControlsRow = @Composable {
+      // mpvrx landscape: same button set as portrait (seek buttons only for audiobooks),
+      // compact sizes for short displays.
+      val sideSize = if (isCompactLandscape || isAudiobook) 48.dp else 56.dp
+      val sideIconSize = if (isCompactLandscape || isAudiobook) 24.dp else 28.dp
       Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(if (isCompactLandscape || isAudiobook) 10.dp else 12.dp),
         verticalAlignment = Alignment.CenterVertically,
       ) {
         ExpressiveTransportSideButton(
           onClick = { if (isAudiobook) viewModel.stepPlaybackChapter(-1) else viewModel.playPrevious() },
-          size = 56.dp,
+          size = sideSize,
           enabled = if (isAudiobook) AudiobookPlayback.currentChapter() != null else playlistModeEnabled,
         ) {
-          Icon(Icons.RoundedFilled.SkipPrevious, contentDescription = stringResource(R.string.pref_gesture_media_previous), tint = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.size(28.dp))
+          Icon(
+            imageVector = Icons.RoundedFilled.SkipPrevious,
+            contentDescription = if (isAudiobook) stringResource(R.string.audiobook_previous_chapter) else null,
+            tint = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = if (isAudiobook || playlistModeEnabled) 1f else 0.38f),
+            modifier = Modifier.size(sideIconSize),
+          )
         }
-        AudioSeekButton(
-          forward = false,
-          seconds = if (isAudiobook) 30 else audioSeekDuration,
-          enabled = !isRadio,
-          modifier = Modifier.size(56.dp),
-          onClick = { viewModel.seekBy(if (isAudiobook) -30 else -audioSeekDuration) },
-        )
+        if (isAudiobook) {
+          AudioSeekButton(
+            forward = false,
+            seconds = 30,
+            enabled = true,
+            modifier = Modifier.size(sideSize),
+            onClick = { viewModel.seekBy(-30) },
+          )
+        }
         ExpressivePlayPauseButton(
           isPlaying = isPlaying,
-          height = 60.dp,
+          height = if (isCompactLandscape) 52.dp else 60.dp,
           compact = true,
           onClick = { optimisticIsPlaying = !isPlaying; viewModel.pauseUnpause() },
           modifier = Modifier.weight(1f),
@@ -2588,22 +2620,29 @@ fun AudioPlayerControls(
             imageVector = if (isPlaying) Icons.RoundedFilled.Pause else Icons.RoundedFilled.PlayArrow,
             contentDescription = stringResource(if (isPlaying) R.string.audiobook_pause else R.string.ui_play),
             tint = MaterialTheme.colorScheme.onPrimary,
-            modifier = Modifier.size(34.dp),
+            modifier = Modifier.size(28.dp),
           )
         }
-        AudioSeekButton(
-          forward = true,
-          seconds = if (isAudiobook) 30 else audioSeekDuration,
-          enabled = !isRadio,
-          modifier = Modifier.size(56.dp),
-          onClick = { viewModel.seekBy(if (isAudiobook) 30 else audioSeekDuration) },
-        )
+        if (isAudiobook) {
+          AudioSeekButton(
+            forward = true,
+            seconds = 30,
+            enabled = true,
+            modifier = Modifier.size(sideSize),
+            onClick = { viewModel.seekBy(30) },
+          )
+        }
         ExpressiveTransportSideButton(
           onClick = { if (isAudiobook) viewModel.stepPlaybackChapter(1) else viewModel.playNext() },
-          size = 56.dp,
+          size = sideSize,
           enabled = if (isAudiobook) true else playlistModeEnabled,
         ) {
-          Icon(Icons.RoundedFilled.SkipNext, contentDescription = stringResource(R.string.pref_gesture_media_next), tint = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.size(28.dp))
+          Icon(
+            imageVector = Icons.RoundedFilled.SkipNext,
+            contentDescription = if (isAudiobook) stringResource(R.string.audiobook_next_chapter) else null,
+            tint = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = if (isAudiobook || playlistModeEnabled) 1f else 0.38f),
+            modifier = Modifier.size(sideIconSize),
+          )
         }
       }
     }
