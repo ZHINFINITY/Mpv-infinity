@@ -139,6 +139,129 @@ class BrowserPreferences(
 
   // When deleting a folder, delete all files instead of only media files
   val deleteFolderAllContents = preferenceStore.getBoolean("delete_folder_all_contents", false)
+
+  // FR-09: the snapshot library defaults to newest capture first.
+  val snapshotSortType = preferenceStore.getEnum("snapshot_sort_type", SnapshotSortType.CapturedAt)
+  val snapshotSortOrder = preferenceStore.getEnum("snapshot_sort_order", SortOrder.Descending)
+  val snapshotFolderSortType = preferenceStore.getEnum("snapshot_folder_sort_type", SnapshotFolderSortType.Name)
+  val snapshotFolderSortOrder = preferenceStore.getEnum("snapshot_folder_sort_order", SortOrder.Ascending)
+  val snapshotLibraryView =
+    BrowserPageViewPreferences(
+      preferenceStore,
+      "snapshot_library",
+      folderDefaults = true,
+      defaultLayoutMode = MediaLayoutMode.GRID,
+      inheritGlobalLayout = false,
+    )
+  val snapshotItemView =
+    BrowserPageViewPreferences(
+      preferenceStore,
+      "snapshot_item",
+      defaultLayoutMode = MediaLayoutMode.GRID,
+      inheritGlobalLayout = false,
+    )
+  val recentView = BrowserPageViewPreferences(preferenceStore, "recent", thumbnailsByDefault = true)
+  val playlistView =
+    BrowserPageViewPreferences(
+      preferenceStore,
+      "playlist_library",
+      folderDefaults = true,
+      thumbnailsByDefault = true,
+      inheritGlobalThumbnails = false,
+    )
+}
+
+/**
+ * Per-page overrides of the browser card settings: every screen (recents, playlists, snapshots)
+ * keeps its own layout, columns and chip visibility instead of all pages sharing one set.
+ */
+class BrowserPageViewPreferences internal constructor(
+  private val preferenceStore: PreferenceStore,
+  private val prefix: String,
+  folderDefaults: Boolean = false,
+  /**
+   * The layout a page starts in. Snapshots pass GRID: a photo album that opens as a list gets the
+   * first impression wrong, and the browser's own LIST default is about file names, not pictures.
+   */
+  defaultLayoutMode: MediaLayoutMode = MediaLayoutMode.LIST,
+  /**
+   * Whether an unset page layout is seeded from the browser's global `media_layout_mode`. Snapshots
+   * opt out so their grid default is not dragged to the list by an unrelated setting.
+   */
+  inheritGlobalLayout: Boolean = true,
+  thumbnailsByDefault: Boolean = !folderDefaults,
+  inheritGlobalThumbnails: Boolean = true,
+) {
+  val layoutMode =
+    if (inheritGlobalLayout) {
+      preferenceStore
+        .getEnum("${prefix}_layout_mode", defaultLayoutMode)
+        .initializeFrom(preferenceStore.getEnum("media_layout_mode", defaultLayoutMode))
+    } else {
+      preferenceStore.getEnum("${prefix}_layout_mode", defaultLayoutMode)
+    }
+  val manualGridColumnsEnabled = boolean("manual_grid_columns_enabled", false)
+  val gridColumnsPortrait = integer(
+    "grid_columns_portrait",
+    0,
+    if (folderDefaults) "folder_grid_columns_portrait" else "video_grid_columns_portrait",
+  )
+  val gridColumnsLandscape = integer(
+    "grid_columns_landscape",
+    0,
+    if (folderDefaults) "folder_grid_columns_landscape" else "video_grid_columns_landscape",
+  )
+  val showThumbnails =
+    if (inheritGlobalThumbnails) {
+      boolean("show_thumbnails", thumbnailsByDefault, if (folderDefaults) "show_folder_thumbnails" else "show_video_thumbnails")
+    } else {
+      // Playlist covers start visible independently of the folder-thumbnail setting.
+      preferenceStore.getBoolean("${prefix}_show_thumbnails", thumbnailsByDefault)
+    }
+  val unlimitedNameLines = boolean("unlimited_name_lines", false)
+  val centerGridTitles = boolean("center_grid_titles", true)
+  val showExtensionField = boolean("show_extension_field", false)
+  val showDurationField = boolean("show_duration_field", false)
+  val showSizeChip = boolean("show_size_chip", false)
+  val showResolutionChip = boolean("show_resolution_chip", false)
+  val showFramerateInResolution = boolean("show_framerate_in_resolution", false)
+  val showSubtitleIndicator = boolean("show_subtitle_indicator", false)
+  val showCodecSupportIndicator = boolean("show_codec_support_indicator", false)
+  val showProgressBar = boolean("show_progress_bar", true)
+  val grayscaleWatchedThumbnails = boolean("grayscale_watched_thumbnails", true)
+  val showDateChip = boolean("show_date_chip", false)
+  val showItemCount = boolean("show_item_count", true, "show_total_videos_chip")
+  val showLocation = boolean("show_location", true, "show_playlist_location")
+  val showCategory = boolean("show_category", true, "show_playlist_category")
+  val showStreamDetails = boolean("show_stream_details", true, "show_playlist_stream_details")
+  val audioCoverArtSize = integer("audio_cover_art_size", 48, "music_cover_art_size")
+
+  private fun boolean(key: String, defaultValue: Boolean, legacyKey: String = key): Preference<Boolean> =
+    preferenceStore.getBoolean("${prefix}_$key", defaultValue)
+      .initializeFrom(preferenceStore.getBoolean(legacyKey, defaultValue))
+
+  private fun integer(key: String, defaultValue: Int, legacyKey: String): Preference<Int> =
+    preferenceStore.getInt("${prefix}_$key", defaultValue)
+      .initializeFrom(preferenceStore.getInt(legacyKey, defaultValue))
+
+  private fun <T> Preference<T>.initializeFrom(legacy: Preference<T>): Preference<T> =
+    apply {
+      if (!isSet()) set(legacy.get())
+    }
+}
+
+/** Sort fields offered on the Snapshots tab. */
+enum class SnapshotSortType {
+  CapturedAt,
+  VideoTitle,
+  Position,
+}
+
+/** Sort fields offered on the snapshot library's folder list. */
+enum class SnapshotFolderSortType {
+  Name,
+  CreatedAt,
+  ItemCount,
 }
 
 /**
@@ -245,6 +368,12 @@ enum class TreeFlattenDepth(
 enum class MediaLayoutMode {
   LIST,
   GRID,
+
+  /**
+   * Photo-wall layout: every image keeps its own aspect ratio and a wide frame spans two columns.
+   * Only the snapshots' item view offers it — the enum is shared, the choices are not.
+   */
+  MOSAIC,
   ;
 
   val displayName: String
@@ -252,6 +381,7 @@ enum class MediaLayoutMode {
       when (this) {
         LIST -> "List"
         GRID -> "Grid"
+        MOSAIC -> "Mosaic"
       }
 }
 

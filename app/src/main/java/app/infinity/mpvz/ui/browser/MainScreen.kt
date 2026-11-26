@@ -133,6 +133,7 @@ object MainScreen : Screen {
     JELLYFIN,
     NAVIDROME,
     AUDIOBOOKS,
+    PROFILE,
   }
 
   // Use a companion object to store state more persistently
@@ -186,6 +187,7 @@ object MainScreen : Screen {
     val showJellyfinTab by appearancePreferences.showJellyfinTab.collectAsState()
     val showNavidromeTab by appearancePreferences.showNavidromeTab.collectAsState()
     val showAudiobooksTab by appearancePreferences.showAudiobooksTab.collectAsState()
+    val showProfileTab by appearancePreferences.showProfileTab.collectAsState()
     val musicSourceProvider by mediaServerPreferences.musicSourceProvider.collectAsState()
     val hideNavigationBar = NavigationBarState.shouldHideNavigationBar
     val isPermissionDenied = NavigationBarState.isPermissionDenied
@@ -202,6 +204,7 @@ object MainScreen : Screen {
         showJellyfinTab,
         showNavidromeTab,
         showAudiobooksTab,
+        showProfileTab,
       ) {
         buildList {
           if (showHomeTab) add(MainTab.HOME)
@@ -212,6 +215,7 @@ object MainScreen : Screen {
           if (showJellyfinTab) add(MainTab.JELLYFIN)
           if (showNavidromeTab) add(MainTab.NAVIDROME)
           if (showAudiobooksTab) add(MainTab.AUDIOBOOKS)
+          if (showProfileTab) add(MainTab.PROFILE)
         }
       }
 
@@ -406,6 +410,7 @@ object MainScreen : Screen {
                 MainTab.JELLYFIN -> app.infinity.mpvz.ui.browser.jellyfin.JellyfinContent(viewModel = jellyfinViewModel)
                 MainTab.NAVIDROME -> app.infinity.mpvz.ui.browser.navidrome.NavidromeContent(viewModel = navidromeViewModel)
                 MainTab.AUDIOBOOKS -> app.infinity.mpvz.ui.browser.audiobooks.AudiobookLibraryScreen.Content()
+                MainTab.PROFILE -> app.infinity.mpvz.ui.browser.profile.ProfileScreen.Content()
               }
             }
           }
@@ -564,6 +569,7 @@ private fun ExpressivePillNavigationBar(
       MainScreen.MainTab.JELLYFIN -> 120.dp
       MainScreen.MainTab.NAVIDROME -> 108.dp
       MainScreen.MainTab.AUDIOBOOKS -> 144.dp
+      MainScreen.MainTab.PROFILE -> 100.dp
     }
 
   val inactiveTabWidth = 44.dp
@@ -782,6 +788,13 @@ private fun ExpressivePillNavigationBar(
                     tint = contentColor,
                     modifier = Modifier.size(24.dp),
                   )
+                MainScreen.MainTab.PROFILE ->
+                  Icon(
+                    Icons.RoundedFilled.Person,
+                    contentDescription = stringResource(R.string.ui_profile),
+                    tint = contentColor,
+                    modifier = Modifier.size(24.dp),
+                  )
               }
 
               if (tabFraction > 0.05f) {
@@ -797,6 +810,7 @@ private fun ExpressivePillNavigationBar(
                       MainScreen.MainTab.JELLYFIN -> stringResource(R.string.ui_jellyfin)
                       MainScreen.MainTab.NAVIDROME -> stringResource(R.string.pref_navidrome_title)
                       MainScreen.MainTab.AUDIOBOOKS -> stringResource(R.string.audiobooks_title)
+                      MainScreen.MainTab.PROFILE -> stringResource(R.string.ui_profile)
                     },
                   style = MaterialTheme.typography.labelMedium,
                   fontWeight = FontWeight.Bold,
@@ -819,6 +833,9 @@ private fun ExpressivePillNavigationBar(
 }
 
 val LocalNavigationBarHeight = compositionLocalOf { 0.dp }
+
+// True for a screen hosted as a bottom-navigation page; false when the same screen is pushed on the back stack.
+val LocalIsMainTabPage = compositionLocalOf { false }
 
 // CompositionLocal for main navigation bar
 val LocalMainNavigationBar =

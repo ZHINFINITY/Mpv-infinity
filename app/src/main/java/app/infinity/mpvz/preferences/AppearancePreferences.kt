@@ -39,6 +39,11 @@ import kotlinx.collections.immutable.ImmutableList
 class AppearancePreferences(
   preferenceStore: PreferenceStore,
 ) {
+  val showProfileTab = preferenceStore.getBoolean("show_profile_tab", true)
+  val profileName = preferenceStore.getString("profile_name", "")
+  val profileImagePath = preferenceStore.getString("profile_image_path", "")
+  val profileSectionOrder = preferenceStore.profileLayoutOrder("profile_section_order", ProfileSection.entries.map { it.name })
+  val profileHiddenSections = preferenceStore.getStringSet("profile_hidden_sections")
   val darkMode = preferenceStore.getEnum("dark_mode", DarkMode.System)
   // Monochrome is the neutral first-install experience; a persisted user choice always wins.
   val appTheme = preferenceStore.getEnum("app_theme", AppTheme.Monochrome)

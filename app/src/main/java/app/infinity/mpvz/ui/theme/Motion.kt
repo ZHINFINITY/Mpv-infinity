@@ -25,8 +25,11 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.interaction.InteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.animation.core.Animatable
 import app.infinity.mpvz.preferences.preference.collectAsState
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
@@ -85,7 +88,6 @@ object AppMotion {
     spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = stiffness)
 
   val EnterEasing = CubicBezierEasing(0.16f, 1f, 0.3f, 1f)
-
   /** A small, interruptible hand-off for changing actions; never changes their touch target. */
   fun iconChange(reduceMotion: Boolean): androidx.compose.animation.ContentTransform =
     if (reduceMotion) {
@@ -125,6 +127,11 @@ object AppMotion {
     /** Press / release feedback used by expressive transport buttons. */
     val Press = tween<Float>(durationMillis = 90, easing = EnterEasing)
     val Release: SpringSpec<Float> = noBounce(stiffness = 700f)
+    val ExpressiveOffset: SpringSpec<IntOffset> = spring(dampingRatio = 0.9f, stiffness = 700f)
+    val ExpressiveSize: SpringSpec<IntSize> = spring(dampingRatio = 0.9f, stiffness = 700f)
+    val StandardOffset: SpringSpec<IntOffset> = spring(dampingRatio = 1f, stiffness = 380f)
+    val StandardSize: SpringSpec<IntSize> = spring(dampingRatio = 1f, stiffness = 380f)
+    val IntSizeSpring: SpringSpec<IntSize> = StandardSize
   }
 
   /** Effect animations — color and alpha transitions (no overshoot). */
@@ -175,5 +182,22 @@ fun Modifier.appPressFeedback(
   return graphicsLayer {
     scaleX = scale.value
     scaleY = scale.value
+  }
+}
+
+/** Dialogs enter once per opening, not on recomposition or when their fields change. */
+@Composable
+fun Modifier.appDialogEnter(
+  reduceMotion: Boolean = AppMotion.shouldReduceMotion(),
+): Modifier {
+  if (reduceMotion) return this
+  val progress = remember { Animatable(0f) }
+  LaunchedEffect(Unit) {
+    progress.animateTo(1f, tween(durationMillis = 220, easing = AppMotion.EnterEasing))
+  }
+  return graphicsLayer {
+    alpha = progress.value
+    scaleX = 0.94f + 0.06f * progress.value
+    scaleY = scaleX
   }
 }

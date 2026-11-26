@@ -380,6 +380,30 @@ class NetworkRepository(
   private fun hasConnectedClient(connectionId: Long): Boolean =
     activeClients[connectionId]?.isConnected() == true
 
+  /**
+   * Lightweight reachability check for the snapshot browser: an already-open session is validated
+   * with a listing, otherwise a real connect is attempted and its failure classified.
+   */
+  suspend fun probe(connection: NetworkConnection): NetworkProbeResult {
+    if (hasConnectedClient(connection.id)) {
+      return listFiles(connection, "/").fold(
+        onSuccess = { NetworkProbeResult.REACHABLE },
+        onFailure = { NetworkProbeResult.UNREACHABLE },
+      )
+    }
+    return connect(connection).fold(
+      onSuccess = { NetworkProbeResult.REACHABLE },
+      onFailure = { error ->
+        val authFailure =
+          generateSequence(error as Throwable?) { it?.cause }.any {
+            it is NetworkCredentialUnavailableException ||
+              it?.message?.contains("auth", ignoreCase = true) == true
+          }
+        if (authFailure) NetworkProbeResult.AUTHENTICATION_FAILED else NetworkProbeResult.UNREACHABLE
+      },
+    )
+  }
+
   private fun NetworkConnection.hasSameConnectionSettings(other: NetworkConnection): Boolean =
     protocol == other.protocol &&
       host == other.host &&
@@ -399,3 +423,6 @@ class NetworkRepository(
       message ?: "Connection failed"
     }
 }
+
+/** Outcome of [NetworkRepository.probe]. */
+enum class NetworkProbeResult { REACHABLE, AUTHENTICATION_FAILED, UNREACHABLE }

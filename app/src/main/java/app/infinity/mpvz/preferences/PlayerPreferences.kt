@@ -41,6 +41,7 @@ enum class PlayerClockFormat(
 class PlayerPreferences(
   preferenceStore: PreferenceStore,
 ) {
+  val showAppToasts = preferenceStore.getBoolean("show_app_toasts", true)
   val orientation = preferenceStore.getEnum("player_orientation", PlayerOrientation.Video)
   val invertDuration = preferenceStore.getBoolean("invert_duration")
   val holdForMultipleSpeed = preferenceStore.getFloat("hold_for_multiple_speed", 2f)

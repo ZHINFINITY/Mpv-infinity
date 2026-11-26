@@ -424,6 +424,19 @@ class ThumbnailRepository(
   ): String = "${memoryVideoBaseKey(video)}|$width|$height|${thumbnailModeKey()}|${thumbnailQualityKey()}"
 
   /**
+   * Non-blocking peek for composition. Building a key can hit the filesystem or MediaStore, so
+   * this only answers for keys [thumbnailKey] has already produced and returns null otherwise.
+   */
+  fun peekThumbnailFromMemory(
+    video: Video,
+    widthPx: Int,
+    heightPx: Int,
+  ): Bitmap? {
+    val key = thumbnailKey(video, widthPx, heightPx)
+    return synchronized(memoryCache) { memoryCache.get(key) }
+  }
+
+  /**
    * Folder prefetch and a visible card may request different sizes for the same source.
    * The disk entry is size-independent, so either completion can wake the card and let it
    * decode the cached bitmap at its own target dimensions.

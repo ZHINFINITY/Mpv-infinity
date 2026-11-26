@@ -10,6 +10,11 @@ package app.infinity.mpvz.ui.utils
 import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
 
+/** Ignore repeat taps on the same destination before the outgoing screen has left composition. */
+fun <T : NavKey> NavBackStack<T>.navigateTo(screen: T) {
+  if (lastOrNull() != screen) add(screen)
+}
+
 /**
  * Pops the current entry without ever leaving the NavDisplay with an empty stack.
  *

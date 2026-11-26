@@ -56,6 +56,11 @@ object Icons {
     val Camera by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Camera) }
     val CameraAlt by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Photo_camera) }
     val Cancel by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Cancel) }
+    val Image by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Image) }
+    val Subscriptions by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Subscriptions) }
+    val AccountCircle by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Account_circle) }
+    val RotateLeft by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Rotate_left) }
+    val RotateRight by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Rotate_right) }
     val CatchingPokemon by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Pets) }
     val Cast by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Cast) }
     val Check by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Check) }
@@ -306,6 +311,11 @@ object Icons {
     val Camera get() = Shared.Camera
     val CameraAlt get() = Shared.CameraAlt
     val Cancel get() = Shared.Cancel
+    val Image get() = Shared.Image
+    val Subscriptions get() = Shared.Subscriptions
+    val AccountCircle get() = Shared.AccountCircle
+    val RotateLeft get() = Shared.RotateLeft
+    val RotateRight get() = Shared.RotateRight
     val CatchingPokemon get() = Shared.CatchingPokemon
     val Cast get() = Shared.Cast
     val Check get() = Shared.Check
