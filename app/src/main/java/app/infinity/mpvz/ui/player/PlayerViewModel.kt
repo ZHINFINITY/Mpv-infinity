@@ -74,8 +74,12 @@ import app.infinity.mpvz.ui.player.anime4k.clearAnime4KShaders
 import app.infinity.mpvz.ui.player.anime4k.selectRuntimeStableAnime4K
 import app.infinity.mpvz.ui.player.controls.components.sheets.EQ_MAX_DB
 import app.infinity.mpvz.ui.player.controls.components.sheets.EQ_MIN_DB
+import app.infinity.mpvz.ui.player.controls.components.sheets.EqualizerFilterKind
+import app.infinity.mpvz.ui.player.controls.components.sheets.EqualizerMode
 import app.infinity.mpvz.ui.player.controls.components.sheets.EqualizerPreset
 import app.infinity.mpvz.ui.player.controls.components.sheets.EqualizerState
+import app.infinity.mpvz.ui.player.controls.components.sheets.activeFilters
+import app.infinity.mpvz.ui.player.controls.components.sheets.recommendedPreampDb
 import app.infinity.mpvz.ui.player.ytdlp.YtdlpManager
 import app.infinity.mpvz.ui.player.screenshot.ScreenshotSaver
 import app.infinity.mpvz.ui.player.screenshot.ScreenshotSettings
@@ -1069,18 +1073,43 @@ class PlayerViewModel(
     equalizerState.value =
       equalizerState.value.copy(
         currentPreset = preset,
-        bandGains = preset.gains,
+        bandGains = preset.gains.map { it.toFloat() },
       )
     applyEqualizerMpvFilters(immediate = true)
   }
 
+  fun setEqualizerMode(mode: EqualizerMode) {
+    if (equalizerState.value.mode != mode) {
+      equalizerState.value = equalizerState.value.copy(mode = mode)
+      applyEqualizerMpvFilters(immediate = true)
+    }
+  }
+
+  fun setEqualizerTone(
+    x: Int,
+    y: Int,
+  ) {
+    val current = equalizerState.value
+    if (current.toneX != x || current.toneY != y) {
+      equalizerState.value = current.copy(toneX = x, toneY = y)
+      applyEqualizerMpvFilters(immediate = false)
+    }
+  }
+
+  fun setEqualizerToneFocus(focused: Boolean) {
+    if (equalizerState.value.toneFocused != focused) {
+      equalizerState.value = equalizerState.value.copy(toneFocused = focused)
+      applyEqualizerMpvFilters(immediate = true)
+    }
+  }
+
   fun setEqualizerBandGain(
     index: Int,
-    gainDb: Int,
+    gainDb: Float,
   ) {
     val currentGains = equalizerState.value.bandGains.toMutableList()
     if (index in currentGains.indices && currentGains[index] != gainDb) {
-      currentGains[index] = gainDb.coerceIn(EQ_MIN_DB, EQ_MAX_DB)
+      currentGains[index] = gainDb.coerceIn(EQ_MIN_DB.toFloat(), EQ_MAX_DB.toFloat())
       equalizerState.value =
         equalizerState.value.copy(
           currentPreset = EqualizerPreset.CUSTOM,
@@ -1362,7 +1391,7 @@ class PlayerViewModel(
     // 1. Hardware Android AudioFx (Equalizer & LoudnessEnhancer matching AFinity)
     audioEqualizerManager.updateState(
       enabled = state.isEnabled,
-      bandGains = state.bandGains,
+      bandGains = state.bandGains.map { it.roundToInt() },
       volumeBoostDb = state.volumeBoostDb,
     )
 
@@ -1421,27 +1450,35 @@ class PlayerViewModel(
       filterList.add("pan=[stereo|c0=c1|c1=c0]")
     }
 
-    // 5. Equalizer filters (if enabled)
+    // 5. Equalizer filters (if enabled). One lavfi graph owns the whole curve so Android AudioFx
+    // does not stack a second, device-dependent EQ on top of it.
     if (state.isEnabled) {
-      val maxGain = state.bandGains.maxOrNull() ?: 0
-      if (maxGain > 0) {
-        filterList.add("volume=volume=${-maxGain}dB")
+      val filters = state.activeFilters()
+      val outputGain = state.recommendedPreampDb() + state.volumeBoostDb
+      if (kotlin.math.abs(outputGain) >= 0.01f) {
+        filterList.add("volume=volume=${formatEqualizerNumber(outputGain)}dB")
       }
-      val freqs = listOf(60, 230, 910, 3600, 14000)
-      for (i in 0 until 5) {
-        val gain = state.bandGains.getOrElse(i) { 0 }
-        if (gain != 0) {
-          filterList.add("equalizer=f=${freqs[i]}:width_type=o:width=1.5:g=$gain")
-        }
-      }
-      if (state.volumeBoostDb > 0) {
-        filterList.add("volume=volume=${state.volumeBoostDb}dB")
+      if (filters.isNotEmpty()) {
+        val graph =
+          filters.joinToString(",") { filter ->
+            val gain = formatEqualizerNumber(filter.gainDb)
+            val q = formatEqualizerNumber(filter.q)
+            when (filter.kind) {
+              EqualizerFilterKind.BELL -> "equalizer=f=${filter.frequencyHz}:t=q:w=$q:g=$gain"
+              EqualizerFilterKind.LOW_SHELF -> "bass=f=${filter.frequencyHz}:t=q:w=$q:g=$gain"
+              EqualizerFilterKind.HIGH_SHELF -> "treble=f=${filter.frequencyHz}:t=q:w=$q:g=$gain"
+            }
+          }
+        filterList.add("lavfi=[$graph]")
       }
     }
 
     val afString = filterList.joinToString(",")
     PlaybackSession.setPropertyString("af", afString)
   }
+
+  private fun formatEqualizerNumber(value: Float): String =
+    String.format(java.util.Locale.US, "%.2f", value).trimEnd('0').trimEnd('.')
 
   fun updateAlbumArtBounds(rect: android.graphics.Rect?) {
     albumArtBounds.value = rect

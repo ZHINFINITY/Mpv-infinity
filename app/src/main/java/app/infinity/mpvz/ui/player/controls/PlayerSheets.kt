@@ -592,8 +592,11 @@ fun PlayerSheets(
       app.infinity.mpvz.ui.player.controls.components.sheets.EqualizerSheet(
         state = equalizerState,
         onEnabledChanged = viewModel::setEqualizerEnabled,
+        onModeChanged = viewModel::setEqualizerMode,
         onPresetSelected = viewModel::applyEqualizerPreset,
         onBandChanged = viewModel::setEqualizerBandGain,
+        onToneChanged = viewModel::setEqualizerTone,
+        onToneFocusChanged = viewModel::setEqualizerToneFocus,
         onVolumeBoostChanged = viewModel::setEqualizerVolumeBoost,
         onDismissRequest = onDismissRequest,
       )

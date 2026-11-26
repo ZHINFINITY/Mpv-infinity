@@ -37,6 +37,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -523,6 +524,9 @@ private fun AudioVisualizerViewport(
     val rendererModifier =
       Modifier
         .fillMaxSize()
+        // Bias the blob below the header area instead of centering on the full-height
+        // region that runs to the top edge of the screen.
+        .offset(y = maxHeight * 0.06f)
         .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
         .drawWithCache {
           val bottomFade =
@@ -2004,6 +2008,9 @@ fun AudioPlayerControls(
                       scaleOut(animationSpec = tween(280), targetScale = 1.06f),
                   )
               }
+              .using(
+                SizeTransform(clip = false),
+              )
             },
             label = "visualizer_toggle",
             modifier = Modifier.fillMaxHeight().fillMaxWidth(if (isTabletPortrait) 0.65f else 1.0f),
@@ -2867,7 +2874,7 @@ fun AudioPlayerControls(
                 onClick = { onOpenSheet(Sheets.AudioOutput) },
               ) { tint ->
                 Icon(
-                  imageVector = Icons.RoundedFilled.Headset,
+                  imageVector = Icons.RoundedFilled.Speaker,
                   contentDescription = "Audio output",
                   tint = tint,
                   modifier = Modifier.size(iconSize),

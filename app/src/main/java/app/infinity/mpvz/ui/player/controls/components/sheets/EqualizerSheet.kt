@@ -8,13 +8,14 @@
 package app.infinity.mpvz.ui.player.controls.components.sheets
 
 import app.infinity.mpvz.presentation.components.PlayerSheet
-import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
 import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
-import app.infinity.mpvz.ui.preferences.components.settingsGlassEnabled
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,17 +23,22 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import app.infinity.mpvz.ui.components.IconSwitch
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -44,60 +50,79 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
+import app.infinity.mpvz.ui.components.IconSwitch
 import app.infinity.mpvz.ui.player.controls.components.GlassSlider
+
+enum class EqualizerMode {
+  DYNAMIC,
+  MANUAL,
+}
 
 enum class EqualizerPreset(
   val displayName: String,
   val gains: List<Int>,
 ) {
-  FLAT("Flat", listOf(0, 0, 0, 0, 0)),
-  ACOUSTIC("Acoustic", listOf(3, 0, 2, 2, 1)),
-  BASS_BOOST("Bass Boost", listOf(6, 4, 2, 0, 0)),
-  BASS_CUT("Bass Cut", listOf(-6, -4, -2, 0, 0)),
-  VOCAL("Vocal", listOf(-3, 1, 4, 3, -1)),
-  TREBLE_BOOST("Treble Boost", listOf(0, 0, 0, 4, 5)),
-  TREBLE_CUT("Treble Cut", listOf(0, 0, 0, -4, -5)),
-  LOUDNESS("Loudness", listOf(6, 0, -2, 2, 5)),
-  SPOKEN_WORD("Spoken Word", listOf(-5, 2, 4, 2, -2)),
-  ELECTRONIC("Electronic", listOf(5, 0, 0, 3, 4)),
-  ROCK("Rock", listOf(4, -1, -2, 3, 4)),
-  HIP_HOP("Hip Hop", listOf(6, 1, -1, 2, 3)),
-  JAZZ("Jazz", listOf(3, 0, 1, 2, 3)),
-  CLASSICAL("Classical", listOf(3, 0, 0, 3, 3)),
-  SMALL_SPEAKERS("Small Speakers", listOf(5, 2, 1, -1, -2)),
-  LATE_NIGHT("Late Night", listOf(3, 0, 2, -1, -3)),
-  CUSTOM("Custom", listOf(0, 0, 0, 0, 0)),
+  FLAT("Flat", listOf(0, 0, 0, 0, 0, 0, 0)),
+  ACOUSTIC("Acoustic", listOf(3, 2, 1, 2, 1, 2, 2)),
+  BASS_BOOST("Bass Boost", listOf(8, 6, 4, 2, 0, 0, 0)),
+  BASS_CUT("Bass Cut", listOf(-8, -6, -4, 0, 0, 0, 0)),
+  VOCAL("Vocal", listOf(-4, -2, 1, 4, 4, 2, 0)),
+  TREBLE_BOOST("Treble Boost", listOf(0, 0, 0, 0, 2, 4, 6)),
+  TREBLE_CUT("Treble Cut", listOf(0, 0, 0, 0, -2, -4, -6)),
+  LOUDNESS("Loudness", listOf(7, 4, 0, -2, 0, 4, 7)),
+  SPOKEN_WORD("Spoken Word", listOf(-6, -3, 2, 4, 3, 0, -2)),
+  ELECTRONIC("Electronic", listOf(6, 4, 1, 0, 2, 4, 5)),
+  ROCK("Rock", listOf(5, 3, -1, -3, 1, 4, 5)),
+  HIP_HOP("Hip Hop", listOf(7, 5, 1, -1, 1, 2, 3)),
+  JAZZ("Jazz", listOf(4, 2, 0, 1, 2, 3, 4)),
+  CLASSICAL("Classical", listOf(4, 3, 2, 0, 2, 3, 4)),
+  SMALL_SPEAKERS("Small Speakers", listOf(6, 4, 2, 0, -1, -2, -2)),
+  LATE_NIGHT("Late Night", listOf(4, 2, 1, 0, -1, -2, -3)),
+  CUSTOM("Custom", listOf(0, 0, 0, 0, 0, 0, 0)),
   ;
 
   companion object {
     val MUSIC =
       entries.filterNot { it == CUSTOM }
 
-    fun matching(gains: List<Int>): EqualizerPreset =
+    fun matching(gains: List<Float>): EqualizerPreset =
       entries.firstOrNull { preset ->
-        preset != CUSTOM && preset.gains == gains
+        preset != CUSTOM &&
+          preset.gains.size == gains.size &&
+          preset.gains.zip(gains).all { (expected, actual) -> expected.toFloat() == actual }
       } ?: CUSTOM
   }
 }
 
-val EQ_BAND_LABELS = listOf("60Hz", "230Hz", "910Hz", "3.6kHz", "14kHz")
+val EQ_BAND_FREQUENCIES = listOf(31, 62, 125, 250, 500, 1_000, 4_000)
+val EQ_BAND_DISPLAY = listOf("31Hz", "62Hz", "125Hz", "250Hz", "500Hz", "1kHz", "4kHz")
 const val EQ_MIN_DB = -15
 const val EQ_MAX_DB = 15
+const val EQ_TONE_STEPS = 4
+const val EQ_TONE_DB_PER_STEP = 3f
 
 data class EqualizerState(
   val isEnabled: Boolean = false,
+  val mode: EqualizerMode = EqualizerMode.DYNAMIC,
   val currentPreset: EqualizerPreset = EqualizerPreset.FLAT,
-  val bandGains: List<Int> = List(5) { 0 },
+  val bandGains: List<Float> = List(EQ_BAND_FREQUENCIES.size) { 0f },
+  val toneX: Int = 0,
+  val toneY: Int = 0,
+  val toneFocused: Boolean = false,
   val volumeBoostDb: Int = 0,
 )
 
@@ -105,8 +130,11 @@ data class EqualizerState(
 fun EqualizerSheet(
   state: EqualizerState,
   onEnabledChanged: (Boolean) -> Unit,
+  onModeChanged: (EqualizerMode) -> Unit,
   onPresetSelected: (EqualizerPreset) -> Unit,
-  onBandChanged: (bandIndex: Int, gainDb: Int) -> Unit,
+  onBandChanged: (bandIndex: Int, gainDb: Float) -> Unit,
+  onToneChanged: (x: Int, y: Int) -> Unit,
+  onToneFocusChanged: (Boolean) -> Unit,
   onVolumeBoostChanged: (Int) -> Unit,
   onDismissRequest: () -> Unit,
   modifier: Modifier = Modifier,
@@ -141,72 +169,152 @@ fun EqualizerSheet(
         )
       }
 
-      Spacer(modifier = Modifier.height(8.dp))
-
-      Text(
-        text = "Reset",
-        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-        color = if (state.isEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
-        modifier =
-          Modifier
-            .clip(RoundedCornerShape(8.dp))
-            .clickable(enabled = state.isEnabled) {
-              onPresetSelected(EqualizerPreset.FLAT)
-            }
-            .padding(horizontal = 8.dp, vertical = 4.dp),
-      )
-
       Spacer(modifier = Modifier.height(16.dp))
 
-      val presetsToShow =
-        if (state.currentPreset == EqualizerPreset.CUSTOM) {
-          listOf(EqualizerPreset.CUSTOM) + EqualizerPreset.MUSIC
-        } else {
-          EqualizerPreset.MUSIC
-        }
-
-      LazyRow(
-        contentPadding = PaddingValues(horizontal = 0.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier.fillMaxWidth(),
-      ) {
-        items(presetsToShow, key = { it.name }) { preset ->
-          PresetChip(
-            preset = preset,
-            isSelected = preset == state.currentPreset,
-            isEnabled = state.isEnabled,
-            onClick =
-              if (preset != EqualizerPreset.CUSTOM) {
-                { onPresetSelected(preset) }
-              } else {
-                null
-              },
-          )
-        }
+      SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+        SegmentedButton(
+          selected = state.mode == EqualizerMode.DYNAMIC,
+          onClick = { onModeChanged(EqualizerMode.DYNAMIC) },
+          shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+          enabled = state.isEnabled,
+          label = { Text("Tone") },
+        )
+        SegmentedButton(
+          selected = state.mode == EqualizerMode.MANUAL,
+          onClick = { onModeChanged(EqualizerMode.MANUAL) },
+          shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+          enabled = state.isEnabled,
+          label = { Text("Bands") },
+        )
       }
 
-      Spacer(modifier = Modifier.height(32.dp))
+      Spacer(modifier = Modifier.height(20.dp))
 
-      Row(
-        modifier =
-          Modifier
-            .fillMaxWidth()
-            .height(220.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-      ) {
-        state.bandGains.forEachIndexed { index, gain ->
-          BandColumn(
-            label = EQ_BAND_LABELS.getOrElse(index) { "" },
-            gainDb = gain,
-            isEnabled = state.isEnabled,
-            onGainChanged = { db -> onBandChanged(index, db) },
-            modifier = Modifier.weight(1f),
+      if (state.mode == EqualizerMode.DYNAMIC) {
+        TonePad(
+          toneX = state.toneX,
+          toneY = state.toneY,
+          isEnabled = state.isEnabled,
+          toneFocused = state.toneFocused,
+          onToneChanged = onToneChanged,
+          onToneFocusChanged = onToneFocusChanged,
+          modifier =
+            Modifier
+              .fillMaxWidth()
+              .height(220.dp),
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Text(
+            text = "WARM",
+            style = MaterialTheme.typography.labelSmall,
+            color = if (state.isEnabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
+          )
+          Text(
+            text = if (state.toneFocused) "Focused" else "Broad",
+            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+            color = if (state.isEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
+            modifier =
+              Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .clickable(enabled = state.isEnabled) { onToneFocusChanged(!state.toneFocused) }
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+          )
+          Text(
+            text = "BRIGHT",
+            style = MaterialTheme.typography.labelSmall,
+            color = if (state.isEnabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
           )
         }
+
+        Spacer(modifier = Modifier.height(16.dp))
+      } else {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Text(
+            text = "PRESETS",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            letterSpacing = 2.sp,
+            fontWeight = FontWeight.SemiBold,
+          )
+          Text(
+            text = "Reset",
+            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+            color = if (state.isEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
+            modifier =
+              Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .clickable(enabled = state.isEnabled) {
+                  onPresetSelected(EqualizerPreset.FLAT)
+                }
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+          )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        val presetsToShow =
+          if (state.currentPreset == EqualizerPreset.CUSTOM) {
+            listOf(EqualizerPreset.CUSTOM) + EqualizerPreset.MUSIC
+          } else {
+            EqualizerPreset.MUSIC
+          }
+
+        LazyRow(
+          contentPadding = PaddingValues(horizontal = 0.dp),
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
+          modifier = Modifier.fillMaxWidth(),
+        ) {
+          items(presetsToShow, key = { it.name }) { preset ->
+            PresetChip(
+              preset = preset,
+              isSelected = preset == state.currentPreset,
+              isEnabled = state.isEnabled,
+              onClick =
+                if (preset != EqualizerPreset.CUSTOM) {
+                  { onPresetSelected(preset) }
+                } else {
+                  null
+                },
+            )
+          }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Row(
+          modifier =
+            Modifier
+              .fillMaxWidth()
+              .height(220.dp),
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+          state.bandGains.forEachIndexed { index, gain ->
+            BandColumn(
+              label = EQ_BAND_DISPLAY.getOrElse(index) { "" },
+              gainDb = gain,
+              isEnabled = state.isEnabled,
+              onGainChanged = { db -> onBandChanged(index, db) },
+              modifier = Modifier.weight(1f),
+            )
+          }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
       }
 
       HorizontalDivider(
-        modifier = Modifier.padding(vertical = 24.dp),
+        modifier = Modifier.padding(vertical = 16.dp),
         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
       )
 
@@ -287,13 +395,102 @@ fun EqualizerSheet(
 }
 
 @Composable
+private fun TonePad(
+  toneX: Int,
+  toneY: Int,
+  toneFocused: Boolean,
+  isEnabled: Boolean,
+  onToneChanged: (Int, Int) -> Unit,
+  onToneFocusChanged: (Boolean) -> Unit,
+  modifier: Modifier = Modifier,
+) {
+  var padSize by remember { mutableFloatStateOf(0f) }
+
+  fun pointToStep(offset: Float, sizePx: Float): Int {
+    if (sizePx <= 0f) return 0
+    val normalized = ((offset / sizePx) * 2f - 1f).coerceIn(-1f, 1f)
+    return (normalized * EQ_TONE_STEPS).roundToInt().coerceIn(-EQ_TONE_STEPS, EQ_TONE_STEPS)
+  }
+
+  Box(
+    modifier =
+      modifier
+        .alpha(if (isEnabled) 1f else 0.38f)
+        .clip(RoundedCornerShape(20.dp))
+        .settingsGlassSurface(cornerRadius = 20.dp)
+        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.24f))
+        .border(
+          BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+          RoundedCornerShape(20.dp),
+        ).pointerInput(isEnabled, toneFocused) {
+          if (!isEnabled) return@pointerInput
+          detectTapGestures(
+            onTap = { offset ->
+              padSize = size.width.toFloat()
+              onToneChanged(pointToStep(offset.x, size.width.toFloat()), pointToStep(size.height.toFloat() - offset.y, size.height.toFloat()))
+              onToneFocusChanged(toneFocused)
+            },
+          )
+        }.pointerInput(isEnabled) {
+          if (!isEnabled) return@pointerInput
+          detectDragGestures(
+            onDragStart = { offset ->
+              padSize = size.width.toFloat()
+              onToneChanged(pointToStep(offset.x, size.width.toFloat()), pointToStep(size.height.toFloat() - offset.y, size.height.toFloat()))
+            },
+          ) { change, _ ->
+            change.consume()
+            onToneChanged(pointToStep(change.position.x, size.width.toFloat()), pointToStep(size.height.toFloat() - change.position.y, size.height.toFloat()))
+          }
+        }.onSizeChanged { size: IntSize -> padSize = size.width.toFloat() },
+    contentAlignment = Alignment.Center,
+  ) {
+    val handleFractionX =
+      if (padSize > 0f) (toneX / EQ_TONE_STEPS.toFloat() + 1f) / 2f else 0.5f
+    val handleX = padSize * handleFractionX
+    val handleFractionY = (toneY / EQ_TONE_STEPS.toFloat() + 1f) / 2f
+    val handleY = padSize * (1f - handleFractionY)
+
+    Box(
+      modifier =
+        Modifier
+          .padding(16.dp)
+          .fillMaxSize(),
+    ) {
+      Box(
+        modifier =
+          Modifier
+            .size(22.dp)
+            .graphicsLayer {
+              translationX = handleX - 11.dp.toPx()
+              translationY = handleY - 11.dp.toPx()
+            }.clip(CircleShape)
+            .background(
+              if (toneFocused) {
+                MaterialTheme.colorScheme.primary
+              } else {
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+              },
+            ),
+      )
+    }
+
+    Text(
+      text = "Drag to shape the tone",
+      style = MaterialTheme.typography.labelSmall,
+      color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+      modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp),
+    )
+  }
+}
+
+@Composable
 private fun PresetChip(
   preset: EqualizerPreset,
   isSelected: Boolean,
   isEnabled: Boolean,
   onClick: (() -> Unit)?,
 ) {
-  val glass = settingsGlassEnabled()
   Box(
     contentAlignment = Alignment.Center,
     modifier =
@@ -311,7 +508,7 @@ private fun PresetChip(
           BorderStroke(
             1.dp,
             if (isSelected) {
-              if (glass) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f) else Color.Transparent
+              MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
             } else {
               MaterialTheme.colorScheme.outlineVariant
             },
@@ -336,12 +533,12 @@ private fun PresetChip(
 @Composable
 private fun BandColumn(
   label: String,
-  gainDb: Int,
+  gainDb: Float,
   isEnabled: Boolean,
-  onGainChanged: (Int) -> Unit,
+  onGainChanged: (Float) -> Unit,
   modifier: Modifier = Modifier,
 ) {
-  var sliderValue by remember(gainDb) { mutableFloatStateOf(gainDb.toFloat()) }
+  var sliderValue by remember(gainDb) { mutableFloatStateOf(gainDb) }
 
   Column(
     modifier = modifier.fillMaxHeight(),
@@ -365,7 +562,7 @@ private fun BandColumn(
       value = sliderValue,
       onValueChange = { newValue ->
         sliderValue = newValue
-        onGainChanged(newValue.roundToInt())
+        onGainChanged(newValue)
       },
       valueRange = EQ_MIN_DB.toFloat()..EQ_MAX_DB.toFloat(),
       enabled = isEnabled,
