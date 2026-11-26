@@ -21,7 +21,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -40,7 +42,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -49,6 +53,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import app.infinity.mpvz.R
+import app.infinity.mpvz.ui.icons.AppIcon
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.MediaPlaybackService
@@ -58,6 +63,7 @@ import app.infinity.mpvz.ui.player.controls.components.MiniAudioVisualizer
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.ui.theme.BrowserGlassSurface
+import coil3.compose.AsyncImage
 import org.koin.compose.koinInject
 
 @Composable
@@ -129,87 +135,132 @@ fun AudioMiniPlayer(modifier: Modifier = Modifier) {
           )
         },
   ) {
-    val primaryContainerColor = MaterialTheme.colorScheme.primary
+    val primaryColor = MaterialTheme.colorScheme.primary
     val trackColor = MaterialTheme.colorScheme.surfaceVariant
+    val artworkUri = sessionState.currentItem?.artworkUri
 
     Row(
       modifier =
         Modifier
           .fillMaxWidth()
+          .height(64.dp)
           .drawBehind {
-            // Whole bar is the progress bar: track color behind, themed fill
-            // sweeping left-to-right as the song progresses.
+            // mpvRx-style progress: soft tinted fill plus a sharp leading edge
+            // marker at the play head, so progress reads at a glance.
             drawRect(color = trackColor.copy(alpha = 0.55f))
             val dur = duration?.toFloat() ?: 0f
             val pos = position?.toFloat() ?: 0f
             val progressFraction = if (dur > 0f) (pos / dur).coerceIn(0f, 1f) else 0f
             if (progressFraction > 0f) {
+              val playedWidth = size.width * progressFraction
               drawRect(
-                color = primaryContainerColor.copy(alpha = 0.8f),
-                size =
-                  Size(
-                    width = size.width * progressFraction,
-                    height = size.height,
-                  ),
+                color = primaryColor.copy(alpha = 0.22f),
+                size = Size(width = playedWidth, height = size.height),
+              )
+              drawRect(
+                color = primaryColor.copy(alpha = 0.85f),
+                topLeft = Offset(playedWidth - 1.dp.toPx(), 0f),
+                size = Size(width = 2.dp.toPx(), height = size.height),
               )
             }
-          }.padding(horizontal = 12.dp, vertical = 8.dp),
+          }.padding(horizontal = 8.dp),
       verticalAlignment = Alignment.CenterVertically,
     ) {
-      // Music Icon Badge
+      // Cover artwork thumbnail
       Box(
         modifier =
           Modifier
-            .size(42.dp)
-            .clip(CircleShape)
+            .size(40.dp)
+            .clip(RoundedCornerShape(10.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center,
       ) {
-        MiniAudioVisualizer(
-          isPlaying = isPlaying,
-          color = MaterialTheme.colorScheme.primary,
-          modifier = Modifier.size(width = 20.dp, height = 18.dp),
-          barCount = 3,
-        )
+        if (!artworkUri.isNullOrBlank()) {
+          AsyncImage(
+            model = artworkUri,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize(),
+          )
+        } else {
+          Icon(
+            imageVector = Icons.RoundedFilled.Audiotrack,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(22.dp),
+          )
+        }
+        if (isPlaying) {
+          MiniAudioVisualizer(
+            isPlaying = true,
+            color = primaryColor,
+            modifier =
+              Modifier
+                .align(Alignment.BottomEnd)
+                .padding(3.dp)
+                .size(width = 12.dp, height = 9.dp),
+            barCount = 3,
+          )
+        }
       }
 
-      Spacer(modifier = Modifier.width(12.dp))
+      Spacer(modifier = Modifier.width(10.dp))
 
-      // Title & Track Status
       Column(
         modifier = Modifier.weight(1f),
         verticalArrangement = Arrangement.Center,
       ) {
         Text(
           text = title,
-          style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+          style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
           color = MaterialTheme.colorScheme.onSurface,
           maxLines = 1,
           overflow = TextOverflow.Ellipsis,
           modifier = Modifier.basicMarquee(initialDelayMillis = 650),
         )
+        Spacer(modifier = Modifier.height(1.dp))
         Row(
           verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(5.dp),
+          horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-          MiniAudioVisualizer(
-            isPlaying = isPlaying,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(width = 12.dp, height = 10.dp),
-            barCount = 3,
+          Text(
+            text = context.getString(
+              if (isPlaying) R.string.notification_playing else R.string.downloads_paused,
+            ),
+            style = MaterialTheme.typography.labelSmall,
+            color = primaryColor,
+            maxLines = 1,
+          )
+          Text(
+            text = "·",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
           )
           Text(
             text = artist,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false),
           )
         }
       }
 
-      Spacer(modifier = Modifier.width(8.dp))
+      Spacer(modifier = Modifier.width(4.dp))
 
-      // Play / Pause Action Button
+      MiniTransportButton(
+        icon = Icons.RoundedFilled.SkipPrevious,
+        contentDescription = context.getString(R.string.pref_gesture_media_previous),
+        sizeDp = 22,
+      ) {
+        context.startService(
+          Intent(context, MediaPlaybackService::class.java).setAction(
+            MediaPlaybackService.ACTION_NOTIFICATION_PREVIOUS,
+          ),
+        )
+      }
+
       IconButton(
         onClick = {
           context.startService(
@@ -229,31 +280,23 @@ fun AudioMiniPlayer(modifier: Modifier = Modifier) {
             imageVector = if (playing) Icons.RoundedFilled.Pause else Icons.RoundedFilled.PlayArrow,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.size(26.dp),
+            modifier = Modifier.size(28.dp),
           )
         }
       }
 
-      // Next Track Action Button
-      IconButton(
-        onClick = {
-          context.startService(
-            Intent(context, MediaPlaybackService::class.java).setAction(
-              MediaPlaybackService.ACTION_NOTIFICATION_NEXT,
-            ),
-          )
-        },
-        modifier = Modifier.size(48.dp).clip(CircleShape),
+      MiniTransportButton(
+        icon = Icons.RoundedFilled.SkipNext,
+        contentDescription = context.getString(R.string.pref_gesture_media_next),
+        sizeDp = 22,
       ) {
-        Icon(
-          imageVector = Icons.RoundedFilled.SkipNext,
-          contentDescription = null,
-          tint = MaterialTheme.colorScheme.onSurface,
-          modifier = Modifier.size(24.dp),
+        context.startService(
+          Intent(context, MediaPlaybackService::class.java).setAction(
+            MediaPlaybackService.ACTION_NOTIFICATION_NEXT,
+          ),
         )
       }
 
-      // Close Action Button
       IconButton(
         onClick = {
           context.startService(
@@ -262,7 +305,7 @@ fun AudioMiniPlayer(modifier: Modifier = Modifier) {
             ),
           )
         },
-        modifier = Modifier.size(48.dp).clip(CircleShape),
+        modifier = Modifier.size(40.dp).clip(CircleShape),
       ) {
         Icon(
           imageVector = Icons.RoundedFilled.Close,
@@ -272,5 +315,25 @@ fun AudioMiniPlayer(modifier: Modifier = Modifier) {
         )
       }
     }
+  }
+}
+
+@Composable
+private fun MiniTransportButton(
+  icon: AppIcon,
+  contentDescription: String?,
+  sizeDp: Int,
+  onClick: () -> Unit,
+) {
+  IconButton(
+    onClick = onClick,
+    modifier = Modifier.size(40.dp).clip(CircleShape),
+  ) {
+    Icon(
+      imageVector = icon,
+      contentDescription = contentDescription,
+      tint = MaterialTheme.colorScheme.onSurface,
+      modifier = Modifier.size(sizeDp.dp),
+    )
   }
 }

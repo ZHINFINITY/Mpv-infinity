@@ -14,9 +14,17 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.positionChanged
+import androidx.compose.runtime.rememberUpdatedState
+import app.infinity.mpvz.ui.components.themedSegmentedButtonColors
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -193,46 +201,63 @@ fun EqualizerSheet(
       Spacer(modifier = Modifier.height(20.dp))
 
       if (state.mode == EqualizerMode.DYNAMIC) {
-        TonePad(
-          toneX = state.toneX,
-          toneY = state.toneY,
-          isEnabled = state.isEnabled,
-          toneFocused = state.toneFocused,
-          onToneChanged = onToneChanged,
-          onToneFocusChanged = onToneFocusChanged,
-          modifier =
-            Modifier
-              .fillMaxWidth()
-              .height(220.dp),
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
         Row(
           modifier = Modifier.fillMaxWidth(),
           horizontalArrangement = Arrangement.SpaceBetween,
-          verticalAlignment = Alignment.CenterVertically,
         ) {
           Text(
             text = "WARM",
-            style = MaterialTheme.typography.labelSmall,
-            color = if (state.isEnabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
           Text(
-            text = if (state.toneFocused) "Focused" else "Broad",
-            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-            color = if (state.isEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
-            modifier =
-              Modifier
-                .clip(RoundedCornerShape(8.dp))
-                .clickable(enabled = state.isEnabled) { onToneFocusChanged(!state.toneFocused) }
-                .padding(horizontal = 8.dp, vertical = 4.dp),
+            text = "FORWARD",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
           Text(
             text = "BRIGHT",
-            style = MaterialTheme.typography.labelSmall,
-            color = if (state.isEnabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        TonePad(
+          x = state.toneX,
+          y = state.toneY,
+          enabled = state.isEnabled,
+          onChange = onToneChanged,
+        )
+
+        Text(
+          text = "Tilt ${signed(state.toneX)}  •  Contour ${signed(state.toneY)}",
+          style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+          color =
+            if (state.isEnabled) {
+              MaterialTheme.colorScheme.primary
+            } else {
+              MaterialTheme.colorScheme.onSurfaceVariant
+            },
+          textAlign = TextAlign.Center,
+          modifier = Modifier.fillMaxWidth(),
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+          listOf(true, false).forEachIndexed { index, focused ->
+            SegmentedButton(
+              selected = state.toneFocused == focused,
+              onClick = { onToneFocusChanged(focused) },
+              enabled = state.isEnabled,
+              shape = SegmentedButtonDefaults.itemShape(index, 2),
+              colors = themedSegmentedButtonColors(),
+            ) {
+              Text(if (focused) "Focused" else "Broad")
+            }
+          }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -398,164 +423,113 @@ fun EqualizerSheet(
 
 @Composable
 private fun TonePad(
-  toneX: Int,
-  toneY: Int,
-  toneFocused: Boolean,
-  isEnabled: Boolean,
-  onToneChanged: (Int, Int) -> Unit,
-  onToneFocusChanged: (Boolean) -> Unit,
-  modifier: Modifier = Modifier,
+  x: Int,
+  y: Int,
+  enabled: Boolean,
+  onChange: (Int, Int) -> Unit,
 ) {
-  var padSize by remember { mutableFloatStateOf(0f) }
-  var lastEmittedX by remember { mutableIntStateOf(Int.MIN_VALUE) }
-  var lastEmittedY by remember { mutableIntStateOf(Int.MIN_VALUE) }
-
-  fun pointToStep(offset: Float, sizePx: Float): Int {
-    if (sizePx <= 0f) return 0
-    val normalized = ((offset / sizePx) * 2f - 1f).coerceIn(-1f, 1f)
-    return (normalized * EQ_TONE_STEPS).roundToInt().coerceIn(-EQ_TONE_STEPS, EQ_TONE_STEPS)
-  }
-
-  fun emit(x: Int, y: Int) {
-    if (x == lastEmittedX && y == lastEmittedY) return
-    lastEmittedX = x
-    lastEmittedY = y
-    onToneChanged(x, y)
-  }
-
-  Box(
-    modifier =
-      modifier
-        .alpha(if (isEnabled) 1f else 0.38f)
-        .clip(RoundedCornerShape(20.dp))
-        .settingsGlassSurface(cornerRadius = 20.dp)
-        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.24f))
-        .border(
-          BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-          RoundedCornerShape(20.dp),
-        ).pointerInput(isEnabled, toneFocused) {
-          if (!isEnabled) return@pointerInput
-          detectTapGestures(
-            onTap = { offset ->
-              padSize = size.width.toFloat()
-              emit(pointToStep(offset.x, size.width.toFloat()), pointToStep(size.height.toFloat() - offset.y, size.height.toFloat()))
-              onToneFocusChanged(toneFocused)
-            },
-          )
-        }.pointerInput(isEnabled) {
-          if (!isEnabled) return@pointerInput
-          detectDragGestures(
-            onDragStart = { offset ->
-              padSize = size.width.toFloat()
-              emit(pointToStep(offset.x, size.width.toFloat()), pointToStep(size.height.toFloat() - offset.y, size.height.toFloat()))
-            },
-          ) { change, _ ->
-            change.consume()
-            emit(pointToStep(change.position.x, size.width.toFloat()), pointToStep(size.height.toFloat() - change.position.y, size.height.toFloat()))
-          }
-        }.onSizeChanged { size: IntSize -> padSize = size.width.toFloat() },
-    contentAlignment = Alignment.Center,
-  ) {
-    val handleFractionX =
-      if (padSize > 0f) (toneX / EQ_TONE_STEPS.toFloat() + 1f) / 2f else 0.5f
-    val handleX = padSize * handleFractionX
-    val handleFractionY = (toneY / EQ_TONE_STEPS.toFloat() + 1f) / 2f
-    val handleY = padSize * (1f - handleFractionY)
-
-    Box(
-      modifier =
-        Modifier
-          .padding(16.dp)
-          .fillMaxSize(),
-    ) {
-      // mpvRx-style tone pad: a dot matrix grid (no heavy lines), a stronger
-      // center cross, axis labels, and a soft crosshair on the handle.
-      val dotColor = MaterialTheme.colorScheme.onSurfaceVariant
-      val crosshairColor = MaterialTheme.colorScheme.primary
-      Canvas(Modifier.fillMaxSize()) {
-        val cols = EQ_TONE_STEPS * 2
-        val gapX = size.width / cols
-        val gapY = size.height / cols
-        for (i in 0..cols) {
-          for (j in 0..cols) {
-            val cx = i * gapX
-            val cy = size.height - j * gapY
-            val isCenter = i * 2 == cols || j * 2 == cols
-            drawCircle(
-              color = dotColor.copy(alpha = if (isCenter) 0.38f else 0.18f),
-              radius = if (isCenter) 1.6.dp.toPx() / 2 else 1.2.dp.toPx() / 2,
-              center = Offset(cx, cy),
-            )
-          }
-        }
-        if (padSize > 0f) {
-          val hx = handleFractionX * size.width
-          val hy = (1f - handleFractionY) * size.height
-          drawLine(
-            color = crosshairColor.copy(alpha = 0.30f),
-            start = Offset(hx, 0f),
-            end = Offset(hx, size.height),
-            strokeWidth = 1.dp.toPx(),
-          )
-          drawLine(
-            color = crosshairColor.copy(alpha = 0.30f),
-            start = Offset(0f, hy),
-            end = Offset(size.width, hy),
-            strokeWidth = 1.dp.toPx(),
-          )
-        }
-      }
-      Text(
-        text = "WARM",
-        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, letterSpacing = 1.sp),
-        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-        modifier = Modifier.align(Alignment.CenterStart).padding(start = 2.dp),
-      )
-      Text(
-        text = "BRIGHT",
-        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, letterSpacing = 1.sp),
-        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-        modifier = Modifier.align(Alignment.CenterEnd).padding(end = 2.dp),
-      )
-      Text(
-        text = "FOCUSED",
-        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, letterSpacing = 1.sp),
-        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-        modifier = Modifier.align(Alignment.TopCenter).padding(top = 2.dp),
-      )
-      Text(
-        text = "BROAD",
-        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, letterSpacing = 1.sp),
-        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-        modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 2.dp),
-      )
-
-      Box(
-        modifier =
-          Modifier
-            .size(22.dp)
-            .graphicsLayer {
-              translationX = handleX - 11.dp.toPx()
-              translationY = handleY - 11.dp.toPx()
-            }.clip(CircleShape)
-            .background(
-              if (toneFocused) {
-                MaterialTheme.colorScheme.primary
-              } else {
-                MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
-              },
-            ),
-      )
-    }
-
-    Text(
-      text = "Drag to shape the tone",
-      style = MaterialTheme.typography.labelSmall,
-      color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-      modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp),
+  val latestX by rememberUpdatedState(x)
+  val latestY by rememberUpdatedState(y)
+  val animatedX by
+    animateFloatAsState(
+      targetValue = x.toFloat(),
+      animationSpec = spring(dampingRatio = 0.75f, stiffness = Spring.StiffnessHigh),
+      label = "equalizer_tone_x",
     )
+  val animatedY by
+    animateFloatAsState(
+      targetValue = y.toFloat(),
+      animationSpec = spring(dampingRatio = 0.75f, stiffness = Spring.StiffnessHigh),
+      label = "equalizer_tone_y",
+    )
+  val dotColor = MaterialTheme.colorScheme.onSurfaceVariant
+  val puckColor = MaterialTheme.colorScheme.primary
+  val puckMarkColor = MaterialTheme.colorScheme.onPrimary
+  val surfaceColor = MaterialTheme.colorScheme.surfaceContainerHighest
+
+  Canvas(
+    modifier =
+      Modifier
+        .fillMaxWidth()
+        .height(190.dp)
+        .padding(horizontal = 12.dp, vertical = 14.dp)
+        .clip(RoundedCornerShape(16.dp))
+        .background(surfaceColor.copy(alpha = if (enabled) 0.55f else 0.25f))
+        .pointerInput(enabled) {
+          if (!enabled) return@pointerInput
+          awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false)
+            down.consume()
+            var lastX = latestX
+            var lastY = latestY
+            fun report(position: Offset) {
+              val inset = 18.dp.toPx()
+              val width = (size.width - inset * 2f).coerceAtLeast(1f)
+              val height = (size.height - inset * 2f).coerceAtLeast(1f)
+              val nextX =
+                (((position.x - inset) / width).coerceIn(0f, 1f) * EQ_TONE_STEPS * 2f).roundToInt() - EQ_TONE_STEPS
+              val nextY =
+                EQ_TONE_STEPS - (((position.y - inset) / height).coerceIn(0f, 1f) * EQ_TONE_STEPS * 2f).roundToInt()
+              if (nextX != lastX || nextY != lastY) {
+                lastX = nextX
+                lastY = nextY
+                onChange(nextX, nextY)
+              }
+            }
+            report(down.position)
+            while (true) {
+              val event = awaitPointerEvent()
+              val change = event.changes.firstOrNull { it.id == down.id } ?: break
+              if (!change.pressed) {
+                change.consume()
+                break
+              }
+              if (change.positionChanged()) {
+                change.consume()
+                report(change.position)
+              }
+            }
+          }
+        },
+  ) {
+    val inset = 18.dp.toPx()
+    val usableWidth = size.width - inset * 2f
+    val usableHeight = size.height - inset * 2f
+    val divisions = EQ_TONE_STEPS * 2
+    for (column in 0..divisions) {
+      for (row in 0..divisions) {
+        val onAxis = column == EQ_TONE_STEPS || row == EQ_TONE_STEPS
+        drawCircle(
+          color = dotColor.copy(alpha = if (onAxis) 0.55f else 0.26f),
+          radius = if (onAxis) 2.dp.toPx() else 1.5.dp.toPx(),
+          center =
+            Offset(
+              x = inset + usableWidth * column / divisions,
+              y = inset + usableHeight * row / divisions,
+            ),
+        )
+      }
+    }
+    val puckCenter =
+      Offset(
+        x = inset + usableWidth * (animatedX + EQ_TONE_STEPS) / divisions,
+        y = inset + usableHeight * (EQ_TONE_STEPS - animatedY) / divisions,
+      )
+    drawCircle(
+      color = Color.Black.copy(alpha = 0.18f),
+      radius = 15.dp.toPx(),
+      center = puckCenter.copy(y = puckCenter.y + 2.dp.toPx()),
+    )
+    drawCircle(
+      color = puckColor.copy(alpha = if (enabled) 1f else 0.38f),
+      radius = 13.dp.toPx(),
+      center = puckCenter,
+    )
+    drawCircle(color = puckMarkColor, radius = 4.dp.toPx(), center = puckCenter)
   }
 }
+
+private fun signed(value: Int): String = if (value > 0) "+$value" else value.toString()
 
 @Composable
 private fun PresetChip(

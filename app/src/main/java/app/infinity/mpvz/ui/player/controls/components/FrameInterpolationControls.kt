@@ -19,7 +19,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -102,21 +104,56 @@ internal fun FrameInterpolationPlayerButton(
   val savedState = stringResource(R.string.interpolation_feedback_saved_state, if (enabled) onLabel else offLabel)
   val toggleTitle = stringResource(R.string.pref_decoder_mpvflow_title)
   if (!targetFpsAction) {
-    ControlsButton(
-      icon = Icons.RoundedFilled.AutoAwesome,
-      onClick = {
-        preferences.mpvFlowFrameInterpolation.set(!preferences.mpvFlowFrameInterpolation.get())
-        activity.applyInterpolationPreferencesFromControls()
-      },
-      onLongClick = { onOpenSheet(Sheets.FrameInterpolationFps) },
-      enabled = available,
-      title = toggleTitle,
-      color = if (enabled) MaterialTheme.colorScheme.primary else contentColor,
-      modifier = Modifier.size(buttonSize).semantics {
-        role = Role.Switch
-        stateDescription = "$savedState. $nextPlaybackNote"
-      },
-    )
+    // The on/off state is drawn over the button itself so it stays legible on
+    // liquid glass too: a primary ring when motion interpolation is running,
+    // a diagonal slash when it is off.
+    val onColor = MaterialTheme.colorScheme.primary
+    val offSlashColor = contentColor.copy(alpha = 0.75f)
+    val isOn = enabled && available
+    Box(
+      modifier =
+        Modifier
+          .size(buttonSize)
+          .drawWithContent {
+            drawContent()
+            if (isOn) {
+              val inset = 1.5.dp.toPx()
+              drawCircle(
+                color = onColor,
+                radius = (size.minDimension / 2f) - inset,
+                style =
+                  androidx.compose.ui.graphics.drawscope.Stroke(
+                    width = 2.dp.toPx(),
+                  ),
+              )
+            } else {
+              val width = 2.dp.toPx()
+              drawLine(
+                color = offSlashColor,
+                start = androidx.compose.ui.geometry.Offset(size.width * 0.3f, size.height * 0.7f),
+                end = androidx.compose.ui.geometry.Offset(size.width * 0.7f, size.height * 0.3f),
+                strokeWidth = width,
+                cap = androidx.compose.ui.graphics.StrokeCap.Round,
+              )
+            }
+          }.semantics {
+            role = Role.Switch
+            stateDescription = "$savedState. $nextPlaybackNote"
+          },
+    ) {
+      ControlsButton(
+        icon = Icons.RoundedFilled.AutoAwesome,
+        onClick = {
+          preferences.mpvFlowFrameInterpolation.set(!preferences.mpvFlowFrameInterpolation.get())
+          activity.applyInterpolationPreferencesFromControls()
+        },
+        onLongClick = { onOpenSheet(Sheets.FrameInterpolationFps) },
+        enabled = available,
+        title = toggleTitle,
+        color = if (isOn) onColor else contentColor.copy(alpha = 0.6f),
+        modifier = Modifier.fillMaxSize(),
+      )
+    }
   } else if (compact) {
     ControlsButton(
       icon = Icons.RoundedFilled.TargetFps,

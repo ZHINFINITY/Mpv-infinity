@@ -37,28 +37,10 @@ internal object MusicPlaybackLauncher {
   ) {
     if (songs.isEmpty()) return
     val selectedIndex = currentIndex.coerceIn(songs.indices)
-    val selectedSong = songs[selectedIndex]
-    if (songs.any { isAudiobookSong(it) }) {
-      playAudiobookSongsOnLegacyPlayer(context, songs, selectedIndex, launchSource)
-      return
-    }
-    val launch = MusicQueueLaunchStore.stage(songs, selectedIndex, launchSource)
-    val intent = Intent(context, MusicPlayerActivity::class.java).apply {
-      action = Intent.ACTION_VIEW
-      data = selectedSong.uri
-      addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-      putExtra(MusicPlayerActivity.EXTRA_QUEUE_TOKEN, launch.token)
-      putExtra(MusicPlayerActivity.EXTRA_SONG_ID, selectedSong.id)
-      putExtra(MusicPlayerActivity.EXTRA_TITLE, selectedSong.title)
-      putExtra(MusicPlayerActivity.EXTRA_ARTIST, selectedSong.artist)
-      putExtra(MusicPlayerActivity.EXTRA_ALBUM, selectedSong.album)
-      putExtra(MusicPlayerActivity.EXTRA_ALBUM_ID, selectedSong.albumId)
-      putExtra(MusicPlayerActivity.EXTRA_DURATION_MS, selectedSong.durationMs)
-      putExtra(MusicPlayerActivity.EXTRA_PATH, selectedSong.path)
-      putExtra(MusicPlayerActivity.EXTRA_ARTWORK_URI, selectedSong.albumArtUri?.toString())
-      putExtra(MusicPlayerActivity.EXTRA_LAUNCH_SOURCE, launchSource)
-    }
-    context.startActivity(intent)
+    // Library, search and playlist audio all open the shared Now Playing screen
+    // (PlayerActivity), the same one normal playback uses; MusicPlayerActivity
+    // opened a second, different-looking player for these songs.
+    playSongsOnSharedPlayer(context, songs, selectedIndex, launchSource)
   }
 
   suspend fun playRecentAudioPathIfPresent(
@@ -112,7 +94,7 @@ internal object MusicPlaybackLauncher {
     return extension in AUDIOBOOK_EXTENSIONS || AudiobookMarkerUtils.isAudiobookPath(song.path)
   }
 
-  private fun playAudiobookSongsOnLegacyPlayer(
+  private fun playSongsOnSharedPlayer(
     context: Context,
     songs: List<MusicSong>,
     selectedIndex: Int,
