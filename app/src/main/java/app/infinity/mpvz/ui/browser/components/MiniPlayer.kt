@@ -769,7 +769,16 @@ private fun MiniPlayerContent(
         }
       }
     } else {
-      // Audio Mini Player View
+      // Audio Mini Player View — tinted with the album art's ambient color so the strip
+      // reads as part of the artwork (mpvrx behaviour) instead of a flat grey bar.
+      val miniAmbient = coverArt?.bitmap?.let { bitmap ->
+        remember(bitmap) {
+          androidx.palette.graphics.Palette.from(bitmap).clearFilters().generate().let { palette ->
+            val rgb = palette.getDominantColor(0)
+            if (rgb != 0) androidx.compose.ui.graphics.Color(rgb).copy(alpha = 0.55f) else null
+          }
+        }
+      }
       Row(
         modifier = Modifier
           .fillMaxWidth()
@@ -779,11 +788,15 @@ private fun MiniPlayerContent(
             val progressFraction = if (dur > 0f) (pos / dur).coerceIn(0f, 1f) else 0f
             val trackY = size.height - 2.dp.toPx()
             val radius = androidx.compose.ui.geometry.CornerRadius(1.dp.toPx())
-            drawRoundRect(color = progressTrackColor, topLeft = androidx.compose.ui.geometry.Offset(0f, trackY), size = Size(size.width, 2.dp.toPx()), cornerRadius = radius)
             if (progressFraction > 0f) {
+              drawRoundRect(color = progressTrackColor, topLeft = androidx.compose.ui.geometry.Offset(0f, trackY), size = Size(size.width, 2.dp.toPx()), cornerRadius = radius)
               drawRoundRect(color = primaryContainerColor.copy(alpha = 0.72f), topLeft = androidx.compose.ui.geometry.Offset(0f, trackY), size = Size(size.width * progressFraction, 2.dp.toPx()), cornerRadius = radius)
             }
           }
+          .background(
+            miniAmbient?.copy(alpha = 0.55f)
+              ?: MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.96f),
+          )
           .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
       ) {

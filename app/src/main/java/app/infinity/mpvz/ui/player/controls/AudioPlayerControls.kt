@@ -173,6 +173,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -2499,6 +2500,68 @@ fun AudioPlayerControls(
       )
     }
 
+    val currentLyricStripView = @Composable {
+      // mpvrx's one-line lyric strip: the active synced line (or intro/instrumental label)
+      // next to a music note, tapping it opens the full lyrics view.
+      val lyricsState by viewModel.lyricsUiState.collectAsState()
+      val syncedLines = lyricsState.lyrics?.synced
+      val activeIndex = lyricsState.activeLineIndex
+      val hasSyncedLyrics = !syncedLines.isNullOrEmpty()
+      val currentLine = syncedLines?.getOrNull(activeIndex)
+      val isInstrumentalGap =
+        hasSyncedLyrics &&
+          (currentLine == null || currentLine.line.isBlank() ||
+            currentLine.line.trim().equals("[instrumental]", ignoreCase = true) ||
+            currentLine.line.trim().equals("instrumental", ignoreCase = true))
+
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Start,
+        modifier =
+          Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .clickable {
+              showInPlaceLyrics = true
+              resetInactivityTimer()
+            }
+            .padding(horizontal = 4.dp, vertical = 4.dp),
+      ) {
+        Icon(
+          imageVector = Icons.RoundedFilled.Audiotrack,
+          contentDescription = null,
+          tint = MaterialTheme.colorScheme.primary,
+          modifier = Modifier.size(18.dp),
+        )
+        Spacer(Modifier.width(8.dp))
+        val stripText =
+          when {
+            lyricsState.isLoading -> stringResource(R.string.pref_folders_loading)
+            hasSyncedLyrics && isInstrumentalGap -> stringResource(R.string.instrumental)
+            hasSyncedLyrics -> currentLine?.line?.trim().orEmpty()
+            else -> stringResource(R.string.instrumental)
+          }
+        Text(
+          text = stripText,
+          style = MaterialTheme.typography.titleMedium.copy(
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Medium,
+          ),
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+          textAlign = TextAlign.Start,
+        )
+        Spacer(Modifier.width(4.dp))
+        Icon(
+          imageVector = Icons.RoundedFilled.ChevronRight,
+          contentDescription = null,
+          tint = MaterialTheme.colorScheme.onSurfaceVariant,
+          modifier = Modifier.size(18.dp),
+        )
+      }
+    }
+
     val playbackControlsRow = @Composable {
       // mpvrx sizing ladder: portrait/tablet 64dp sides + 72dp play; compact/short landscape
       // shrinks; seek buttons appear only for audiobooks (music row is prev / play / next).
@@ -2688,6 +2751,14 @@ fun AudioPlayerControls(
     val bottomActionRow = @Composable {
       val equalizerState by viewModel.equalizerState.collectAsState()
       val isQueueActive = !isTablet && sheetShown == Sheets.Playlist
+      // The bar picks up the album art's dominant color (ambient mode), so it stays visible
+      // over any cover; fall back to the surface tone when no art/palette is available.
+      val bottomBarAmbient =
+        if (ambientModeEnabled && animatedAmbientBottom != Color.Transparent) {
+          animatedAmbientBottom.copy(alpha = 0.85f)
+        } else {
+          MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.85f)
+        }
       val barHeight = if (isCompactLandscape) 42.dp else 50.dp
       val centerCount = if (isAudiobook) 3 else 4
       BoxWithConstraints(Modifier.fillMaxWidth()) {
@@ -2739,6 +2810,7 @@ fun AudioPlayerControls(
             } else {
               ExpressiveConnectedBarButton(
                 index = 0, itemCount = centerCount, height = barHeight, selected = shuffleEnabled,
+                ambientContainer = bottomBarAmbient,
                 enabled = playlistModeEnabled,
                 onClick = { viewModel.toggleShuffle() },
               ) { tint ->
@@ -2751,6 +2823,7 @@ fun AudioPlayerControls(
               }
               ExpressiveConnectedBarButton(
                 index = 1, itemCount = centerCount, height = barHeight, selected = repeatMode != RepeatMode.OFF,
+                ambientContainer = bottomBarAmbient,
                 onClick = { viewModel.cycleRepeatMode() },
               ) { tint ->
                 AnimatedIcon(
@@ -2767,6 +2840,7 @@ fun AudioPlayerControls(
             }
             ExpressiveConnectedBarButton(
               index = if (isAudiobook) 2 else 2, itemCount = centerCount, height = barHeight, selected = showVisualizer,
+              ambientContainer = bottomBarAmbient,
               onClick = { viewModel.toggleAudioVisualizer() },
               onLongClick = { onOpenSheet(Sheets.VisualizerStyle) },
             ) { tint ->
@@ -2780,6 +2854,7 @@ fun AudioPlayerControls(
             if (!isAudiobook) {
               ExpressiveConnectedBarButton(
                 index = 3, itemCount = centerCount, height = barHeight, selected = showInPlaceLyrics,
+                ambientContainer = bottomBarAmbient,
                 onClick = { showInPlaceLyrics = !showInPlaceLyrics },
               ) { tint ->
                 Icon(
@@ -2880,12 +2955,14 @@ fun AudioPlayerControls(
             modifier = Modifier.padding(horizontal = controlsSidePadding),
             horizontalAlignment = Alignment.CenterHorizontally,
           ) {
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(4.dp))
             trackMetadataView()
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(4.dp))
+            currentLyricStripView()
+            Spacer(modifier = Modifier.height(4.dp))
             seekbarView()
             losslessBadge()
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(12.dp))
             playbackControlsRow()
             Spacer(modifier = Modifier.height(10.dp))
             bottomActionRow()
@@ -3560,6 +3637,8 @@ private fun ExpressiveTransportSideButton(
   val interactionSource = remember { MutableInteractionSource() }
   val pressed by interactionSource.collectIsPressedAsState()
   val reducedMotion = AppMotion.playerReducedMotion()
+  val glassPreferences = koinInject<AppearancePreferences>()
+  val liquidGlassSurfaces by glassPreferences.liquidGlassSurfaces.collectAsState()
   val cornerSpec = if (reducedMotion) AppMotion.ReducedDp else AppMotion.Spatial.SnappyDp
   val cornerRadius by animateDpAsState(
     targetValue = if (pressed || active) 16.dp else size / 2,
@@ -3590,7 +3669,8 @@ private fun ExpressiveTransportSideButton(
       modifier
         .size(size)
         .tvFocusHighlight(shape, enabled = enabled, focusedScale = 1.08f)
-        .appPressFeedback(interactionSource, enabled, pressedScale = 0.90f, reduceMotion = reducedMotion),
+        .appPressFeedback(interactionSource, enabled, pressedScale = 0.90f, reduceMotion = reducedMotion)
+        .playerGlassPane(enabled = liquidGlassSurfaces, cornerRadius = 999.dp),
   ) {
     Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
       content()
@@ -3610,6 +3690,8 @@ private fun ExpressivePlayPauseButton(
   val interactionSource = remember { MutableInteractionSource() }
   val pressed by interactionSource.collectIsPressedAsState()
   val reducedMotion = AppMotion.playerReducedMotion()
+  val playGlassPreferences = koinInject<AppearancePreferences>()
+  val playLiquidGlass by playGlassPreferences.liquidGlassSurfaces.collectAsState()
   val cornerSpec = if (reducedMotion) AppMotion.ReducedDp else AppMotion.Spatial.SnappyDp
   val cornerRadius by animateDpAsState(
     targetValue =
@@ -3633,7 +3715,8 @@ private fun ExpressivePlayPauseButton(
       modifier
         .height(height)
         .tvFocusHighlight(shape, enabled = true, focusedScale = 1.05f)
-        .appPressFeedback(interactionSource, enabled = true, pressedScale = 0.94f, reduceMotion = reducedMotion),
+        .appPressFeedback(interactionSource, enabled = true, pressedScale = 0.94f, reduceMotion = reducedMotion)
+        .playerGlassPane(enabled = playLiquidGlass, cornerRadius = 999.dp),
   ) {
     Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
       content()
@@ -3670,6 +3753,7 @@ private fun RowScope.ExpressiveConnectedBarButton(
   enabled: Boolean = true,
   onLongClick: (() -> Unit)? = null,
   onLongClickLabel: String? = null,
+  ambientContainer: Color = Color.Unspecified,
   content: @Composable (Color) -> Unit,
 ) {
   val interactionSource = remember { MutableInteractionSource() }
@@ -3709,10 +3793,10 @@ private fun RowScope.ExpressiveConnectedBarButton(
   )
   val containerColor by animateColorAsState(
     targetValue =
-      if (selected) {
-        MaterialTheme.colorScheme.secondaryContainer
-      } else {
-        MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.85f)
+      when {
+        !enabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+        selected -> MaterialTheme.colorScheme.secondaryContainer
+        else -> ambientContainer
       },
     animationSpec = if (reducedMotion) androidx.compose.animation.core.snap() else AppMotion.Effect.Color,
     label = "connectedContainerColor",
