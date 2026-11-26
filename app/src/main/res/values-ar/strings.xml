@@ -374,7 +374,12 @@
   <string name="pref_audio_visualizer_style_cuboid">مكعباني</string>
   <string name="pref_audio_visualizer_style_particle">جسيمات</string>
   <string name="pref_audio_visualizer_galaxy_credit">مستوحى من عمل Zain Raza على CodePen</string>
-  <string name="pref_audio_ambient_mode_title">الوضع المحيطي</string>
+    <string name="pref_audio_full_screen_art_title">ألبوم بحجم الشاشة الكاملة</string>
+  <string name="pref_audio_full_screen_art_summary">ملء مشغّل الموسيقى بالكامل بغلاف الألبوم مع عناصر التحكم فوقه</string>
+  <string name="pref_audio_badge_style_title">نمط شارة الوسائط</string>
+  <string name="pref_audio_badge_style_text">شريط نصي</string>
+  <string name="pref_video_badge_style_title">نمط شارات الفيديو</string>
+<string name="pref_audio_ambient_mode_title">الوضع المحيطي</string>
   <string name="pref_audio_palette_background_title">خلفية لوحة ألوان الألبوم</string>
   <string name="pref_audio_palette_background_summary">استخدام الألوان المستخرجة من غلاف الأغنية الحالية كخلفية لمشغل الموسيقى بدلًا من سمة التطبيق</string>
   <string name="pref_audio_ambient_mode_summary">عرض تدرجات ألوان ديناميكية مستمدة من غلاف الألبوم في مشغل الموسيقى (معطل عند تفعيل المؤثر البصري)</string>
@@ -1989,6 +1994,11 @@
   <string name="lyrics_translation_failed">تعذّرت ترجمة كلمات الأغنية. حاول مرة أخرى.</string>
   <string name="lyrics_translation_partial">تعذّرت ترجمة بعض أسطر كلمات الأغنية.</string>
   <string name="lyrics_select_language">تحديد اللغة المستهدفة</string>
+  <string name="lyrics_loading_label">جارٍ جلب كلمات الأغاني…</string>
+  <string name="instrumental">مقطوعة موسيقية</string>
+  <string name="lyrics_provider_auto">تلقائي</string>
+  <string name="lyrics_provider_auto_with">تلقائي (%1$s)</string>
+  <string name="lyrics_by">كلمات اثرها %1$s</string>
   <string name="clip_end_short">النهاية</string>
   <string name="clip_start_short">البداية</string>
   <string name="clip_action">إنشاء مقطع</string>

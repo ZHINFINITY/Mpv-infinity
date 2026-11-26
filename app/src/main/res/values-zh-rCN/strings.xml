@@ -374,7 +374,12 @@
   <string name="pref_audio_visualizer_style_cuboid">长方体</string>
   <string name="pref_audio_visualizer_style_particle">粒子</string>
   <string name="pref_audio_visualizer_galaxy_credit">灵感来自 CodePen 上的 Zain Raza</string>
-  <string name="pref_audio_ambient_mode_title">氛围模式</string>
+    <string name="pref_audio_full_screen_art_title">全屏专辑封面</string>
+  <string name="pref_audio_full_screen_art_summary">用专辑封面填满整个音乐播放器，控制按钮悬浮其上</string>
+  <string name="pref_audio_badge_style_title">媒体徽章样式</string>
+  <string name="pref_audio_badge_style_text">文本胶囊</string>
+  <string name="pref_video_badge_style_title">视频徽章包</string>
+<string name="pref_audio_ambient_mode_title">氛围模式</string>
   <string name="pref_audio_palette_background_title">专辑调色板背景</string>
   <string name="pref_audio_palette_background_summary">使用当前歌曲封面提取的颜色作为音乐播放器背景，而不是应用主题</string>
   <string name="pref_audio_ambient_mode_summary">在音乐播放器中显示基于专辑封面生成的动态色彩渐变（可视化效果开启时禁用）</string>
@@ -1989,6 +1994,11 @@
   <string name="lyrics_translation_failed">无法翻译歌词，请重试。</string>
   <string name="lyrics_translation_partial">部分歌词未能翻译。</string>
   <string name="lyrics_select_language">选择目标语言</string>
+  <string name="lyrics_loading_label">正在获取歌词…</string>
+  <string name="instrumental">纯音乐</string>
+  <string name="lyrics_provider_auto">自动</string>
+  <string name="lyrics_provider_auto_with">自动（%1$s）</string>
+  <string name="lyrics_by">歌词提供：%1$s</string>
   <string name="clip_end_short">结束</string>
   <string name="clip_start_short">开始</string>
   <string name="clip_action">创建片段</string>

@@ -366,7 +366,12 @@
   <string name="pref_audio_visualizer_style_cuboid">Cuboid</string>
   <string name="pref_audio_visualizer_style_particle">कण</string>
   <string name="pref_audio_visualizer_galaxy_credit">Zain Raza (CodePen) से प्रेरित</string>
-  <string name="pref_audio_ambient_mode_title">एम्बिएंट मोड</string>
+    <string name="pref_audio_full_screen_art_title">पूर्ण स्क्रीन एल्बम आर्ट</string>
+  <string name="pref_audio_full_screen_art_summary">पूरे म्यूज़िक प्लेयर को एल्बम कवर से भरें और नियंत्रण ऊपर तैरें</string>
+  <string name="pref_audio_badge_style_title">मीडिया बैज शैली</string>
+  <string name="pref_audio_badge_style_text">टेक्स्ट पिल</string>
+  <string name="pref_video_badge_style_title">वीडियो बैज पैक</string>
+<string name="pref_audio_ambient_mode_title">एम्बिएंट मोड</string>
   <string name="pref_audio_palette_background_title">एल्बम पैलेट पृष्ठभूमि</string>
   <string name="pref_audio_palette_background_summary">ऐप थीम के बजाय वर्तमान गीत की कलाकृति से निकाले गए रंगों को म्यूज़िक प्लेयर की पृष्ठभूमि के रूप में उपयोग करें</string>
   <string name="pref_audio_ambient_mode_summary">म्यूजिक प्लेयर में एल्बम कवर आर्ट से बने गतिशील रंग ग्रेडिएंट प्रदर्शित करें (विज़ुअलाइज़र सक्रिय होने पर अक्षम)</string>
@@ -1974,6 +1979,11 @@
   <string name="lyrics_translation_failed">बोलों का अनुवाद नहीं हो सका। फिर से कोशिश करें।</string>
   <string name="lyrics_translation_partial">बोलों की कुछ पंक्तियों का अनुवाद नहीं हो सका।</string>
   <string name="lyrics_select_language">लक्षित भाषा चुनें</string>
+  <string name="lyrics_loading_label">गीत के बोल लाए जा रहे हैं…</string>
+  <string name="instrumental">वाद्य संगीत</string>
+  <string name="lyrics_provider_auto">स्वतः</string>
+  <string name="lyrics_provider_auto_with">स्वतः (%1$s)</string>
+  <string name="lyrics_by">%1$s के बोल</string>
   <string name="clip_end_short">अंत</string>
   <string name="clip_start_short">आरंभ</string>
   <string name="clip_action">क्लिप बनाएँ</string>

@@ -374,7 +374,12 @@ Weiter: NEXT</string>
   <string name="pref_audio_visualizer_style_cuboid">Quader</string>
   <string name="pref_audio_visualizer_style_particle">Partikel</string>
   <string name="pref_audio_visualizer_galaxy_credit">Inspiriert von Zain Raza auf CodePen</string>
-  <string name="pref_audio_ambient_mode_title">Ambient-Modus</string>
+    <string name="pref_audio_full_screen_art_title">Album im Vollbild</string>
+  <string name="pref_audio_full_screen_art_summary">Füllt den ganzen Musikplayer mit dem Albumcover, Steuerungen darüber</string>
+  <string name="pref_audio_badge_style_title">Medien-Badge-Stil</string>
+  <string name="pref_audio_badge_style_text">Text-Pill</string>
+  <string name="pref_video_badge_style_title">Video-Badge-Paket</string>
+<string name="pref_audio_ambient_mode_title">Ambient-Modus</string>
   <string name="pref_audio_palette_background_title">Album-Palettenhintergrund</string>
   <string name="pref_audio_palette_background_summary">Farben aus dem Cover des aktuellen Titels als Hintergrund des Musikplayers verwenden, statt des App-Themas</string>
   <string name="pref_audio_ambient_mode_summary">Dynamische Farbverläufe aus dem Album-Cover im Musikplayer anzeigen (deaktiviert, wenn der Visualizer aktiv ist)</string>
@@ -1989,6 +1994,11 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="lyrics_translation_failed">Der Songtext konnte nicht übersetzt werden. Versuche es erneut.</string>
   <string name="lyrics_translation_partial">Einige Songtextzeilen konnten nicht übersetzt werden.</string>
   <string name="lyrics_select_language">Zielsprache auswählen</string>
+  <string name="lyrics_loading_label">Liedtexte werden geladen…</string>
+  <string name="instrumental">Instrumental</string>
+  <string name="lyrics_provider_auto">Automatisch</string>
+  <string name="lyrics_provider_auto_with">Automatisch (%1$s)</string>
+  <string name="lyrics_by">Liedtexte von %1$s</string>
   <string name="clip_end_short">Ende</string>
   <string name="clip_start_short">Start</string>
   <string name="clip_action">Clip erstellen</string>

@@ -14,6 +14,7 @@ import com.composables.icons.materialsymbols.roundedfilled.R as MaterialSymbolsR
 @Suppress("MemberVisibilityCanBePrivate")
 object Icons {
   private object Shared {
+    val Replay by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Replay) }
     val AccessTime by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Schedule) }
     val AccountBalance by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Account_balance) }
     val AccountTree by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Account_tree) }
@@ -263,6 +264,7 @@ object Icons {
   }
 
   object RoundedFilled {
+    val Replay get() = Shared.Replay
     val AccessTime get() = Shared.AccessTime
     val AccountBalance get() = Shared.AccountBalance
     val AccountTree get() = Shared.AccountTree
@@ -488,6 +490,8 @@ object Icons {
     @DrawableRes val FastRewind = MaterialSymbolsR.drawable.materialsymbols_ic_fast_rewind_rounded_filled
 
     @DrawableRes val FastForward = MaterialSymbolsR.drawable.materialsymbols_ic_fast_forward_rounded_filled
+
+    @DrawableRes val Replay = MaterialSymbolsR.drawable.materialsymbols_ic_replay_rounded_filled
 
     @DrawableRes val Replay10 = MaterialSymbolsR.drawable.materialsymbols_ic_replay_10_rounded_filled
 

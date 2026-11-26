@@ -14,6 +14,8 @@ import androidx.compose.animation.core.SpringSpec
 import androidx.compose.animation.core.spring
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.getValue
+import app.infinity.mpvz.preferences.preference.collectAsState
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalView
@@ -55,6 +57,15 @@ object AppMotion {
 
   @Composable
   fun shouldReduceMotion(): Boolean = policy().reduceMotion
+
+  @Composable
+  fun playerReducedMotion(): Boolean {
+    val prefs = org.koin.java.KoinJavaComponent.get<app.infinity.mpvz.preferences.PlayerPreferences>(
+      app.infinity.mpvz.preferences.PlayerPreferences::class.java,
+    )
+    val reducedByPlayer by prefs.reduceMotion.collectAsState()
+    return shouldReduceMotion() || reducedByPlayer
+  }
 
   fun <T> noBounce(stiffness: Float): SpringSpec<T> =
     spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = stiffness)

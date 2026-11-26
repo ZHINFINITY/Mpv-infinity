@@ -366,7 +366,12 @@
   <string name="pref_audio_visualizer_style_cuboid">Cuboid</string>
   <string name="pref_audio_visualizer_style_particle">ذرات</string>
   <string name="pref_audio_visualizer_galaxy_credit">کارگردان : Zain Raza در CodePen</string>
-  <string name="pref_audio_ambient_mode_title">Mode</string>
+    <string name="pref_audio_full_screen_art_title">آلبوم تمام‌صفحه</string>
+  <string name="pref_audio_full_screen_art_summary">پرکردن کل پخش‌کننده موسیقی با جلد آلبوم و شناور شدن کنترل‌ها روی آن</string>
+  <string name="pref_audio_badge_style_title">سبک نشان رسانه</string>
+  <string name="pref_audio_badge_style_text">قرصه متنی</string>
+  <string name="pref_video_badge_style_title">بسته نشان ویدیو</string>
+<string name="pref_audio_ambient_mode_title">Mode</string>
   <string name="pref_audio_palette_background_title">بایگانی برچسب ها</string>
   <string name="pref_audio_palette_background_summary">استفاده از رنگ های استخراج شده از آثار آهنگ فعلی به عنوان پس زمینه پخش موسیقی به جای موضوع برنامه</string>
   <string name="pref_audio_ambient_mode_summary">گرادیان رنگی پویا از آلبوم پوشش هنر در پخش موسیقی (در هنگام تجسم فعال است)</string>
@@ -1978,6 +1983,11 @@
   <string name="lyrics_translation_failed">ترانه ها نمی توانند ترجمه شوند. دوباره امتحان کنید.</string>
   <string name="lyrics_translation_partial">برخی از خطوط را نمی توان ترجمه کرد.</string>
   <string name="lyrics_select_language">انتخاب زبان مقصد</string>
+  <string name="lyrics_loading_label">در حال دریافت متن ترانه…</string>
+  <string name="instrumental">بی‌کلام</string>
+  <string name="lyrics_provider_auto">خودکار</string>
+  <string name="lyrics_provider_auto_with">خودکار (%1$s)</string>
+  <string name="lyrics_by">متن ترانه از %1$s</string>
   <string name="clip_end_short">پایان پایان</string>
   <string name="clip_start_short">شروع کار</string>
   <string name="clip_action">ایجاد کلیپ</string>

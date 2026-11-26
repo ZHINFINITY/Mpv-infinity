@@ -366,7 +366,12 @@
   <string name="pref_audio_visualizer_style_cuboid">Prostopadłościan</string>
   <string name="pref_audio_visualizer_style_particle">Cząsteczki</string>
   <string name="pref_audio_visualizer_galaxy_credit">Inspired przez Zain Raza Włączone CodePen</string>
-  <string name="pref_audio_ambient_mode_title">Ambient Tryb</string>
+    <string name="pref_audio_full_screen_art_title">Okładka na pełnym ekranie</string>
+  <string name="pref_audio_full_screen_art_summary">Wypełnia cały odtwarzacz muzyczny okładką, a sterowania unoszą się nad nią</string>
+  <string name="pref_audio_badge_style_title">Styl plakietki multimediów</string>
+  <string name="pref_audio_badge_style_text">Pigułka tekstowa</string>
+  <string name="pref_video_badge_style_title">Pakiet plakietek wideo</string>
+<string name="pref_audio_ambient_mode_title">Ambient Tryb</string>
   <string name="pref_audio_palette_background_title">Album palette tło</string>
   <string name="pref_audio_palette_background_summary">Używaj kolory wyodrębnione z ten bieżący utwór artwork jako ten muzyka odtwarzacz tło zamiast — ten aplikacja motyw</string>
   <string name="pref_audio_ambient_mode_summary">Wyświetl dynamic kolor gradienty pochodzące z album okładka grafika w muzyka odtwarzacz (Wyłączone gdy wizualizator jest aktywny)</string>
@@ -1990,6 +1995,11 @@
   <string name="lyrics_translation_failed">Teksty could nie być translated. Try again.</string>
   <string name="lyrics_translation_partial">Some lyric lines could nie być translated.</string>
   <string name="lyrics_select_language">Wybierz Target Język</string>
+  <string name="lyrics_loading_label">Pobieranie tekstu…</string>
+  <string name="instrumental">Instrumentalny</string>
+  <string name="lyrics_provider_auto">Auto</string>
+  <string name="lyrics_provider_auto_with">Auto (%1$s)</string>
+  <string name="lyrics_by">Tekst: %1$s</string>
   <string name="clip_end_short">Koniec</string>
   <string name="clip_start_short">Uruchom</string>
   <string name="clip_action">Utwórz clip</string>

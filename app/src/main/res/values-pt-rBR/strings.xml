@@ -374,7 +374,12 @@ Próximo: NEXT</string>
   <string name="pref_audio_visualizer_style_cuboid">Cuboide</string>
   <string name="pref_audio_visualizer_style_particle">Partículas</string>
   <string name="pref_audio_visualizer_galaxy_credit">Inspirado por Zain Raza no CodePen</string>
-  <string name="pref_audio_ambient_mode_title">Modo ambiente</string>
+    <string name="pref_audio_full_screen_art_title">Arte do álbum em tela cheia</string>
+  <string name="pref_audio_full_screen_art_summary">Preenche todo o reprodutor de música com a capa do álbum e os controles flutuando sobre ela</string>
+  <string name="pref_audio_badge_style_title">Estilo de selo de mídia</string>
+  <string name="pref_audio_badge_style_text">Pílula de texto</string>
+  <string name="pref_video_badge_style_title">Pacote de selos de vídeo</string>
+<string name="pref_audio_ambient_mode_title">Modo ambiente</string>
   <string name="pref_audio_palette_background_title">Fundo da paleta do álbum</string>
   <string name="pref_audio_palette_background_summary">Usar como fundo do player de música as cores extraídas da arte da música atual em vez do tema do app</string>
   <string name="pref_audio_ambient_mode_summary">Exibir gradientes de cores dinâmicos derivados da capa do álbum no reprodutor de música (desativado quando o visualizador está ativo)</string>
@@ -1989,6 +1994,11 @@ Reinicie o aplicativo para que todas as alterações entrem em vigor.</string>
   <string name="lyrics_translation_failed">Não foi possível traduzir a letra. Tente novamente.</string>
   <string name="lyrics_translation_partial">Não foi possível traduzir alguns versos.</string>
   <string name="lyrics_select_language">Selecionar idioma de destino</string>
+  <string name="lyrics_loading_label">Buscando a letra…</string>
+  <string name="instrumental">Instrumental</string>
+  <string name="lyrics_provider_auto">Automático</string>
+  <string name="lyrics_provider_auto_with">Automático (%1$s)</string>
+  <string name="lyrics_by">Letra de %1$s</string>
   <string name="clip_end_short">Fim</string>
   <string name="clip_start_short">Início</string>
   <string name="clip_action">Criar clipe</string>

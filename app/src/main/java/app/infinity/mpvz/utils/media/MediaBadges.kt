@@ -17,6 +17,8 @@ data class MediaBadge(
   val groupId: String,
   val assetPath: String,
   val pattern: Regex,
+  /** Remote image for pack badges whose PNG is not cached locally yet. */
+  val remoteUrl: String? = null,
 )
 
 /**

@@ -12,6 +12,7 @@ import android.hardware.display.DisplayManager
 import android.os.Environment
 import android.os.Looper
 import android.util.AttributeSet
+import android.os.Build
 import android.util.Log
 import android.view.Display
 import android.view.KeyCharacterMap
@@ -477,8 +478,8 @@ class MPVView(
           PlaybackSession.setOptionString("display-fps-override", "0")
         else -> null
       }
-    // FongMi MEMC replaces mpv's ordinary `interpolation` frame mixer. Match its MPV-RX
-    // contract: enable the motion option with display-synced ticks, without also enabling
+    // FongMi MEMC replaces mpv's ordinary `interpolation` frame mixer. Match the pinned
+    // motion contract: enable the motion option with display-synced ticks, without also enabling
     // the separate built-in interpolation path.
     val flowVideoSyncRc =
       if (mpvFlowFrameInterpolationCandidate) {
@@ -618,6 +619,20 @@ class MPVView(
         pipelineReady = hdrPipelineReady,
         boostSdrToHdr = decoderPreferences.boostSdrToHdr.get(),
       )
+    }
+
+    // Older Adreno/Mali drivers can initialize a Vulkan/GL context fine yet composite every
+    // frame black or blue. Reporting the color channel damage via mpv's own stats is unreliable
+    // there, so force the software-safe video output that renders on any driver.
+    val legacyDriverSafeOutput = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
+    if (legacyDriverSafeOutput) {
+      PlaybackSession.setOptionString("vo", "gpu")
+      PlaybackSession.setOptionString("gpu-context", "android")
+      PlaybackSession.setOptionString("gpu-api", "opengl")
+      PlaybackSession.setOptionString("hwdec", "mediacodec-copy,no")
+      PlaybackSession.setOptionString("vd-lavc-dr", "no")
+      PlaybackSession.setOptionString("gpu-dumb-mode", "yes")
+      Log.i(TAG, "MPV_LEGACY_DEVICE_SAFE_OUTPUT applied (SDK=${Build.VERSION.SDK_INT})")
     }
 
     // Prefer direct MediaCodec AHardwareBuffer import when this APK supports it; other Vulkan

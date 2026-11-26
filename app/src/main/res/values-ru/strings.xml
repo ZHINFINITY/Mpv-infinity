@@ -374,7 +374,12 @@
   <string name="pref_audio_visualizer_style_cuboid">Кубоид</string>
   <string name="pref_audio_visualizer_style_particle">Частицы</string>
   <string name="pref_audio_visualizer_galaxy_credit">Вдохновлено работой Zain Raza на CodePen</string>
-  <string name="pref_audio_ambient_mode_title">Эмбиент режим</string>
+    <string name="pref_audio_full_screen_art_title">Обложка на весь экран</string>
+  <string name="pref_audio_full_screen_art_summary">Заполняет весь музыкальный плеер обложкой альбома, элементы управления поверх</string>
+  <string name="pref_audio_badge_style_title">Стиль медиа-значка</string>
+  <string name="pref_audio_badge_style_text">Текстовая пилюля</string>
+  <string name="pref_video_badge_style_title">Набор значков видео</string>
+<string name="pref_audio_ambient_mode_title">Эмбиент режим</string>
   <string name="pref_audio_palette_background_title">Фон из палитры альбома</string>
   <string name="pref_audio_palette_background_summary">Использовать цвета, извлечённые из обложки текущей песни, как фон музыкального проигрывателя вместо темы приложения</string>
   <string name="pref_audio_ambient_mode_summary">Отображать динамические цветовые градиенты на основе обложки альбома в плеере (отключается при включенном визуализаторе)</string>
@@ -1989,6 +1994,11 @@
   <string name="lyrics_translation_failed">Не удалось перевести текст песни. Попробуйте ещё раз.</string>
   <string name="lyrics_translation_partial">Не удалось перевести некоторые строки.</string>
   <string name="lyrics_select_language">Выбрать язык перевода</string>
+  <string name="lyrics_loading_label">Загрузка текста песни…</string>
+  <string name="instrumental">Инструментал</string>
+  <string name="lyrics_provider_auto">Авто</string>
+  <string name="lyrics_provider_auto_with">Авто (%1$s)</string>
+  <string name="lyrics_by">Текст песни: %1$s</string>
   <string name="clip_end_short">Конец</string>
   <string name="clip_start_short">Начало</string>
   <string name="clip_action">Создать клип</string>

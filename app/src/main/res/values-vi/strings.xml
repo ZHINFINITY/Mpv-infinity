@@ -366,7 +366,12 @@
   <string name="pref_audio_visualizer_style_cuboid">hình khối</string>
   <string name="pref_audio_visualizer_style_particle">hạt</string>
   <string name="pref_audio_visualizer_galaxy_credit">Lấy cảm hứng từ Zain Raza trên CodePen</string>
-  <string name="pref_audio_ambient_mode_title">Chế độ môi trường xung quanh</string>
+    <string name="pref_audio_full_screen_art_title">Ảnh bìa toàn màn hình</string>
+  <string name="pref_audio_full_screen_art_summary">Lấp toàn bộ trình phát nhạc bằng bìa album, các nút điều khiển nổi phía trên</string>
+  <string name="pref_audio_badge_style_title">Kiểu huy hiệu phương tiện</string>
+  <string name="pref_audio_badge_style_text">Viên chữ</string>
+  <string name="pref_video_badge_style_title">Gói huy hiệu video</string>
+<string name="pref_audio_ambient_mode_title">Chế độ môi trường xung quanh</string>
   <string name="pref_audio_palette_background_title">Nền bảng màu album</string>
   <string name="pref_audio_palette_background_summary">Dùng màu trích xuất từ ảnh bìa bài hát hiện tại làm nền trình phát nhạc thay cho giao diện ứng dụng</string>
   <string name="pref_audio_ambient_mode_summary">Hiển thị độ dốc màu động bắt nguồn từ ảnh bìa album trong trình phát nhạc (bị tắt khi trình hiển thị trực quan đang hoạt động)</string>
@@ -1978,6 +1983,11 @@
   <string name="lyrics_translation_failed">Lời bài hát không thể dịch được. Hãy thử lại.</string>
   <string name="lyrics_translation_partial">Một số dòng lời bài hát không thể dịch được.</string>
   <string name="lyrics_select_language">Chọn ngôn ngữ đích</string>
+  <string name="lyrics_loading_label">Đang tải lời bài hát…</string>
+  <string name="instrumental">Nhạc không lời</string>
+  <string name="lyrics_provider_auto">Tự động</string>
+  <string name="lyrics_provider_auto_with">Tự động (%1$s)</string>
+  <string name="lyrics_by">Lời bài hát bởi %1$s</string>
   <string name="clip_end_short">Kết thúc</string>
   <string name="clip_start_short">Bắt đầu</string>
   <string name="clip_action">Tạo đoạn clip</string>

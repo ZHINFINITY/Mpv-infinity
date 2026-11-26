@@ -343,7 +343,7 @@ class MusicPlayerWidgetProvider : AppWidgetProvider() {
           android.content.res.ColorStateList.valueOf(accent),
         )
       }
-      // The play/pause button sits on a light pill with a dark icon (mpvrx-style); no
+      // The play/pause button sits on a light pill with a dark icon; no
       // runtime tint — setBackgroundColor would square off the pill drawable.
 
       // Reflect real playback progress when the service published a usable duration.

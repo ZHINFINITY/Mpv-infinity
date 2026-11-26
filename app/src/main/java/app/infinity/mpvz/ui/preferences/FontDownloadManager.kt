@@ -14,7 +14,7 @@ import java.net.URL
 import java.net.URLEncoder
 import org.json.JSONObject
 
-/** One family from the Google Fonts catalog, mpvrx-style: name plus category. */
+/** One family from the Google Fonts catalog: name plus category. */
 data class GoogleFontCatalogEntry(val family: String, val category: String)
 
 /**

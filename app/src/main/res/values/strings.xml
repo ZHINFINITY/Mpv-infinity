@@ -380,6 +380,11 @@
   <string name="pref_audio_visualizer_style_particle">Particles</string>
 
   <string name="pref_audio_visualizer_galaxy_credit">Inspired by Zain Raza on CodePen</string>
+  <string name="pref_audio_full_screen_art_title">Full-screen album art</string>
+  <string name="pref_audio_full_screen_art_summary">Fill the whole music player with the album cover and float the controls over it</string>
+  <string name="pref_audio_badge_style_title">Media badge style</string>
+  <string name="pref_audio_badge_style_text">Text pill</string>
+  <string name="pref_video_badge_style_title">Video badge pack</string>
   <string name="pref_audio_ambient_mode_title">Ambient Mode</string>
   <string name="pref_audio_palette_background_title">Album palette background</string>
   <string name="pref_audio_palette_background_summary">Use colors extracted from the current song artwork as the music player background instead of the app theme</string>
@@ -2081,6 +2086,11 @@
   <string name="lyrics_translation_failed">Lyrics could not be translated. Try again.</string>
   <string name="lyrics_translation_partial">Some lyric lines could not be translated.</string>
   <string name="lyrics_select_language">Select Target Language</string>
+  <string name="lyrics_loading_label">Fetching lyrics…</string>
+  <string name="instrumental">Instrumental</string>
+  <string name="lyrics_provider_auto">Auto</string>
+  <string name="lyrics_provider_auto_with">Auto (%1$s)</string>
+  <string name="lyrics_by">Lyrics by %1$s</string>
 
   <!-- Clip -->
   <string name="clip_end_short">End</string>

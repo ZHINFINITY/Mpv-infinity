@@ -374,7 +374,12 @@ Siguiente: NEXT</string>
   <string name="pref_audio_visualizer_style_cuboid">Cuboide</string>
   <string name="pref_audio_visualizer_style_particle">Partículas</string>
   <string name="pref_audio_visualizer_galaxy_credit">Inspirado en Zain Raza en CodePen</string>
-  <string name="pref_audio_ambient_mode_title">Modo ambiente</string>
+    <string name="pref_audio_full_screen_art_title">Portada a pantalla completa</string>
+  <string name="pref_audio_full_screen_art_summary">Llena todo el reproductor de música con la portada y flotar los controles encima</string>
+  <string name="pref_audio_badge_style_title">Estilo de insignia multimedia</string>
+  <string name="pref_audio_badge_style_text">Píldora de texto</string>
+  <string name="pref_video_badge_style_title">Paquete de insignias de vídeo</string>
+<string name="pref_audio_ambient_mode_title">Modo ambiente</string>
   <string name="pref_audio_palette_background_title">Fondo con paleta del álbum</string>
   <string name="pref_audio_palette_background_summary">Usar como fondo del reproductor de música los colores extraídos de la carátula de la canción actual en lugar del tema de la aplicación</string>
   <string name="pref_audio_ambient_mode_summary">Mostrar gradientes de color dinámicos derivados de la portada del álbum en el reproductor de música (desactivado cuando el visualizador está activo)</string>
@@ -1989,6 +1994,11 @@ Reinicia la aplicación para que se apliquen todos los cambios.</string>
   <string name="lyrics_translation_failed">No se pudo traducir la letra. Inténtalo de nuevo.</string>
   <string name="lyrics_translation_partial">No se pudieron traducir algunas líneas de la letra.</string>
   <string name="lyrics_select_language">Seleccionar idioma de destino</string>
+  <string name="lyrics_loading_label">Buscando la letra…</string>
+  <string name="instrumental">Instrumental</string>
+  <string name="lyrics_provider_auto">Automático</string>
+  <string name="lyrics_provider_auto_with">Automático (%1$s)</string>
+  <string name="lyrics_by">Letra de %1$s</string>
   <string name="clip_end_short">Fin</string>
   <string name="clip_start_short">Inicio</string>
   <string name="clip_action">Crear clip</string>
