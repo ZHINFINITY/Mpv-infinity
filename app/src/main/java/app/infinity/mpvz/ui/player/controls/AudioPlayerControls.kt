@@ -538,10 +538,6 @@ private fun AudioVisualizerViewport(
             drawRect(brush = bottomFade, blendMode = BlendMode.DstIn)
           }
         }
-        .graphicsLayer {
-          scaleX = 1.03f
-          scaleY = 1.03f
-        }
 
     when (style) {
       AudioVisualizerStyle.Galaxy ->
@@ -2866,13 +2862,13 @@ fun AudioPlayerControls(
             }
             if (!isAudiobook) {
               ExpressiveConnectedBarButton(
-                index = 3, itemCount = centerCount, height = barHeight, selected = showInPlaceLyrics,
+                index = 3, itemCount = centerCount, height = barHeight, selected = sheetShown == Sheets.AudioOutput,
                 ambientContainer = bottomBarAmbient,
-                onClick = { showInPlaceLyrics = !showInPlaceLyrics },
+                onClick = { onOpenSheet(Sheets.AudioOutput) },
               ) { tint ->
                 Icon(
-                  imageVector = Icons.RoundedFilled.Lyrics,
-                  contentDescription = "Lyrics",
+                  imageVector = Icons.RoundedFilled.Headset,
+                  contentDescription = "Audio output",
                   tint = tint,
                   modifier = Modifier.size(iconSize),
                 )
@@ -2922,12 +2918,7 @@ fun AudioPlayerControls(
         if (edgeToEdgeVisualizer) {
           Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
             centerVisualizerView(
-              Modifier
-                .fillMaxSize()
-                .graphicsLayer {
-                  scaleY = 1.12f
-                  transformOrigin = TransformOrigin(0.5f, 0f)
-                },
+              Modifier.fillMaxSize(),
               false,
             )
             Column(

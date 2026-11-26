@@ -139,6 +139,8 @@ object Icons {
     val HdrOff by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Hdr_off) }
     val HdrOn by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Hdr_on) }
     val History by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.History_2) }
+    val Speaker by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Speaker) }
+    val Bluetooth by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Bluetooth) }
     val NewReleases by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.New_releases) }
     val Home by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Home) }
     val Info by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Info) }
@@ -371,6 +373,8 @@ object Icons {
     val HdrOff get() = Shared.HdrOff
     val HdrOn get() = Shared.HdrOn
     val History get() = Shared.History
+    val Speaker get() = Shared.Speaker
+    val Bluetooth get() = Shared.Bluetooth
     val NewReleases get() = Shared.NewReleases
     val Home get() = Shared.Home
     val Info get() = Shared.Info

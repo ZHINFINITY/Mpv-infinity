@@ -139,6 +139,7 @@ enum class Sheets {
   AudiobookRewind,
   AudiobookSleepTimer,
   FrameInterpolationFps,
+  AudioOutput,
 }
 
 enum class Panels {

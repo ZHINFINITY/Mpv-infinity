@@ -61,32 +61,32 @@ enum class EqualizerPreset(
   val gains: List<Int>,
 ) {
   FLAT("Flat", listOf(0, 0, 0, 0, 0)),
-  ROCK("Rock", listOf(4, 2, -1, 2, 4)),
-  POP("Pop", listOf(-1, 2, 4, 2, -1)),
-  JAZZ("Jazz", listOf(3, 2, -1, 2, 3)),
-  CLASSICAL("Classical", listOf(3, 1, -1, 2, 3)),
-  ELECTRONIC("Electronic", listOf(5, 3, 0, 2, 4)),
-  BASS_BOOST("Bass Boost", listOf(5, 3, 0, -1, -2)),
-  TREBLE_BOOST("Treble Boost", listOf(-2, -1, 0, 3, 5)),
-  VOICE_BOOST("Voice Boost", listOf(2, 4, 5, 3, 1)),
-  LOUDNESS("Loudness", listOf(4, 2, 0, 2, 4)),
+  ACOUSTIC("Acoustic", listOf(3, 0, 2, 2, 1)),
+  BASS_BOOST("Bass Boost", listOf(6, 4, 2, 0, 0)),
+  BASS_CUT("Bass Cut", listOf(-6, -4, -2, 0, 0)),
+  VOCAL("Vocal", listOf(-3, 1, 4, 3, -1)),
+  TREBLE_BOOST("Treble Boost", listOf(0, 0, 0, 4, 5)),
+  TREBLE_CUT("Treble Cut", listOf(0, 0, 0, -4, -5)),
+  LOUDNESS("Loudness", listOf(6, 0, -2, 2, 5)),
+  SPOKEN_WORD("Spoken Word", listOf(-5, 2, 4, 2, -2)),
+  ELECTRONIC("Electronic", listOf(5, 0, 0, 3, 4)),
+  ROCK("Rock", listOf(4, -1, -2, 3, 4)),
+  HIP_HOP("Hip Hop", listOf(6, 1, -1, 2, 3)),
+  JAZZ("Jazz", listOf(3, 0, 1, 2, 3)),
+  CLASSICAL("Classical", listOf(3, 0, 0, 3, 3)),
+  SMALL_SPEAKERS("Small Speakers", listOf(5, 2, 1, -1, -2)),
+  LATE_NIGHT("Late Night", listOf(3, 0, 2, -1, -3)),
   CUSTOM("Custom", listOf(0, 0, 0, 0, 0)),
   ;
 
   companion object {
     val MUSIC =
-      listOf(
-        FLAT,
-        ROCK,
-        POP,
-        JAZZ,
-        CLASSICAL,
-        ELECTRONIC,
-        BASS_BOOST,
-        TREBLE_BOOST,
-        VOICE_BOOST,
-        LOUDNESS,
-      )
+      entries.filterNot { it == CUSTOM }
+
+    fun matching(gains: List<Int>): EqualizerPreset =
+      entries.firstOrNull { preset ->
+        preset != CUSTOM && preset.gains == gains
+      } ?: CUSTOM
   }
 }
 
@@ -140,6 +140,21 @@ fun EqualizerSheet(
           modifier = Modifier.scale(0.8f),
         )
       }
+
+      Spacer(modifier = Modifier.height(8.dp))
+
+      Text(
+        text = "Reset",
+        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+        color = if (state.isEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
+        modifier =
+          Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(enabled = state.isEnabled) {
+              onPresetSelected(EqualizerPreset.FLAT)
+            }
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+      )
 
       Spacer(modifier = Modifier.height(16.dp))
 
