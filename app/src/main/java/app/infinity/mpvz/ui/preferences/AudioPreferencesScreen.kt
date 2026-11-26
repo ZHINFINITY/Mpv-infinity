@@ -341,6 +341,20 @@ object AudioPreferencesScreen : Screen {
               )
 
               PreferenceDivider()
+              val audioImmersiveArtwork by preferences.audioImmersiveArtwork.collectAsState()
+              SwitchPreference(
+                value = audioImmersiveArtwork,
+                onValueChange = { preferences.audioImmersiveArtwork.set(it) },
+                title = { Text("Full-screen album art") },
+                summary = {
+                  Text(
+                    "Show the album artwork full-bleed behind the player controls",
+                    color = MaterialTheme.colorScheme.outline,
+                  )
+                },
+              )
+
+              PreferenceDivider()
               val audioPaletteBackground by preferences.audioPaletteBackground.collectAsState()
               SwitchPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.pref_audio_palette_background_title),

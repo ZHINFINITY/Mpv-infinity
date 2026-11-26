@@ -27,6 +27,7 @@ internal fun AudioPaletteGlassScene(
   bottomArgb: Int,
   enabled: Boolean,
   modifier: Modifier,
+  immersiveArtwork: @Composable () -> Unit = {},
   content: @Composable BoxScope.() -> Unit,
 ) {
   val hostView = LocalView.current
@@ -68,7 +69,14 @@ internal fun AudioPaletteGlassScene(
       // The scene is a backdrop provider, not an opaque player surface. An opaque
       // fill here hid the activity's shared glass scene behind the entire music
       // metadata area. Callers that need a fallback surface own that surface.
-      content = content,
+      content = {
+        // mpvRx-style layering: full-bleed artwork sits behind the palette/glass
+        // backdrop and the controls column, fading into the page near the bottom.
+        Box(modifier = Modifier.matchParentSize()) {
+          immersiveArtwork()
+        }
+        content()
+      },
     )
   }
 }

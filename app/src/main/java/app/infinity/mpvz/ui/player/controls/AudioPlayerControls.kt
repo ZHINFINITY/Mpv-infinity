@@ -209,6 +209,7 @@ import app.infinity.mpvz.ui.player.visualizer.ParticleOverlay
 import app.infinity.mpvz.ui.player.visualizer.VisualizerPalette
 import app.infinity.mpvz.ui.player.visualizer.rememberAudioVisualizerFeatures
 import app.infinity.mpvz.ui.theme.fontFamilyForText
+import app.infinity.mpvz.ui.theme.AppMotion
 import app.infinity.mpvz.ui.player.controls.components.playerGlassPane
 import app.infinity.mpvz.ui.utils.isMpvOptionOwnedByConfig
 
@@ -605,6 +606,98 @@ private fun CanvasSpectrumCaptureEffect(
       job.cancel()
       analyzerActive.set(false)
       analyzer?.stop(resetFeatures = false)
+    }
+  }
+}
+
+/**
+ * Immersive layer (ported from the upstream player): full-bleed artwork behind
+ * the entire portrait music scene,
+ * fading into the page near the bottom (vertical DstIn mask) and sliding with the
+ * cover-carousel drag, revealing the neighbouring cover art mid-swipe.
+ */
+@Composable
+private fun ImmersiveArtworkBackground(
+  bitmap: Bitmap?,
+  artworkUrl: String?,
+  motionArtwork: ByteArray?,
+  isPlaying: Boolean,
+  swipeOffset: androidx.compose.runtime.State<Float>,
+  previousBitmap: Bitmap?,
+  nextBitmap: Bitmap?,
+  hasPrevious: Boolean,
+  hasNext: Boolean,
+) {
+  val reducedMotion = AppMotion.playerReducedMotion()
+  val direction by remember(swipeOffset) {
+    derivedStateOf {
+      when {
+        swipeOffset.value > 0f -> 1
+        swipeOffset.value < 0f -> -1
+        else -> 0
+      }
+    }
+  }
+  BoxWithConstraints(Modifier.fillMaxSize().clipToBounds()) {
+    val artworkHeight = minOf(maxHeight * 0.64f, maxWidth * 1.7f)
+    val viewportWidth = constraints.maxWidth.toFloat()
+    Box(
+      Modifier
+        .fillMaxWidth()
+        .height(artworkHeight)
+        .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+        .drawWithCache {
+          val artworkMask =
+            Brush.verticalGradient(
+              0f to Color.White,
+              0.48f to Color.White,
+              1f to Color.Transparent,
+            )
+          onDrawWithContent {
+            drawContent()
+            drawRect(artworkMask, blendMode = BlendMode.DstIn)
+          }
+        },
+    ) {
+      if (direction > 0 && hasPrevious) {
+        Box(
+          Modifier
+            .fillMaxSize()
+            .graphicsLayer {
+              translationX = -viewportWidth + swipeOffset.value.coerceIn(0f, viewportWidth)
+            },
+        ) {
+          CoverArtCardImage(bitmap = previousBitmap)
+        }
+      }
+      if (direction < 0 && hasNext) {
+        Box(
+          Modifier
+            .fillMaxSize()
+            .graphicsLayer {
+              translationX = viewportWidth + swipeOffset.value.coerceIn(-viewportWidth, 0f)
+            },
+        ) {
+          CoverArtCardImage(bitmap = nextBitmap)
+        }
+      }
+      Box(
+        Modifier
+          .fillMaxSize()
+          .graphicsLayer {
+            translationX = swipeOffset.value.coerceIn(
+              if (hasNext) -viewportWidth else 0f,
+              if (hasPrevious) viewportWidth else 0f,
+            )
+          },
+      ) {
+        CoverArtCardImage(
+          bitmap = bitmap,
+          artworkUrl = artworkUrl,
+          motionArtwork = motionArtwork?.takeUnless { reducedMotion },
+          isPlaying = isPlaying && !reducedMotion,
+        )
+      }
     }
   }
 }
@@ -1080,6 +1173,7 @@ fun AudioPlayerControls(
   val shuffleEnabled by viewModel.shuffleEnabled.collectAsState()
   val playlistModeEnabled = viewModel.hasPlaylistSupport()
   val showVisualizer by viewModel.showVisualizerInAudioPlayer.collectAsState()
+  val audioImmersiveArtwork by audioPreferences.audioImmersiveArtwork.collectAsState()
   val sheetShown by viewModel.sheetShown.collectAsState()
   val isSheetOpen = sheetShown != Sheets.None
 
@@ -1264,6 +1358,16 @@ fun AudioPlayerControls(
     label = "ambient_bottom_color",
   )
   val edgeToEdgeVisualizer = isPortrait && showVisualizer && !showInPlaceLyrics && !isStandbyActive
+  // Immersive layer (ported from upstream player): full-bleed artwork behind the whole
+  // portrait scene while the live visualizer / lyrics are off. Same gate as upstream.
+  val showImmersiveArtwork =
+    isPortrait &&
+      audioImmersiveArtwork &&
+      !showVisualizer &&
+      !showInPlaceLyrics &&
+      !isStandbyActive &&
+      (albumArtBitmap != null || currentArtworkUri?.isNotBlank() == true || currentAudioPresentation?.motionArtwork != null)
+  val immersiveHeaderContentColor = Color.White
   val standbyVisualizerBoundary = isStandbyActive && isPortrait && showVisualizer
   val visualizerUsesFullTopAndSides = edgeToEdgeVisualizer || standbyVisualizerBoundary
   val controlsSidePadding = if (edgeToEdgeVisualizer) 16.dp else 0.dp
@@ -1581,11 +1685,65 @@ fun AudioPlayerControls(
     }
   }
   var activeCoverOverride by remember { mutableStateOf<Bitmap?>(null) }
+  // Shared with the cover carousel drag so the immersive background slides with the art.
+  val animatableOffsetX = remember { Animatable(0f) }
+    val nextItem = remember(filteredPlaylist, mediaPath) {
+      val idx = filteredPlaylist.indexOfFirst { it.isPlaying || it.path == mediaPath || it.uri.toString() == mediaPath }
+      if (idx in 0 until filteredPlaylist.lastIndex) filteredPlaylist[idx + 1] else null
+    }
+
+    val prevItem = remember(filteredPlaylist, mediaPath) {
+      val idx = filteredPlaylist.indexOfFirst { it.isPlaying || it.path == mediaPath || it.uri.toString() == mediaPath }
+      if (idx > 0) filteredPlaylist[idx - 1] else null
+    }
+
+    val nextCoverBitmap =
+      rememberAudioAlbumArt(
+        pathOrUri = nextItem?.let { it.path.ifBlank { it.uri.toString() } },
+        artworkUri = nextItem?.tvgLogo,
+      )
+    val prevCoverBitmap =
+      rememberAudioAlbumArt(
+        pathOrUri = prevItem?.let { it.path.ifBlank { it.uri.toString() } },
+        artworkUri = prevItem?.tvgLogo,
+      )
+
   Box(modifier = Modifier.fillMaxSize()) {
   AudioPaletteGlassScene(
     topArgb = visualizerPalette.primary,
     bottomArgb = visualizerPalette.secondary,
     enabled = liquidGlassSurfaces,
+    immersiveArtwork = {
+      if (showImmersiveArtwork) {
+        ImmersiveArtworkBackground(
+          bitmap = activeCoverOverride ?: albumArtBitmap,
+          artworkUrl = currentArtworkUri,
+          motionArtwork = currentAudioPresentation?.motionArtwork,
+          isPlaying = isPlaying,
+          swipeOffset = animatableOffsetX.asState(),
+          previousBitmap = prevCoverBitmap,
+          nextBitmap = nextCoverBitmap,
+          hasPrevious = prevItem != null,
+          hasNext = nextItem != null,
+        )
+        // Header legibility vignette above the art, below the content column.
+        val topInset = with(LocalDensity.current) { WindowInsets.safeDrawing.getTop(this).toDp() }
+        Column(modifier = Modifier.matchParentSize()) {
+          Box(
+            modifier =
+              Modifier
+                .fillMaxWidth()
+                .height(topInset + 108.dp)
+                .background(
+                  Brush.verticalGradient(
+                    0f to Color.Black.copy(alpha = 0.55f),
+                    1f to Color.Transparent,
+                  ),
+                ),
+          )
+        }
+      }
+    },
     modifier =
       gestureInputModifier
         .then(Modifier.graphicsLayer {
@@ -1685,7 +1843,7 @@ fun AudioPlayerControls(
           Icon(
             imageVector = Icons.RoundedFilled.ExpandMore,
             contentDescription = stringResource(R.string.ui_close),
-            tint = MaterialTheme.colorScheme.onSurface,
+            tint = if (showImmersiveArtwork) immersiveHeaderContentColor else MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.size(32.dp),
           )
         }
@@ -1693,7 +1851,7 @@ fun AudioPlayerControls(
         Text(
           text = stringResource(R.string.ui_now_playing),
           style = MaterialTheme.typography.labelSmall,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          color = if (showImmersiveArtwork) immersiveHeaderContentColor.copy(alpha = 0.92f) else MaterialTheme.colorScheme.onSurfaceVariant,
           letterSpacing = 2.sp,
           modifier = Modifier.align(Alignment.Center),
         )
@@ -1706,7 +1864,7 @@ fun AudioPlayerControls(
             Icon(
               imageVector = Icons.RoundedFilled.Info,
               contentDescription = stringResource(R.string.player_sheets_more_title),
-              tint = MaterialTheme.colorScheme.onSurface,
+              tint = if (showImmersiveArtwork) immersiveHeaderContentColor else MaterialTheme.colorScheme.onSurface,
               modifier = Modifier.size(28.dp),
             )
           }
@@ -1748,7 +1906,6 @@ fun AudioPlayerControls(
       }
     }
 
-    val animatableOffsetX = remember { Animatable(0f) }
     val coroutineScope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
 
@@ -1756,26 +1913,6 @@ fun AudioPlayerControls(
       activeCoverOverride = null
     }
 
-    val nextItem = remember(filteredPlaylist, mediaPath) {
-      val idx = filteredPlaylist.indexOfFirst { it.isPlaying || it.path == mediaPath || it.uri.toString() == mediaPath }
-      if (idx in 0 until filteredPlaylist.lastIndex) filteredPlaylist[idx + 1] else null
-    }
-
-    val prevItem = remember(filteredPlaylist, mediaPath) {
-      val idx = filteredPlaylist.indexOfFirst { it.isPlaying || it.path == mediaPath || it.uri.toString() == mediaPath }
-      if (idx > 0) filteredPlaylist[idx - 1] else null
-    }
-
-    val nextCoverBitmap =
-      rememberAudioAlbumArt(
-        pathOrUri = nextItem?.let { it.path.ifBlank { it.uri.toString() } },
-        artworkUri = nextItem?.tvgLogo,
-      )
-    val prevCoverBitmap =
-      rememberAudioAlbumArt(
-        pathOrUri = prevItem?.let { it.path.ifBlank { it.uri.toString() } },
-        artworkUri = prevItem?.tvgLogo,
-      )
 
     @OptIn(ExperimentalFoundationApi::class)
     val centerVisualizerView: @Composable (Modifier, Boolean) -> Unit = { visualizerModifier, forceArtwork ->
