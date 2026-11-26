@@ -49,14 +49,15 @@ private fun AudioDeviceInfo.labelAndIcon(): Pair<String, app.infinity.mpvz.ui.ic
   when (type) {
     AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
     AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+    -> "Bluetooth" to Icons.RoundedFilled.Bluetooth
     AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
     AudioDeviceInfo.TYPE_WIRED_HEADSET,
     AudioDeviceInfo.TYPE_USB_HEADSET,
-    AudioDeviceInfo.TYPE_BUILTIN_EARPIECE,
     -> "Headphones" to Icons.RoundedFilled.Headset
     AudioDeviceInfo.TYPE_BUILTIN_SPEAKER,
     AudioDeviceInfo.TYPE_TELEPHONY,
     -> "Speaker" to Icons.RoundedFilled.Speaker
+    AudioDeviceInfo.TYPE_BUILTIN_EARPIECE -> "Earpiece" to Icons.RoundedFilled.VolumeUp
     else -> "Audio output" to Icons.RoundedFilled.VolumeUp
   }
 

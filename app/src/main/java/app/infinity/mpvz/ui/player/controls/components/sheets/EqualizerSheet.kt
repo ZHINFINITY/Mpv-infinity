@@ -468,55 +468,67 @@ private fun TonePad(
           .padding(16.dp)
           .fillMaxSize(),
     ) {
-      // mpvRx-style grid: quarter-step lines, a stronger center cross, and a
-      // crosshair that follows the handle.
-      val gridColor = MaterialTheme.colorScheme.onSurfaceVariant
+      // mpvRx-style tone pad: a dot matrix grid (no heavy lines), a stronger
+      // center cross, axis labels, and a soft crosshair on the handle.
+      val dotColor = MaterialTheme.colorScheme.onSurfaceVariant
       val crosshairColor = MaterialTheme.colorScheme.primary
       Canvas(Modifier.fillMaxSize()) {
-        val step = size.width / ((EQ_TONE_STEPS * 2) / 4)
-        var x = 0f
-        while (x <= size.width + 0.5f) {
-          drawLine(
-            color = gridColor.copy(alpha = 0.12f),
-            start = Offset(x, 0f),
-            end = Offset(x, size.height),
-            strokeWidth = 1.dp.toPx(),
-          )
-          drawLine(
-            color = gridColor.copy(alpha = 0.12f),
-            start = Offset(0f, x),
-            end = Offset(size.width, x),
-            strokeWidth = 1.dp.toPx(),
-          )
-          x += step
+        val cols = EQ_TONE_STEPS * 2
+        val gapX = size.width / cols
+        val gapY = size.height / cols
+        for (i in 0..cols) {
+          for (j in 0..cols) {
+            val cx = i * gapX
+            val cy = size.height - j * gapY
+            val isCenter = i * 2 == cols || j * 2 == cols
+            drawCircle(
+              color = dotColor.copy(alpha = if (isCenter) 0.38f else 0.18f),
+              radius = if (isCenter) 1.6.dp.toPx() / 2 else 1.2.dp.toPx() / 2,
+              center = Offset(cx, cy),
+            )
+          }
         }
-        drawLine(
-          color = gridColor.copy(alpha = 0.28f),
-          start = Offset(size.width / 2f, 0f),
-          end = Offset(size.width / 2f, size.height),
-          strokeWidth = 1.dp.toPx(),
-        )
-        drawLine(
-          color = gridColor.copy(alpha = 0.28f),
-          start = Offset(0f, size.height / 2f),
-          end = Offset(size.width, size.height / 2f),
-          strokeWidth = 1.dp.toPx(),
-        )
         if (padSize > 0f) {
+          val hx = handleFractionX * size.width
+          val hy = (1f - handleFractionY) * size.height
           drawLine(
-            color = crosshairColor.copy(alpha = 0.35f),
-            start = Offset(handleX, 0f),
-            end = Offset(handleX, size.height),
+            color = crosshairColor.copy(alpha = 0.30f),
+            start = Offset(hx, 0f),
+            end = Offset(hx, size.height),
             strokeWidth = 1.dp.toPx(),
           )
           drawLine(
-            color = crosshairColor.copy(alpha = 0.35f),
-            start = Offset(0f, handleY),
-            end = Offset(size.width, handleY),
+            color = crosshairColor.copy(alpha = 0.30f),
+            start = Offset(0f, hy),
+            end = Offset(size.width, hy),
             strokeWidth = 1.dp.toPx(),
           )
         }
       }
+      Text(
+        text = "WARM",
+        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, letterSpacing = 1.sp),
+        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+        modifier = Modifier.align(Alignment.CenterStart).padding(start = 2.dp),
+      )
+      Text(
+        text = "BRIGHT",
+        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, letterSpacing = 1.sp),
+        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+        modifier = Modifier.align(Alignment.CenterEnd).padding(end = 2.dp),
+      )
+      Text(
+        text = "FOCUSED",
+        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, letterSpacing = 1.sp),
+        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+        modifier = Modifier.align(Alignment.TopCenter).padding(top = 2.dp),
+      )
+      Text(
+        text = "BROAD",
+        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, letterSpacing = 1.sp),
+        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+        modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 2.dp),
+      )
 
       Box(
         modifier =

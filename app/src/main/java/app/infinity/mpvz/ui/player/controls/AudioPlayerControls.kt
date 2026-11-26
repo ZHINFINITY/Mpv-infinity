@@ -1910,16 +1910,10 @@ fun AudioPlayerControls(
 
     val losslessBadge = @Composable {
       if (collapsedAudioBadgeLabel.isNotBlank()) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-          // mpvrx-style infinity mark: shown whenever the playing file is lossless.
-          Text(
-            text = "∞",
-            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-            color = MaterialTheme.colorScheme.onSecondaryContainer,
-            modifier = Modifier.padding(bottom = 2.dp),
-          )
-          Surface(
-          shape = RoundedCornerShape(4.dp),
+        // mpvrx-style: the ∞ mark only appears when the file is actually lossless;
+        // lossy songs show just the codec/label chip.
+        Surface(
+          shape = RoundedCornerShape(6.dp),
           color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f),
           border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
           modifier =
@@ -1930,23 +1924,34 @@ fun AudioPlayerControls(
               showLosslessDetails = !showLosslessDetails
             },
         ) {
-          Text(
-            text =
-              if (showLosslessDetails && fullLosslessDetailString.isNotBlank()) {
-                fullLosslessDetailString
-              } else {
-                collapsedAudioBadgeLabel
-              },
-            style =
-              MaterialTheme.typography.labelSmall.copy(
-                fontWeight = FontWeight.Bold,
-                fontSize = 8.5.sp,
-                letterSpacing = 0.8.sp,
-              ),
-            color = MaterialTheme.colorScheme.onSecondaryContainer,
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-          )
-        }
+          ) {
+            if (isHiRes || isLosslessCodecOrExt) {
+              Text(
+                text = "∞",
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.padding(end = 4.dp),
+              )
+            }
+            Text(
+              text =
+                if (showLosslessDetails && fullLosslessDetailString.isNotBlank()) {
+                  fullLosslessDetailString
+                } else {
+                  collapsedAudioBadgeLabel
+                },
+              style =
+                MaterialTheme.typography.labelSmall.copy(
+                  fontWeight = FontWeight.Bold,
+                  fontSize = 8.5.sp,
+                  letterSpacing = 0.8.sp,
+                ),
+              color = MaterialTheme.colorScheme.onSecondaryContainer,
+            )
+          }
         }
       }
     }
@@ -2972,9 +2977,9 @@ fun AudioPlayerControls(
             currentLyricStripView()
             Spacer(modifier = Modifier.height(4.dp))
             seekbarView()
-            // Fixed-height slot: the lossless badge fades in without reflowing
-            // (which stretched the artwork when metadata arrived after a song change).
-            Box(modifier = Modifier.height(38.dp), contentAlignment = Alignment.TopCenter) {
+            // Fixed-height slot (fits the single-row badge): fades in without
+            // reflowing the column when metadata arrives after a song change.
+            Box(modifier = Modifier.height(26.dp), contentAlignment = Alignment.Center) {
               androidx.compose.animation.Crossfade(
                 targetState = collapsedAudioBadgeLabel.isNotBlank(),
                 animationSpec = tween(250),
