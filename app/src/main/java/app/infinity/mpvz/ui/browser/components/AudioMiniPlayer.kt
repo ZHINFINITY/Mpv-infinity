@@ -73,8 +73,8 @@ fun AudioMiniPlayer(modifier: Modifier = Modifier) {
   val rawMediaTitle by PlaybackSession.propString["media-title"].collectAsStateWithLifecycle()
   val rawArtist by PlaybackSession.propString["metadata/by-key/Artist"].collectAsStateWithLifecycle()
   val rawAlbum by PlaybackSession.propString["metadata/by-key/Album"].collectAsStateWithLifecycle()
-  val duration by PlaybackSession.propInt["duration"].collectAsStateWithLifecycle()
-  val position by PlaybackSession.propInt["time-pos"].collectAsStateWithLifecycle()
+  val duration by PlaybackSession.propDouble["duration"].collectAsStateWithLifecycle()
+  val position by PlaybackSession.propDouble["time-pos"].collectAsStateWithLifecycle()
 
   if (!isServiceRunning || sessionState.currentItem == null) return
 
@@ -129,19 +129,23 @@ fun AudioMiniPlayer(modifier: Modifier = Modifier) {
           )
         },
   ) {
-    val primaryContainerColor = MaterialTheme.colorScheme.primaryContainer
+    val primaryContainerColor = MaterialTheme.colorScheme.primary
+    val trackColor = MaterialTheme.colorScheme.surfaceVariant
 
     Row(
       modifier =
         Modifier
           .fillMaxWidth()
           .drawBehind {
+            // Whole bar is the progress bar: track color behind, themed fill
+            // sweeping left-to-right as the song progresses.
+            drawRect(color = trackColor.copy(alpha = 0.55f))
             val dur = duration?.toFloat() ?: 0f
             val pos = position?.toFloat() ?: 0f
             val progressFraction = if (dur > 0f) (pos / dur).coerceIn(0f, 1f) else 0f
             if (progressFraction > 0f) {
               drawRect(
-                color = primaryContainerColor.copy(alpha = 0.35f),
+                color = primaryContainerColor.copy(alpha = 0.8f),
                 size =
                   Size(
                     width = size.width * progressFraction,

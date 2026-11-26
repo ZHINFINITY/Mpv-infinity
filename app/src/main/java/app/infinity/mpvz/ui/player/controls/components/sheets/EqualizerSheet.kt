@@ -14,6 +14,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -42,6 +43,7 @@ import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -405,11 +407,20 @@ private fun TonePad(
   modifier: Modifier = Modifier,
 ) {
   var padSize by remember { mutableFloatStateOf(0f) }
+  var lastEmittedX by remember { mutableIntStateOf(Int.MIN_VALUE) }
+  var lastEmittedY by remember { mutableIntStateOf(Int.MIN_VALUE) }
 
   fun pointToStep(offset: Float, sizePx: Float): Int {
     if (sizePx <= 0f) return 0
     val normalized = ((offset / sizePx) * 2f - 1f).coerceIn(-1f, 1f)
     return (normalized * EQ_TONE_STEPS).roundToInt().coerceIn(-EQ_TONE_STEPS, EQ_TONE_STEPS)
+  }
+
+  fun emit(x: Int, y: Int) {
+    if (x == lastEmittedX && y == lastEmittedY) return
+    lastEmittedX = x
+    lastEmittedY = y
+    onToneChanged(x, y)
   }
 
   Box(
@@ -427,7 +438,7 @@ private fun TonePad(
           detectTapGestures(
             onTap = { offset ->
               padSize = size.width.toFloat()
-              onToneChanged(pointToStep(offset.x, size.width.toFloat()), pointToStep(size.height.toFloat() - offset.y, size.height.toFloat()))
+              emit(pointToStep(offset.x, size.width.toFloat()), pointToStep(size.height.toFloat() - offset.y, size.height.toFloat()))
               onToneFocusChanged(toneFocused)
             },
           )
@@ -436,11 +447,11 @@ private fun TonePad(
           detectDragGestures(
             onDragStart = { offset ->
               padSize = size.width.toFloat()
-              onToneChanged(pointToStep(offset.x, size.width.toFloat()), pointToStep(size.height.toFloat() - offset.y, size.height.toFloat()))
+              emit(pointToStep(offset.x, size.width.toFloat()), pointToStep(size.height.toFloat() - offset.y, size.height.toFloat()))
             },
           ) { change, _ ->
             change.consume()
-            onToneChanged(pointToStep(change.position.x, size.width.toFloat()), pointToStep(size.height.toFloat() - change.position.y, size.height.toFloat()))
+            emit(pointToStep(change.position.x, size.width.toFloat()), pointToStep(size.height.toFloat() - change.position.y, size.height.toFloat()))
           }
         }.onSizeChanged { size: IntSize -> padSize = size.width.toFloat() },
     contentAlignment = Alignment.Center,
@@ -457,6 +468,56 @@ private fun TonePad(
           .padding(16.dp)
           .fillMaxSize(),
     ) {
+      // mpvRx-style grid: quarter-step lines, a stronger center cross, and a
+      // crosshair that follows the handle.
+      val gridColor = MaterialTheme.colorScheme.onSurfaceVariant
+      val crosshairColor = MaterialTheme.colorScheme.primary
+      Canvas(Modifier.fillMaxSize()) {
+        val step = size.width / ((EQ_TONE_STEPS * 2) / 4)
+        var x = 0f
+        while (x <= size.width + 0.5f) {
+          drawLine(
+            color = gridColor.copy(alpha = 0.12f),
+            start = Offset(x, 0f),
+            end = Offset(x, size.height),
+            strokeWidth = 1.dp.toPx(),
+          )
+          drawLine(
+            color = gridColor.copy(alpha = 0.12f),
+            start = Offset(0f, x),
+            end = Offset(size.width, x),
+            strokeWidth = 1.dp.toPx(),
+          )
+          x += step
+        }
+        drawLine(
+          color = gridColor.copy(alpha = 0.28f),
+          start = Offset(size.width / 2f, 0f),
+          end = Offset(size.width / 2f, size.height),
+          strokeWidth = 1.dp.toPx(),
+        )
+        drawLine(
+          color = gridColor.copy(alpha = 0.28f),
+          start = Offset(0f, size.height / 2f),
+          end = Offset(size.width, size.height / 2f),
+          strokeWidth = 1.dp.toPx(),
+        )
+        if (padSize > 0f) {
+          drawLine(
+            color = crosshairColor.copy(alpha = 0.35f),
+            start = Offset(handleX, 0f),
+            end = Offset(handleX, size.height),
+            strokeWidth = 1.dp.toPx(),
+          )
+          drawLine(
+            color = crosshairColor.copy(alpha = 0.35f),
+            start = Offset(0f, handleY),
+            end = Offset(size.width, handleY),
+            strokeWidth = 1.dp.toPx(),
+          )
+        }
+      }
+
       Box(
         modifier =
           Modifier

@@ -2972,7 +2972,17 @@ fun AudioPlayerControls(
             currentLyricStripView()
             Spacer(modifier = Modifier.height(4.dp))
             seekbarView()
-            losslessBadge()
+            // Fixed-height slot: the lossless badge fades in without reflowing
+            // (which stretched the artwork when metadata arrived after a song change).
+            Box(modifier = Modifier.height(38.dp), contentAlignment = Alignment.TopCenter) {
+              androidx.compose.animation.Crossfade(
+                targetState = collapsedAudioBadgeLabel.isNotBlank(),
+                animationSpec = tween(250),
+                label = "lossless_badge",
+              ) { visible ->
+                if (visible) losslessBadge()
+              }
+            }
             Spacer(modifier = Modifier.height(12.dp))
             playbackControlsRow()
             Spacer(modifier = Modifier.height(10.dp))

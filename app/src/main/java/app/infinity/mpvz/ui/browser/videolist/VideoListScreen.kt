@@ -118,6 +118,7 @@ import app.infinity.mpvz.ui.utils.LocalBackStack
 import app.infinity.mpvz.ui.utils.popSafely
 import app.infinity.mpvz.utils.history.RecentlyPlayedOps
 import app.infinity.mpvz.utils.media.CopyPasteOps
+import app.infinity.mpvz.ui.browser.music.MusicPlaybackLauncher
 import app.infinity.mpvz.utils.media.MediaUtils
 import app.infinity.mpvz.utils.media.MediaSearchEngine
 import app.infinity.mpvz.utils.media.OpenDocumentTreeContract
@@ -552,6 +553,16 @@ data class VideoListScreen(
               if (isAudiobook) {
                 coroutineScope.launch {
                   AudiobookPlayback.launchForFile(context, video.path, video.uri.toString())
+                }
+              } else if (isAudio && MusicPlaybackLauncher.isEligibleLocalMusicPath(video.path)) {
+                coroutineScope.launch {
+                  MusicPlaybackLauncher.playLocalAudioPathsIfPresent(
+                    context = context,
+                    paths = listOf(video.path),
+                    fallbackTitles = listOf<String?>(video.title),
+                    currentIndex = 0,
+                    launchSource = "video_list_search",
+                  ) || run { MediaUtils.playFile(video, context, "video_list_search"); true }
                 }
               } else {
                 MediaUtils.playFile(video, context, "video_list")
