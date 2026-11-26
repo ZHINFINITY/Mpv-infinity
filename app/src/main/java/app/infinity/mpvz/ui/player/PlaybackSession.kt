@@ -1221,6 +1221,10 @@ object PlaybackSession : MPVLib.EventObserver {
             add("flatten-editions=yes")
           }
         }.joinToString(",")
+      // Loopback proxies (torrent, stream relays) close every response, so a persistent
+      // connection only ever hands libavformat a socket the server has dropped. Pick the
+      // connection policy per opened file, immediately before the load.
+      PlaybackLoopbackLavfOptions.applyFor(playableUri)
       MPVLib.command("loadfile", playableUri, "replace", "-1", loadOptions)
       propBoolean.emit("pause", holdForPositionRestore || desiredPaused)
       generation
@@ -1714,11 +1718,18 @@ object PlaybackSession : MPVLib.EventObserver {
         if (property == "duration") publishDurationSample(null)
         propLong.emit(property, null)
         propInt.emit(property, null)
+        propDouble.emit(property, null)
+        propFloat.emit(property, null)
         return
       }
       if (property == "duration") publishDurationSample(value.toDouble())
       propLong.emit(property, value)
       propInt.emit(property, value.toInt())
+      // mpv delivers a single format per observed property. Mirror numeric values into the
+      // other numeric channels so a Double consumer cannot starve the Int readers (and vice
+      // versa) for duration/time-pos, which left the mini player's progress bar frozen.
+      propDouble.emit(property, value.toDouble())
+      propFloat.emit(property, value.toFloat())
       observerSnapshot().forEach { observer -> runCatching { observer.eventProperty(property, value) } }
     }
   }
@@ -1755,11 +1766,17 @@ object PlaybackSession : MPVLib.EventObserver {
         if (property == "duration") publishDurationSample(null)
         propDouble.emit(property, null)
         propFloat.emit(property, null)
+        propLong.emit(property, null)
+        propInt.emit(property, null)
         return
       }
       if (property == "duration") publishDurationSample(value)
       propDouble.emit(property, value)
       propFloat.emit(property, value.toFloat())
+      if (!value.isNaN() && !value.isInfinite()) {
+        propLong.emit(property, value.toLong())
+        propInt.emit(property, value.toInt())
+      }
       observerSnapshot().forEach { observer -> runCatching { observer.eventProperty(property, value) } }
     }
   }

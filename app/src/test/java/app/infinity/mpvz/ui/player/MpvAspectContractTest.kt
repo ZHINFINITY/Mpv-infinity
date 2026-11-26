@@ -234,4 +234,45 @@ class MpvAspectContractTest {
     // The rotation probe is a second full container parse per file; it must be cached.
     assertTrue(repository.contains("rotationCache.getOrPut(video.uri.toString())"))
   }
+
+  @Test fun loopbackProxiesGetFreshConnectionsWhileRemoteStreamsKeepPersistentOnes() {
+    val session = source("ui/player/PlaybackSession.kt")
+    val mpvView = source("ui/player/MPVView.kt")
+
+    // The torrent proxy and the stream relays are NanoHTTPD servers on 127.0.0.1 that close
+    // every response, so reusing the socket aborts the next range request.
+    assertTrue(PlaybackLoopbackLavfOptions.isLoopback("http://127.0.0.1:8099/stream/movie.mkv"))
+    assertTrue(PlaybackLoopbackLavfOptions.isLoopback("http://localhost:8099/stream.mkv"))
+    assertTrue(PlaybackLoopbackLavfOptions.isLoopback("http://[::1]:8099/stream.mkv"))
+    assertFalse(PlaybackLoopbackLavfOptions.isLoopback("https://cdn.example.com/a/b.m3u8"))
+    assertFalse(PlaybackLoopbackLavfOptions.isLoopback("magnet:?xt=urn:btih:abc"))
+    assertFalse(PlaybackLoopbackLavfOptions.isLoopback("file:///sdcard/movie.mkv"))
+
+    // Loopback drops persistence, remote keeps the handshake-saving default MPVView installs.
+    assertTrue(PlaybackLoopbackLavfOptions.LOOPBACK_STREAM.startsWith("http_persistent=0,"))
+    assertTrue(PlaybackLoopbackLavfOptions.LOOPBACK_DEMUXER.startsWith("http_persistent=0,"))
+    assertTrue(PlaybackLoopbackLavfOptions.REMOTE_DEMUXER.startsWith("http_persistent=1,"))
+    // The per-file fallback must be the same value MPVView installs on init, so a switch back
+    // to a remote source restores exactly what the instance started with.
+    val demuxerHalves =
+      listOf(
+        "http_persistent=1,reconnect=1,reconnect_on_network_error=1,reconnect_streamed=1,",
+        "reconnect_delay_max=5,reconnect_max_retries=5,reconnect_delay_total_max=20",
+      )
+    val streamHalves =
+      listOf(
+        "reconnect=1,reconnect_on_network_error=1,reconnect_on_http_error=5xx,reconnect_streamed=1,",
+        "reconnect_delay_max=5,reconnect_max_retries=5,reconnect_delay_total_max=20",
+      )
+    assertTrue(demuxerHalves.all { mpvView.contains("\"$it\"") })
+    assertTrue(streamHalves.all { mpvView.contains("\"$it\"") })
+    assertEquals(PlaybackLoopbackLavfOptions.REMOTE_DEMUXER, demuxerHalves.joinToString(""))
+    assertEquals(PlaybackLoopbackLavfOptions.REMOTE_STREAM, streamHalves.joinToString(""))
+
+    // Chosen per opened file, right before the load, so a remote -> loopback switch cannot
+    // inherit the other connection policy.
+    val beforeLoad =
+      session.substringBefore("MPVLib.command(\"loadfile\", playableUri, \"replace\", \"-1\", loadOptions)")
+    assertTrue(beforeLoad.contains("PlaybackLoopbackLavfOptions.applyFor(playableUri)"))
+  }
 }

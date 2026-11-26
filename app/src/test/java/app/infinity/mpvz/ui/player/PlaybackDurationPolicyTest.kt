@@ -171,4 +171,28 @@ class PlaybackDurationPolicyTest {
     assertTrue(flow.contains("onBufferOverflow = BufferOverflow.DROP_OLDEST"))
     assertTrue(refresh.contains("publishDurationSampleLocked(value)"))
   }
+
+  @Test
+  fun audioMiniPlayerProgressReadsTheIntPropertiesTheRestOfThePlayerUses() {
+    val root = File("src/main/java").takeIf { it.exists() } ?: File("app/src/main/java")
+    val miniPlayer = File(root, "app/infinity/mpvz/ui/browser/components/AudioMiniPlayer.kt").readText()
+    val session = File(root, "app/infinity/mpvz/ui/player/PlaybackSession.kt").readText()
+
+    // mpv delivers a single format per observed property, so the audio pill asking for Double
+    // starved the Int readers (player seek bar, video mini player) and its own fill never moved.
+    assertTrue(miniPlayer.contains("propInt[\"duration\"]"))
+    assertTrue(miniPlayer.contains("propInt[\"time-pos\"]"))
+    assertFalse(miniPlayer.contains("propDouble[\"duration\"]"))
+    assertFalse(miniPlayer.contains("propDouble[\"time-pos\"]"))
+
+    // Position is dereferenced in the progress draw lambda only: a tick repaints the fill
+    // instead of recomposing the glass surface once a second.
+    assertFalse(miniPlayer.contains("val position by PlaybackSession"))
+    assertFalse(miniPlayer.contains("val duration by PlaybackSession"))
+
+    // Either delivered numeric format feeds every numeric channel, so no consumer wins the
+    // observation and freezes the others.
+    assertTrue(session.contains("propDouble.emit(property, value.toDouble())"))
+    assertTrue(session.contains("propInt.emit(property, value.toInt())"))
+  }
 }

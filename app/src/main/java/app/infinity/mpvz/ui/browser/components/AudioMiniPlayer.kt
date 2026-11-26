@@ -44,6 +44,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -79,8 +80,11 @@ fun AudioMiniPlayer(modifier: Modifier = Modifier) {
   val rawMediaTitle by PlaybackSession.propString["media-title"].collectAsStateWithLifecycle()
   val rawArtist by PlaybackSession.propString["metadata/by-key/Artist"].collectAsStateWithLifecycle()
   val rawAlbum by PlaybackSession.propString["metadata/by-key/Album"].collectAsStateWithLifecycle()
-  val duration by PlaybackSession.propDouble["duration"].collectAsStateWithLifecycle()
-  val position by PlaybackSession.propDouble["time-pos"].collectAsStateWithLifecycle()
+  // Duration and position stay State objects here: they are dereferenced inside the progress
+  // draw lambda only, so a position tick invalidates that draw node instead of recomposing
+  // the whole glass surface every second. mpvRx reads them the same way.
+  val durationState = PlaybackSession.propInt["duration"].collectAsStateWithLifecycle()
+  val positionState = PlaybackSession.propInt["time-pos"].collectAsStateWithLifecycle()
 
   if (!isServiceRunning || sessionState.currentItem == null) return
 
@@ -136,34 +140,48 @@ fun AudioMiniPlayer(modifier: Modifier = Modifier) {
         },
   ) {
     val primaryColor = MaterialTheme.colorScheme.primary
-    val trackColor = MaterialTheme.colorScheme.surfaceVariant
     val artworkUri = sessionState.currentItem?.artworkUri
+
+    // The whole pill is the progress bar. Drawn in its own layer, under the controls, so the
+    // glass optics are painted once and only the fill advances.
+    Box(modifier = Modifier.matchParentSize()) {
+      Box(
+        modifier =
+          Modifier
+            .matchParentSize()
+            .drawBehind {
+              val duration = durationState.value?.toFloat() ?: 0f
+              val position = positionState.value?.toFloat() ?: 0f
+              if (duration <= 0f) return@drawBehind
+              val progressFraction = (position / duration).coerceIn(0f, 1f)
+              if (progressFraction <= 0f) return@drawBehind
+              val playedWidth = size.width * progressFraction
+              val edgeWidth = 1.5.dp.toPx()
+              drawRect(
+                brush =
+                  Brush.horizontalGradient(
+                    colors = listOf(primaryColor.copy(alpha = 0.20f), primaryColor.copy(alpha = 0.40f)),
+                    startX = 0f,
+                    endX = playedWidth.coerceAtLeast(1f),
+                  ),
+                size = Size(width = playedWidth, height = size.height),
+              )
+              // Sharp play-head marker, the mpvRx cue that the pill itself is the timeline.
+              drawRect(
+                color = primaryColor.copy(alpha = 0.92f),
+                topLeft = Offset(playedWidth - edgeWidth / 2f, 0f),
+                size = Size(width = edgeWidth * 2f, height = size.height),
+              )
+            },
+      )
+    }
 
     Row(
       modifier =
         Modifier
           .fillMaxWidth()
           .height(64.dp)
-          .drawBehind {
-            // mpvRx-style progress: soft tinted fill plus a sharp leading edge
-            // marker at the play head, so progress reads at a glance.
-            drawRect(color = trackColor.copy(alpha = 0.55f))
-            val dur = duration?.toFloat() ?: 0f
-            val pos = position?.toFloat() ?: 0f
-            val progressFraction = if (dur > 0f) (pos / dur).coerceIn(0f, 1f) else 0f
-            if (progressFraction > 0f) {
-              val playedWidth = size.width * progressFraction
-              drawRect(
-                color = primaryColor.copy(alpha = 0.22f),
-                size = Size(width = playedWidth, height = size.height),
-              )
-              drawRect(
-                color = primaryColor.copy(alpha = 0.85f),
-                topLeft = Offset(playedWidth - 1.dp.toPx(), 0f),
-                size = Size(width = 2.dp.toPx(), height = size.height),
-              )
-            }
-          }.padding(horizontal = 8.dp),
+          .padding(horizontal = 8.dp),
       verticalAlignment = Alignment.CenterVertically,
     ) {
       // Cover artwork thumbnail
