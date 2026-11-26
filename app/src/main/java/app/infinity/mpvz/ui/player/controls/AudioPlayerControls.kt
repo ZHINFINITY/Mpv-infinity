@@ -80,6 +80,7 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -654,15 +655,15 @@ private fun ImmersiveArtworkBackground(
     }
   }
   BoxWithConstraints(Modifier.fillMaxSize().clipToBounds()) {
-    // Upstream: the art layer spans the full scene so the artwork runs edge to edge
-    // horizontally AND covers most of the screen vertically; the DstIn mask below
-    // fades it into the page instead of a hard cut.
-    val artworkHeight = maxHeight
+    // Upstream: the art layer is capped at 64% of the scene height (max 1.7x width) and
+    // top-aligned, so the bottom of the screen always fades into the page background.
+    val artworkHeight = minOf(maxHeight * 0.64f, maxWidth * 1.7f)
     val viewportWidth = constraints.maxWidth.toFloat()
     Box(
       Modifier
         .fillMaxWidth()
         .height(artworkHeight)
+        .align(Alignment.TopCenter)
         .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
         .drawWithCache {
           val artworkMask =
@@ -1308,7 +1309,7 @@ fun AudioPlayerControls(
   val isTabletLandscape = !isPortrait && isTablet
   // mpvrx's compact-landscape rule: short display heights shrink the transport row.
   val isCompactLandscape = !isPortrait && configuration.screenHeightDp < 480
-  val isTabletPortrait = isPortrait && isTablet
+  val isTabletPortrait = isPortrait && (isTablet || configuration.screenWidthDp >= 600)
   val hostPlayerView = androidx.compose.ui.platform.LocalView.current
   val transitionViewportWidthPx = with(LocalDensity.current) { configuration.screenWidthDp.dp.toPx() }
   val miniArtworkSizePx = with(LocalDensity.current) { 48.dp.toPx() }
@@ -1754,22 +1755,23 @@ fun AudioPlayerControls(
           hasPrevious = prevItem != null,
           hasNext = nextItem != null,
         )
-        // Header legibility vignette above the art, below the content column.
+        // mpvrx's header vignette: strong shade over the top inset + 54dp, easing to
+        // transparent; plus the same shading at the bottom of the art so the metadata
+        // text stays legible over bright covers.
         val topInset = with(LocalDensity.current) { WindowInsets.safeDrawing.getTop(this).toDp() }
-        Column(modifier = Modifier.matchParentSize()) {
-          Box(
-            modifier =
-              Modifier
-                .fillMaxWidth()
-                .height(topInset + 108.dp)
-                .background(
-                  Brush.verticalGradient(
-                    0f to Color.Black.copy(alpha = 0.55f),
-                    1f to Color.Transparent,
-                  ),
-                ),
+        val protectedHeight = topInset + 54.dp
+        val vignetteHeight = protectedHeight + if (isPortrait) 112.dp else 72.dp
+        val fadeStart = protectedHeight / vignetteHeight
+        val shadeColor = Color.Black
+        val vignette = remember(fadeStart) {
+          Brush.verticalGradient(
+            0f to shadeColor.copy(alpha = 0.78f),
+            fadeStart to shadeColor.copy(alpha = 0.68f),
+            (fadeStart + (1f - fadeStart) * 0.5f) to shadeColor.copy(alpha = 0.24f),
+            1f to shadeColor.copy(alpha = 0f),
           )
         }
+        Box(Modifier.fillMaxWidth().height(vignetteHeight).background(vignette))
       }
     },
     modifier =
@@ -2684,185 +2686,133 @@ fun AudioPlayerControls(
     }
 
     val bottomActionRow = @Composable {
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-      ) {
-        ReactiveIconButton(
-          onClick = { onOpenSheet(Sheets.Equalizer) },
-          enabled = !audioFiltersConfigOwned,
-          modifier =
-            Modifier
-              .size(48.dp),
+      val equalizerState by viewModel.equalizerState.collectAsState()
+      val isQueueActive = !isTablet && sheetShown == Sheets.Playlist
+      val barHeight = if (isCompactLandscape) 42.dp else 50.dp
+      val centerCount = if (isAudiobook) 3 else 4
+      BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val showPlaylistButton = !isTablet
+        val endWidth = minOf(barHeight, maxWidth * 0.15f)
+        val outerSpacing = if (maxWidth < 280.dp) 4.dp else 8.dp
+        val centerSpacing = if (maxWidth < 320.dp) 2.dp else 4.dp
+        val centerWidth =
+          if (showPlaylistButton) {
+            (maxWidth - endWidth * 2f - outerSpacing * 2f).coerceAtLeast(0.dp)
+          } else {
+            (maxWidth - endWidth - outerSpacing).coerceAtLeast(0.dp)
+          }
+        val centerCellWidth =
+          ((centerWidth - centerSpacing * (centerCount - 1).toFloat()) / centerCount.toFloat()).coerceAtLeast(0.dp)
+        val iconSize = minOf(if (isCompactLandscape) 20.dp else 22.dp, centerCellWidth * 0.72f)
+        val endIconSize = minOf(if (isCompactLandscape) 20.dp else 22.dp, endWidth * 0.72f)
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(outerSpacing),
         ) {
-          Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+          ExpressiveTransportSideButton(
+            onClick = { onOpenSheet(Sheets.Equalizer) },
+            size = barHeight,
+            modifier = Modifier.width(endWidth),
+            enabled = !audioFiltersConfigOwned,
+            active = equalizerState.isEnabled && !audioFiltersConfigOwned,
+          ) {
             Icon(
               imageVector = Icons.RoundedFilled.Equalizer,
-              contentDescription = "Equalizer",
-              tint = MaterialTheme.colorScheme.onSurface.copy(alpha = if (audioFiltersConfigOwned) 0.38f else 1f),
-              modifier = Modifier.size(24.dp),
+              contentDescription = stringResource(R.string.btn_label_equalizer),
+              tint =
+                when {
+                  audioFiltersConfigOwned -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+                  equalizerState.isEnabled -> MaterialTheme.colorScheme.onPrimaryContainer
+                  else -> MaterialTheme.colorScheme.onSecondaryContainer
+                },
+              modifier = Modifier.size(endIconSize),
             )
           }
-        }
-        if (isTabletLandscape) {
-          Box(
-            modifier = Modifier.weight(1f),
-            contentAlignment = Alignment.CenterEnd,
+          Row(
+            modifier = Modifier.weight(1f).height(barHeight),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(centerSpacing),
           ) {
-            Row(
-              modifier =
-                Modifier
-                  .horizontalScroll(rememberScrollState())
-                  .padding(horizontal = 0.dp, vertical = 2.dp),
-              verticalAlignment = Alignment.CenterVertically,
-              horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-              if (isAudiobook) audiobookModeButtons() else {
-                ReactiveIconButton(
-                  onClick = viewModel::toggleShuffle,
-                  enabled = playlistModeEnabled,
-                  modifier = Modifier.size(48.dp),
-                ) {
-                  Icon(
-                    imageVector = if (shuffleEnabled) Icons.RoundedFilled.ShuffleOn else Icons.RoundedFilled.Shuffle,
-                    contentDescription = null,
-                    tint = if (shuffleEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                  )
-                }
-                ReactiveIconButton(
-                  onClick = viewModel::cycleRepeatMode,
-                  modifier = Modifier.size(48.dp),
-                ) {
-                  Icon(
-                    imageVector = when (repeatMode) {
-                      RepeatMode.OFF -> Icons.RoundedFilled.Repeat
-                      RepeatMode.ONE -> Icons.RoundedFilled.RepeatOne
-                      RepeatMode.ALL -> Icons.RoundedFilled.RepeatOn
-                    },
-                    contentDescription = null,
-                    tint = if (repeatMode != RepeatMode.OFF) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                  )
-                }
-              }
-              ReactiveIconButton(
-                onClick = { viewModel.toggleAudioVisualizer() },
-                onLongClick = { onOpenSheet(Sheets.VisualizerStyle) },
-                modifier = Modifier.size(48.dp),
-              ) {
-                Icon(
-                  imageVector = if (showVisualizer) Icons.RoundedFilled.AutoAwesome else Icons.RoundedFilled.Audiotrack,
+            if (isAudiobook) {
+              audiobookModeButtons()
+            } else {
+              ExpressiveConnectedBarButton(
+                index = 0, itemCount = centerCount, height = barHeight, selected = shuffleEnabled,
+                enabled = playlistModeEnabled,
+                onClick = { viewModel.toggleShuffle() },
+              ) { tint ->
+                AnimatedIcon(
+                  imageVector = if (shuffleEnabled) Icons.RoundedFilled.ShuffleOn else Icons.RoundedFilled.Shuffle,
                   contentDescription = null,
-                  tint = if (showVisualizer) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                  tint = tint,
+                  modifier = Modifier.size(iconSize),
                 )
               }
-              ReactiveIconButton(
-                onClick = {
-                  toggleAudioBackgroundPlayback()
-                },
-                modifier = Modifier.size(48.dp),
-              ) {
-                Icon(
-                  imageVector = Icons.RoundedFilled.Headset,
-                  contentDescription = stringResource(R.string.btn_label_background_playback),
-                  tint = if (backgroundPlaybackEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+              ExpressiveConnectedBarButton(
+                index = 1, itemCount = centerCount, height = barHeight, selected = repeatMode != RepeatMode.OFF,
+                onClick = { viewModel.cycleRepeatMode() },
+              ) { tint ->
+                AnimatedIcon(
+                  imageVector = when (repeatMode) {
+                    RepeatMode.OFF -> Icons.RoundedFilled.Repeat
+                    RepeatMode.ONE -> Icons.RoundedFilled.RepeatOne
+                    RepeatMode.ALL -> Icons.RoundedFilled.RepeatOn
+                  },
+                  contentDescription = null,
+                  tint = tint,
+                  modifier = Modifier.size(iconSize),
                 )
               }
             }
-          }
-        } else {
-          Spacer(modifier = Modifier.width(4.dp))
-          Box(
-            modifier = Modifier.weight(1f),
-            contentAlignment = Alignment.Center,
-          ) {
-            Row(
-              modifier =
-                Modifier
-                  .horizontalScroll(rememberScrollState())
-                  .padding(horizontal = 0.dp, vertical = 2.dp),
-              verticalAlignment = Alignment.CenterVertically,
-              horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-              if (isAudiobook) audiobookModeButtons() else {
-                ReactiveIconButton(
-                  onClick = viewModel::toggleShuffle,
-                  enabled = playlistModeEnabled,
-                  modifier = Modifier.size(48.dp),
-                ) {
-                  Icon(
-                    imageVector = if (shuffleEnabled) Icons.RoundedFilled.ShuffleOn else Icons.RoundedFilled.Shuffle,
-                    contentDescription = null,
-                    tint = if (shuffleEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                  )
-                }
-                ReactiveIconButton(
-                  onClick = viewModel::cycleRepeatMode,
-                  modifier = Modifier.size(48.dp),
-                ) {
-                  Icon(
-                    imageVector = when (repeatMode) {
-                      RepeatMode.OFF -> Icons.RoundedFilled.Repeat
-                      RepeatMode.ONE -> Icons.RoundedFilled.RepeatOne
-                      RepeatMode.ALL -> Icons.RoundedFilled.RepeatOn
-                    },
-                    contentDescription = null,
-                    tint = if (repeatMode != RepeatMode.OFF) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                  )
-                }
-              }
-              ReactiveIconButton(
-                onClick = { viewModel.toggleAudioVisualizer() },
-                onLongClick = { onOpenSheet(Sheets.VisualizerStyle) },
-                modifier = Modifier.size(48.dp),
-              ) {
-                Icon(
-                  imageVector = if (showVisualizer) Icons.RoundedFilled.AutoAwesome else Icons.RoundedFilled.Audiotrack,
-                  contentDescription = null,
-                  tint = if (showVisualizer) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-              }
-              ReactiveIconButton(
+            ExpressiveConnectedBarButton(
+              index = if (isAudiobook) 2 else 2, itemCount = centerCount, height = barHeight, selected = showVisualizer,
+              onClick = { viewModel.toggleAudioVisualizer() },
+              onLongClick = { onOpenSheet(Sheets.VisualizerStyle) },
+            ) { tint ->
+              AnimatedIcon(
+                imageVector = if (showVisualizer) Icons.RoundedFilled.AutoAwesome else Icons.RoundedFilled.Audiotrack,
+                contentDescription = null,
+                tint = tint,
+                modifier = Modifier.size(iconSize),
+              )
+            }
+            if (!isAudiobook) {
+              ExpressiveConnectedBarButton(
+                index = 3, itemCount = centerCount, height = barHeight, selected = showInPlaceLyrics,
                 onClick = { showInPlaceLyrics = !showInPlaceLyrics },
-                modifier = Modifier.size(48.dp),
-              ) {
+              ) { tint ->
                 Icon(
                   imageVector = Icons.RoundedFilled.Lyrics,
                   contentDescription = "Lyrics",
-                  tint = if (showInPlaceLyrics) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-              }
-              ReactiveIconButton(
-                onClick = {
-                  toggleAudioBackgroundPlayback()
-                },
-                modifier = Modifier.size(48.dp),
-              ) {
-                Icon(
-                  imageVector = Icons.RoundedFilled.Headset,
-                  contentDescription = stringResource(R.string.btn_label_background_playback),
-                  tint = if (backgroundPlaybackEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                  tint = tint,
+                  modifier = Modifier.size(iconSize),
                 )
               }
             }
           }
-          Spacer(modifier = Modifier.width(4.dp))
-          ReactiveIconButton(
-            onClick = { onOpenSheet(if (isAudiobook) Sheets.Chapters else Sheets.Playlist) },
-            modifier = Modifier.size(48.dp),
-          ) {
-            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+          if (showPlaylistButton) {
+            ExpressiveTransportSideButton(
+              size = barHeight,
+              modifier = Modifier.width(endWidth),
+              active = isQueueActive,
+              onClick = { onOpenSheet(if (isAudiobook) Sheets.Chapters else Sheets.Playlist) },
+            ) {
               Icon(
-                imageVector = Icons.RoundedFilled.QueueMusic,
+                Icons.RoundedFilled.QueueMusic,
                 contentDescription = if (isAudiobook) stringResource(R.string.audiobook_chapters) else "Playlist",
-                tint = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.size(24.dp),
+                tint = if (isQueueActive) {
+                  MaterialTheme.colorScheme.onPrimaryContainer
+                } else {
+                  MaterialTheme.colorScheme.onSecondaryContainer
+                },
+                modifier = Modifier.size(endIconSize),
               )
             }
           }
         }
       }
     }
-
     val isTabletPortrait = isPortrait && (isTablet || configuration.screenWidthDp >= 600)
 
     MaterialTheme(
@@ -3706,5 +3656,115 @@ private fun AnimatedIcon(
     label = "animatedIcon",
   ) { icon ->
     Icon(imageVector = icon, contentDescription = contentDescription, tint = tint, modifier = modifier)
+  }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun RowScope.ExpressiveConnectedBarButton(
+  index: Int,
+  itemCount: Int,
+  height: Dp,
+  selected: Boolean,
+  onClick: () -> Unit,
+  enabled: Boolean = true,
+  onLongClick: (() -> Unit)? = null,
+  onLongClickLabel: String? = null,
+  content: @Composable (Color) -> Unit,
+) {
+  val interactionSource = remember { MutableInteractionSource() }
+  val pressed by interactionSource.collectIsPressedAsState()
+  val reducedMotion = AppMotion.playerReducedMotion()
+  val cornerSpec = if (reducedMotion) AppMotion.ReducedDp else AppMotion.Spatial.SnappyDp
+  val weightSpec = if (reducedMotion) AppMotion.ReducedAlpha else AppMotion.Spatial.ExpressiveFast
+  val startCorner by animateDpAsState(
+    targetValue =
+      when {
+        index == 0 -> if (pressed) 16.dp else height / 2
+        pressed || selected -> 14.dp
+        else -> 6.dp
+      },
+    animationSpec = cornerSpec,
+    label = "connectedStartCorner",
+  )
+  val endCorner by animateDpAsState(
+    targetValue =
+      when {
+        index == itemCount - 1 -> if (pressed) 16.dp else height / 2
+        pressed || selected -> 14.dp
+        else -> 6.dp
+      },
+    animationSpec = cornerSpec,
+    label = "connectedEndCorner",
+  )
+  val weight by animateFloatAsState(
+    targetValue =
+      when {
+        pressed -> 1.15f
+        selected -> 1.06f
+        else -> 1f
+      },
+    animationSpec = weightSpec,
+    label = "connectedWeight",
+  )
+  val containerColor by animateColorAsState(
+    targetValue =
+      if (selected) {
+        MaterialTheme.colorScheme.secondaryContainer
+      } else {
+        MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.85f)
+      },
+    animationSpec = if (reducedMotion) androidx.compose.animation.core.snap() else AppMotion.Effect.Color,
+    label = "connectedContainerColor",
+  )
+  val contentColor by animateColorAsState(
+    targetValue =
+      when {
+        !enabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+        selected -> MaterialTheme.colorScheme.onSecondaryContainer
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+      },
+    animationSpec = if (reducedMotion) androidx.compose.animation.core.snap() else AppMotion.Effect.Color,
+    label = "connectedContentColor",
+  )
+  val shape =
+    RoundedCornerShape(
+      topStart = startCorner,
+      bottomStart = startCorner,
+      topEnd = endCorner,
+      bottomEnd = endCorner,
+    )
+
+  Box(
+    modifier =
+      Modifier
+        .weight(weight)
+        .height(height)
+        .tvFocusHighlight(shape, enabled = enabled, focusedScale = 1.06f)
+        .appPressFeedback(interactionSource, enabled, pressedScale = 0.92f, reduceMotion = reducedMotion)
+        .clip(shape)
+        .background(containerColor)
+        .then(
+          if (onLongClick != null) {
+            Modifier.combinedClickable(
+              interactionSource = interactionSource,
+              indication = ripple(bounded = true),
+              enabled = enabled,
+              onClick = onClick,
+              onLongClick = onLongClick,
+              onLongClickLabel = onLongClickLabel,
+            )
+          } else {
+            Modifier.clickable(
+              interactionSource = interactionSource,
+              indication = ripple(bounded = true),
+              enabled = enabled,
+              onClick = onClick,
+            )
+          },
+        ),
+    contentAlignment = Alignment.Center,
+  ) {
+    content(contentColor)
   }
 }
