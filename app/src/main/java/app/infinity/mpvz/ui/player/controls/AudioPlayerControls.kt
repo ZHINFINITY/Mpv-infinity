@@ -40,6 +40,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -102,6 +104,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.PlainTooltip
+import androidx.compose.material3.Text
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.TooltipAnchorPosition
+import androidx.compose.material3.rememberTooltipState
 import androidx.compose.material3.ripple
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -156,7 +164,10 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -188,6 +199,7 @@ import app.infinity.mpvz.preferences.AudioVisualizerStyle
 import app.infinity.mpvz.preferences.GesturePreferences
 import app.infinity.mpvz.preferences.PlayerPreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.ui.icons.AppIcon
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.Panels
@@ -210,6 +222,9 @@ import app.infinity.mpvz.ui.player.visualizer.VisualizerPalette
 import app.infinity.mpvz.ui.player.visualizer.rememberAudioVisualizerFeatures
 import app.infinity.mpvz.ui.theme.fontFamilyForText
 import app.infinity.mpvz.ui.theme.AppMotion
+import app.infinity.mpvz.ui.theme.appPressFeedback
+import app.infinity.mpvz.ui.player.controls.components.rememberTvInitialFocusRequester
+import app.infinity.mpvz.ui.player.controls.components.tvFocusHighlight
 import app.infinity.mpvz.ui.player.controls.components.playerGlassPane
 import app.infinity.mpvz.ui.utils.isMpvOptionOwnedByConfig
 
@@ -2474,80 +2489,59 @@ fun AudioPlayerControls(
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
       ) {
-        ReactiveIconButton(
+        ExpressiveTransportSideButton(
           onClick = { if (isAudiobook) viewModel.stepPlaybackChapter(-1) else viewModel.playPrevious() },
+          size = 52.dp,
           enabled = if (isAudiobook) AudiobookPlayback.currentChapter() != null else playlistModeEnabled,
         ) {
-          Icon(
+          AnimatedIcon(
             imageVector = Icons.RoundedFilled.SkipPrevious,
             contentDescription = null,
-            tint =
-              if (playlistModeEnabled) {
-                MaterialTheme.colorScheme.onSurface
-              } else {
-                MaterialTheme.colorScheme.onSurface
-                  .copy(
-                    alpha = 0.38f,
-                  )
-              },
+            tint = MaterialTheme.colorScheme.onSecondaryContainer,
             modifier = Modifier.size(28.dp),
           )
         }
         if (!isRadio) {
-          ReactiveIconButton(onClick = { viewModel.seekBy(if (isAudiobook) -30 else -audioSeekDuration) }) {
-            Icon(
-              imageVector = Icons.RoundedFilled.FastRewind,
-              contentDescription = null,
-              tint = MaterialTheme.colorScheme.onSurface,
-              modifier = Modifier.size(34.dp),
-            )
-          }
+          AudioSeekButton(
+            forward = false,
+            seconds = if (isAudiobook) 30 else audioSeekDuration,
+            enabled = true,
+            onClick = { viewModel.seekBy(if (isAudiobook) -30 else -audioSeekDuration) },
+          )
         }
-        ReactiveSurfaceButton(
+        ExpressivePlayPauseButton(
+          isPlaying = isPlaying,
+          height = if (isPortrait) 64.dp else 56.dp,
+          compact = !isPortrait,
           onClick = {
             optimisticIsPlaying = !isPlaying
             viewModel.pauseUnpause()
           },
-          shape = CircleShape,
-          color = MaterialTheme.colorScheme.primary,
-          modifier = Modifier.size(if (isPortrait) 76.dp else 64.dp),
-          shadowElevation = 8.dp,
         ) {
-          Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-            Icon(
-              imageVector = if (isPlaying) Icons.RoundedFilled.Pause else Icons.RoundedFilled.PlayArrow,
-              contentDescription = null,
-              tint = MaterialTheme.colorScheme.onPrimary,
-              modifier = Modifier.size(if (isPortrait) 44.dp else 36.dp),
-            )
-          }
+          AnimatedIcon(
+            imageVector = if (isPlaying) Icons.RoundedFilled.Pause else Icons.RoundedFilled.PlayArrow,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onPrimary,
+            modifier = Modifier.size(if (isPortrait) 40.dp else 34.dp),
+          )
         }
         if (!isRadio) {
-          ReactiveIconButton(onClick = { viewModel.seekBy(if (isAudiobook) 30 else audioSeekDuration) }) {
-            Icon(
-              imageVector = Icons.RoundedFilled.FastForward,
-              contentDescription = null,
-              tint = MaterialTheme.colorScheme.onSurface,
-              modifier = Modifier.size(34.dp),
-            )
-          }
+          AudioSeekButton(
+            forward = true,
+            seconds = if (isAudiobook) 30 else audioSeekDuration,
+            enabled = true,
+            onClick = { viewModel.seekBy(if (isAudiobook) 30 else audioSeekDuration) },
+          )
         }
-        ReactiveIconButton(
+        ExpressiveTransportSideButton(
           onClick = { if (isAudiobook) viewModel.stepPlaybackChapter(1) else viewModel.playNext() },
+          size = 52.dp,
           enabled = if (isAudiobook) true else playlistModeEnabled,
         ) {
-          Icon(
+          AnimatedIcon(
             imageVector = Icons.RoundedFilled.SkipNext,
             contentDescription = null,
-            tint =
-              if (isAudiobook || playlistModeEnabled) {
-                MaterialTheme.colorScheme.onSurface
-              } else {
-                MaterialTheme.colorScheme.onSurface
-                  .copy(
-                    alpha = 0.38f,
-                  )
-              },
+            tint = MaterialTheme.colorScheme.onSecondaryContainer,
             modifier = Modifier.size(28.dp),
           )
         }
@@ -2562,41 +2556,45 @@ fun AudioPlayerControls(
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
       ) {
-        ReactiveIconButton(
+        ExpressiveTransportSideButton(
           onClick = { if (isAudiobook) viewModel.stepPlaybackChapter(-1) else viewModel.playPrevious() },
+          size = 48.dp,
           enabled = if (isAudiobook) AudiobookPlayback.currentChapter() != null else playlistModeEnabled,
-          modifier = Modifier.size(48.dp),
-        ) { Icon(Icons.RoundedFilled.SkipPrevious, contentDescription = stringResource(R.string.pref_gesture_media_previous), modifier = Modifier.size(28.dp)) }
-        ReactiveIconButton(
-          onClick = { viewModel.seekBy(if (isAudiobook) -30 else -audioSeekDuration) },
-          enabled = !isRadio,
-          modifier = Modifier.size(48.dp),
-        ) { Icon(Icons.RoundedFilled.FastRewind, contentDescription = stringResource(R.string.audio_landscape_seek_back), modifier = Modifier.size(30.dp)) }
-        ReactiveSurfaceButton(
-          onClick = { optimisticIsPlaying = !isPlaying; viewModel.pauseUnpause() },
-          shape = CircleShape,
-          color = MaterialTheme.colorScheme.primary,
-          // Fit the measured landscape row (48–72dp) instead of overflowing it on short displays.
-          modifier = Modifier.heightIn(max = 64.dp).fillMaxHeight().aspectRatio(1f),
-          shadowElevation = 8.dp,
         ) {
-          Icon(
+          Icon(Icons.RoundedFilled.SkipPrevious, contentDescription = stringResource(R.string.pref_gesture_media_previous), tint = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.size(28.dp))
+        }
+        AudioSeekButton(
+          forward = false,
+          seconds = if (isAudiobook) 30 else audioSeekDuration,
+          enabled = !isRadio,
+          onClick = { viewModel.seekBy(if (isAudiobook) -30 else -audioSeekDuration) },
+        )
+        ExpressivePlayPauseButton(
+          isPlaying = isPlaying,
+          height = 56.dp,
+          compact = true,
+          onClick = { optimisticIsPlaying = !isPlaying; viewModel.pauseUnpause() },
+        ) {
+          AnimatedIcon(
             imageVector = if (isPlaying) Icons.RoundedFilled.Pause else Icons.RoundedFilled.PlayArrow,
             contentDescription = stringResource(if (isPlaying) R.string.audiobook_pause else R.string.ui_play),
             tint = MaterialTheme.colorScheme.onPrimary,
-            modifier = Modifier.size(36.dp),
+            modifier = Modifier.size(34.dp),
           )
         }
-        ReactiveIconButton(
-          onClick = { viewModel.seekBy(if (isAudiobook) 30 else audioSeekDuration) },
+        AudioSeekButton(
+          forward = true,
+          seconds = if (isAudiobook) 30 else audioSeekDuration,
           enabled = !isRadio,
-          modifier = Modifier.size(48.dp),
-        ) { Icon(Icons.RoundedFilled.FastForward, contentDescription = stringResource(R.string.audio_landscape_seek_forward), modifier = Modifier.size(30.dp)) }
-        ReactiveIconButton(
+          onClick = { viewModel.seekBy(if (isAudiobook) 30 else audioSeekDuration) },
+        )
+        ExpressiveTransportSideButton(
           onClick = { if (isAudiobook) viewModel.stepPlaybackChapter(1) else viewModel.playNext() },
+          size = 48.dp,
           enabled = if (isAudiobook) true else playlistModeEnabled,
-          modifier = Modifier.size(48.dp),
-        ) { Icon(Icons.RoundedFilled.SkipNext, contentDescription = stringResource(R.string.pref_gesture_media_next), modifier = Modifier.size(28.dp)) }
+        ) {
+          Icon(Icons.RoundedFilled.SkipNext, contentDescription = stringResource(R.string.pref_gesture_media_next), tint = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.size(28.dp))
+        }
       }
     }
 
@@ -3373,10 +3371,11 @@ private fun ReactiveIconButton(
   val haptic = LocalHapticFeedback.current
   val appearance = koinInject<AppearancePreferences>()
   val liquidGlassSurfaces by appearance.liquidGlassSurfaces.collectAsState()
+  val reducedMotion = AppMotion.playerReducedMotion()
 
   val scale by animateFloatAsState(
-    targetValue = if (isPressed) 0.82f else 1f,
-    animationSpec = spring(dampingRatio = 0.55f, stiffness = 900f),
+    targetValue = if (isPressed) 0.96f else 1f,
+    animationSpec = if (isPressed) AppMotion.Spatial.Press else AppMotion.Spatial.Release,
     label = "reactive_icon_button_scale",
   )
 
@@ -3384,6 +3383,8 @@ private fun ReactiveIconButton(
     Box(
       modifier =
         modifier
+          .tvFocusHighlight(CircleShape, enabled = enabled, focusedScale = 1.08f)
+          .appPressFeedback(interactionSource, enabled, pressedScale = 0.96f, reduceMotion = reducedMotion)
           .graphicsLayer {
             scaleX = scale.coerceAtMost(1f)
             scaleY = scale.coerceAtMost(1f)
@@ -3418,6 +3419,8 @@ private fun ReactiveIconButton(
       interactionSource = interactionSource,
       modifier =
         modifier
+          .tvFocusHighlight(CircleShape, enabled = enabled, focusedScale = 1.08f)
+          .appPressFeedback(interactionSource, enabled, pressedScale = 0.96f)
           .graphicsLayer {
             scaleX = scale.coerceAtMost(1f)
             scaleY = scale.coerceAtMost(1f)
@@ -3497,4 +3500,148 @@ private class MusicPageClipShape(
       androidx.compose.ui.geometry.CornerRadius(cornerRadiusPx),
     ),
   )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AudioSeekButton(
+  forward: Boolean,
+  seconds: Int,
+  enabled: Boolean,
+  modifier: Modifier = Modifier.size(48.dp),
+  onClick: () -> Unit,
+) {
+  val duration = pluralStringResource(R.plurals.seconds, seconds, seconds)
+  val label = stringResource(if (forward) R.string.player_seek_forward else R.string.player_seek_backward, duration)
+  val tint =
+    if (enabled) {
+      MaterialTheme.colorScheme.onSurface
+    } else {
+      MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+    }
+  TooltipBox(
+    positionProvider = TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
+    tooltip = { PlainTooltip { Text(label) } },
+    state = rememberTooltipState(),
+  ) {
+    ReactiveIconButton(onClick = onClick, enabled = enabled, modifier = modifier) {
+      Icon(
+        imageVector = if (forward) Icons.RoundedFilled.FastForward else Icons.RoundedFilled.FastRewind,
+        contentDescription = label,
+        tint = tint,
+        modifier = Modifier.size(28.dp),
+      )
+    }
+  }
+}
+
+@Composable
+private fun ExpressiveTransportSideButton(
+  onClick: () -> Unit,
+  size: Dp,
+  modifier: Modifier = Modifier,
+  enabled: Boolean = true,
+  active: Boolean = false,
+  content: @Composable () -> Unit,
+) {
+  val interactionSource = remember { MutableInteractionSource() }
+  val pressed by interactionSource.collectIsPressedAsState()
+  val reducedMotion = AppMotion.playerReducedMotion()
+  val cornerSpec = if (reducedMotion) AppMotion.ReducedDp else AppMotion.Spatial.SnappyDp
+  val cornerRadius by animateDpAsState(
+    targetValue = if (pressed || active) 16.dp else size / 2,
+    animationSpec = cornerSpec,
+    label = "transportSideCorner",
+  )
+  val containerColor by animateColorAsState(
+    targetValue =
+      when {
+        // A disabled button dims as a whole, not just its icon.
+        !enabled -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.38f)
+        active -> MaterialTheme.colorScheme.primaryContainer
+        pressed -> MaterialTheme.colorScheme.secondaryContainer
+        else -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.85f)
+      },
+    animationSpec = if (reducedMotion) snap() else AppMotion.Effect.Color,
+    label = "transportSideColor",
+  )
+  val shape = RoundedCornerShape(cornerRadius)
+
+  Surface(
+    onClick = onClick,
+    shape = shape,
+    color = containerColor,
+    enabled = enabled,
+    interactionSource = interactionSource,
+    modifier =
+      modifier
+        .size(size)
+        .tvFocusHighlight(shape, enabled = enabled, focusedScale = 1.08f)
+        .appPressFeedback(interactionSource, enabled, pressedScale = 0.90f, reduceMotion = reducedMotion),
+  ) {
+    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+      content()
+    }
+  }
+}
+
+@Composable
+private fun ExpressivePlayPauseButton(
+  isPlaying: Boolean,
+  height: Dp,
+  compact: Boolean,
+  onClick: () -> Unit,
+  modifier: Modifier = Modifier,
+  content: @Composable () -> Unit,
+) {
+  val interactionSource = remember { MutableInteractionSource() }
+  val pressed by interactionSource.collectIsPressedAsState()
+  val reducedMotion = AppMotion.playerReducedMotion()
+  val cornerSpec = if (reducedMotion) AppMotion.ReducedDp else AppMotion.Spatial.SnappyDp
+  val cornerRadius by animateDpAsState(
+    targetValue =
+      when {
+        pressed -> 14.dp
+        isPlaying -> if (compact) 18.dp else 22.dp
+        else -> height / 2
+      },
+    animationSpec = cornerSpec,
+    label = "playPauseCorner",
+  )
+  val shape = RoundedCornerShape(cornerRadius)
+
+  Surface(
+    onClick = onClick,
+    shape = shape,
+    color = MaterialTheme.colorScheme.primary,
+    shadowElevation = 6.dp,
+    interactionSource = interactionSource,
+    modifier =
+      modifier
+        .height(height)
+        .tvFocusHighlight(shape, enabled = true, focusedScale = 1.05f)
+        .appPressFeedback(interactionSource, enabled = true, pressedScale = 0.94f, reduceMotion = reducedMotion),
+  ) {
+    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+      content()
+    }
+  }
+}
+
+/** Cross-fades + scales icon changes the mpvrx way; no-op under reduced motion. */
+@Composable
+private fun AnimatedIcon(
+  imageVector: AppIcon,
+  contentDescription: String?,
+  modifier: Modifier = Modifier,
+  tint: Color = LocalContentColor.current,
+) {
+  val reducedMotion = AppMotion.playerReducedMotion()
+  AnimatedContent(
+    targetState = imageVector,
+    transitionSpec = { AppMotion.iconChange(reducedMotion) },
+    label = "animatedIcon",
+  ) { icon ->
+    Icon(imageVector = icon, contentDescription = contentDescription, tint = tint, modifier = modifier)
+  }
 }

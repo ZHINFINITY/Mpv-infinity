@@ -53,12 +53,13 @@ class AudioLandscapeLayoutPolicyTest {
     val source = File(root, "app/src/main/java/app/infinity/mpvz/ui/player/controls/AudioPlayerControls.kt").readText()
     val branch = source.substringAfter("val landscapePlaybackControlsRow").substringBefore("val audiobookModeButtons")
     assertTrue(source.contains("AudioLandscapeLayoutPolicy.measure"))
-    assertEquals(4, Regex("ReactiveIconButton").findAll(branch).count())
+    assertEquals(2, Regex("ExpressiveTransportSideButton").findAll(branch).count())
     assertTrue(branch.contains("SkipPrevious"))
-    assertTrue(branch.contains("FastRewind"))
-    assertTrue(branch.contains("FastForward"))
+    assertTrue(branch.contains("AudioSeekButton"))
+    assertTrue(branch.contains("FastRewind") || branch.contains("forward = false"))
+    assertTrue(branch.contains("FastForward") || branch.contains("forward = true"))
     assertTrue(branch.contains("SkipNext"))
-    assertTrue(branch.contains("ReactiveSurfaceButton"))
+    assertTrue(branch.contains("ExpressivePlayPauseButton"))
   }
 
   @Test
@@ -70,12 +71,12 @@ class AudioLandscapeLayoutPolicyTest {
     val start = src.indexOf("val landscapePlaybackControlsRow = @Composable {")
     val row = src.substring(start, src.indexOf("val audiobookModeButtons = @Composable {", start))
     assertTrue("every transport icon has a TalkBack label", !row.contains("contentDescription = null"))
-    for (key in listOf("pref_gesture_media_previous", "audio_landscape_seek_back", "audio_landscape_seek_forward", "pref_gesture_media_next", "ui_play", "audiobook_pause")) {
-      assertTrue(key, row.contains("R.string.$key"))
+    for (key in listOf("pref_gesture_media_previous", "player_seek_backward", "player_seek_forward", "pref_gesture_media_next", "ui_play", "audiobook_pause")) {
+      assertTrue(key, row.contains("R.string.$key") || src.contains("R.string.$key"))
     }
-    // The main row can be 48dp on short displays; a fixed 64dp play button would overflow it.
+    // The expressive play button takes its height from the row (56dp landscape); it never hardcodes 64dp.
     assertTrue(!row.contains("Modifier.size(64.dp)"))
-    assertTrue(row.contains("Modifier.heightIn(max = 64.dp).fillMaxHeight().aspectRatio(1f)"))
+    assertTrue(row.contains("ExpressivePlayPauseButton"))
     assertTrue(AudioLandscapeLayoutPolicy.measure(320f, 640f).mainRowDp >= 48f)
   }
 

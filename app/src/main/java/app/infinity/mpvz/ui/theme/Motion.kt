@@ -8,21 +8,35 @@
 package app.infinity.mpvz.ui.theme
 
 import android.animation.ValueAnimator
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.SpringSpec
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.interaction.InteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import app.infinity.mpvz.preferences.preference.collectAsState
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.Modifier
 
 /**
  * Mpv∞ motion policy — respects system reduce-motion accessibility setting.
@@ -70,6 +84,17 @@ object AppMotion {
   fun <T> noBounce(stiffness: Float): SpringSpec<T> =
     spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = stiffness)
 
+  val EnterEasing = CubicBezierEasing(0.16f, 1f, 0.3f, 1f)
+
+  /** A small, interruptible hand-off for changing actions; never changes their touch target. */
+  fun iconChange(reduceMotion: Boolean): androidx.compose.animation.ContentTransform =
+    if (reduceMotion) {
+      EnterTransition.None togetherWith ExitTransition.None
+    } else {
+      (fadeIn(tween(160)) + scaleIn(noBounce(700f), initialScale = 0.78f)) togetherWith
+        (fadeOut(tween(100)) + scaleOut(tween(100), targetScale = 0.92f))
+    }
+
   val ReducedAlpha: SpringSpec<Float> = noBounce(stiffness = Spring.StiffnessMedium)
   val ReducedOffset: SpringSpec<IntOffset> = noBounce(stiffness = Spring.StiffnessMedium)
   val ReducedIntSize: SpringSpec<IntSize> = noBounce(stiffness = Spring.StiffnessMedium)
@@ -96,6 +121,10 @@ object AppMotion {
     /** Dp-specific variants for animateDpAsState. */
     val ExpressiveDp: SpringSpec<Dp> = spring(dampingRatio = 0.9f, stiffness = 700f)
     val StandardDp: SpringSpec<Dp> = spring(dampingRatio = 1f, stiffness = 380f)
+
+    /** Press / release feedback used by expressive transport buttons. */
+    val Press = tween<Float>(durationMillis = 90, easing = EnterEasing)
+    val Release: SpringSpec<Float> = noBounce(stiffness = 700f)
   }
 
   /** Effect animations — color and alpha transitions (no overshoot). */
@@ -123,4 +152,28 @@ object ElevationTokens {
   val Level3 = 6.dp
   val Level4 = 8.dp
   val Level5 = 12.dp
+}
+
+/**
+ * Shares the control's existing interaction source, so clicks, long presses, ripple and D-pad
+ * behavior stay with the original control. Only drawing scales; layout and hit bounds stay put.
+ */
+@Composable
+fun Modifier.appPressFeedback(
+  interactionSource: InteractionSource,
+  enabled: Boolean = true,
+  pressedScale: Float = 0.97f,
+  reduceMotion: Boolean = AppMotion.shouldReduceMotion(),
+): Modifier {
+  if (!enabled || reduceMotion) return this
+  val pressed by interactionSource.collectIsPressedAsState()
+  val scale = animateFloatAsState(
+    targetValue = if (pressed) pressedScale else 1f,
+    animationSpec = if (pressed) AppMotion.Spatial.Press else AppMotion.Spatial.Release,
+    label = "appPressFeedback",
+  )
+  return graphicsLayer {
+    scaleX = scale.value
+    scaleY = scale.value
+  }
 }
