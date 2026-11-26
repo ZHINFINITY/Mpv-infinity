@@ -850,6 +850,13 @@ fun AudioPlayerControls(
   val audioFormat by PlaybackSession.propString["audio-params/format"].collectAsState()
   val bitsPerSample by PlaybackSession.propString["metadata/by-key/BITS_PER_SAMPLE"].collectAsState()
   val bitsPerSampleAlt by PlaybackSession.propString["metadata/by-key/bits_per_sample"].collectAsState()
+  // mpvrx also checks bits_per_raw_sample / bit_depth / bitdepth tags before trusting decoder output.
+  val trackBitDepthTags = listOf(
+    PlaybackSession.propString["metadata/by-key/BITS_PER_RAW_SAMPLE"],
+    PlaybackSession.propString["metadata/by-key/bits_per_raw_sample"],
+    PlaybackSession.propString["metadata/by-key/BIT_DEPTH"],
+    PlaybackSession.propString["metadata/by-key/bitdepth"],
+  ).map { it.collectAsState().value.orEmpty() }
   val audioBitrateProp by PlaybackSession.propInt["audio-bitrate"].collectAsState()
   val generalBitrateProp by PlaybackSession.propInt["bitrate"].collectAsState()
   val playbackSpeed by PlaybackSession.propFloat["speed"].collectAsState()
@@ -902,7 +909,7 @@ fun AudioPlayerControls(
   }
 
   val fullLosslessDetailString =
-    remember(isHiRes, sampleRate, audioFormat, bitsPerSample, bitsPerSampleAlt, audioCodec, audioBitrateProp, generalBitrateProp, cleanCodecName, isLosslessCodecOrExt) {
+    remember(isHiRes, sampleRate, audioFormat, bitsPerSample, bitsPerSampleAlt, trackBitDepthTags, audioCodec, audioBitrateProp, generalBitrateProp, cleanCodecName, isLosslessCodecOrExt) {
       val baseLabel = if (isHiRes) "HI-RES LOSSLESS" else "LOSSLESS"
       val sr = sampleRate ?: 0
       val khzStr =
@@ -913,16 +920,17 @@ fun AudioPlayerControls(
           ""
         }
 
+      // mpvrx: audio-params/format (s32/flt) is decoder storage, not source depth — never
+      // present it as bit depth. Only a real per-track tag (BITS_PER_SAMPLE etc.) counts.
       val bps = bitsPerSample?.takeIf { it.isNotBlank() } ?: bitsPerSampleAlt?.takeIf { it.isNotBlank() }
       val bitrate = audioBitrateProp?.takeIf { it > 0 } ?: generalBitrateProp?.takeIf { it > 0 }
       val kbpsStr = bitrate?.let { "${it / 1000} kbps" }.orEmpty()
+      val taggedBitDepth =
+        bps?.trim()?.toIntOrNull()?.takeIf { it in 1..64 }
+          ?: trackBitDepthTags.firstNotNullOfOrNull { it.trim().toIntOrNull()?.takeIf { d -> d in 1..64 } }
       val bitStr =
         when {
-          !bps.isNullOrBlank() && bps.toIntOrNull() != null -> "${bps.toInt()}-bit"
-          audioFormat?.contains("24") == true || audioFormat == "s24" || audioFormat == "s24p" -> "24-bit"
-          audioFormat?.contains("16") == true || audioFormat == "s16" || audioFormat == "s16p" -> "16-bit"
-          audioFormat?.contains("32") == true || audioFormat == "s32" || audioFormat == "s32p" || audioFormat == "flt" || audioFormat == "fltp" -> "32-bit"
-          audioFormat?.contains("8") == true || audioFormat == "u8" -> "8-bit"
+          taggedBitDepth != null -> "$taggedBitDepth-bit"
           isHiRes -> "24-bit"
           isLosslessCodecOrExt -> "16-bit"
           else -> ""
@@ -2167,12 +2175,13 @@ fun AudioPlayerControls(
             title.contains("/API/", ignoreCase = true) || title.contains("/ITEMS/", ignoreCase = true) || title.contains("/FILE/", ignoreCase = true)
           }.orEmpty()
 
-        // 1. Song Title Only
+        // 1. Song Title Only — mpvrx tints metadata with the immersive content color so it
+        // stays readable over bright artwork (theme onSurface can be dark over a light cover).
         Text(
           text = displayTitle,
           style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.ExtraBold),
           fontFamily = fontFamilyForText(displayTitle),
-          color = MaterialTheme.colorScheme.onSurface,
+          color = if (showImmersiveArtwork) immersiveHeaderContentColor else MaterialTheme.colorScheme.onSurface,
           maxLines = 1,
           overflow = TextOverflow.Ellipsis,
           modifier = Modifier.audioMarqueeFade().basicMarquee(iterations = Int.MAX_VALUE),
@@ -2184,7 +2193,7 @@ fun AudioPlayerControls(
           text = displayArtist,
           style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Medium),
           fontFamily = fontFamilyForText(displayArtist),
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          color = if (showImmersiveArtwork) immersiveHeaderContentColor.copy(alpha = 0.92f) else MaterialTheme.colorScheme.onSurfaceVariant,
           maxLines = 1,
           overflow = TextOverflow.Ellipsis,
           modifier = Modifier.audioMarqueeFade().basicMarquee(iterations = Int.MAX_VALUE),
@@ -2216,7 +2225,7 @@ fun AudioPlayerControls(
             Text(
               text = trackText,
               style = MaterialTheme.typography.labelLarge,
-              color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+              color = if (showImmersiveArtwork) immersiveHeaderContentColor.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
               maxLines = 1,
               overflow = TextOverflow.Ellipsis,
               modifier = Modifier.clickable(
@@ -2227,7 +2236,7 @@ fun AudioPlayerControls(
             Text(
               text = "|",
               style = MaterialTheme.typography.labelLarge,
-              color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+              color = if (showImmersiveArtwork) immersiveHeaderContentColor.copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
             )
 
             // 4. Playback Speed (left of A-B Loop)
@@ -2248,13 +2257,17 @@ fun AudioPlayerControls(
                 Icon(
                   imageVector = Icons.RoundedFilled.Speed,
                   contentDescription = stringResource(R.string.ui_playback_speed),
-                  tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (speedConfigOwned) 0.38f else 1f),
+                  tint =
+                    (if (showImmersiveArtwork) immersiveHeaderContentColor else MaterialTheme.colorScheme.onSurfaceVariant)
+                      .copy(alpha = if (speedConfigOwned) 0.38f else 1f),
                   modifier = Modifier.size(16.dp),
                 )
                 Text(
                   text = String.format("%.2fx", playbackSpeed ?: 1f),
                   style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                  color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (speedConfigOwned) 0.38f else 1f),
+                  color =
+                    (if (showImmersiveArtwork) immersiveHeaderContentColor else MaterialTheme.colorScheme.onSurfaceVariant)
+                      .copy(alpha = if (speedConfigOwned) 0.38f else 1f),
                 )
               }
             }

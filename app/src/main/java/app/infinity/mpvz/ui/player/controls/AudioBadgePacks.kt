@@ -27,6 +27,30 @@ enum class AudioBadgeStyle(val id: String) {
   Frost("frost"),
   Liquid("liquid"),
   Prism("prism"),
+  // nuviobadges.com packs (video player only).
+  NeonCinema("neon_cinema"),
+  Goat("goat"),
+  Shamil("shamil"),
+  ShamilSvg("shamil_svg"),
+  Cyrusir("cyrusir"),
+  Blry12("blry12"),
+  Iaemtary("iaemtary"),
+  Dustincos("dustincos"),
+  Tea("tea"),
+  Rayw("rayw"),
+  Gold("gold"),
+  Sterzeck("sterzeck"),
+  BorderedColoured("bordered_coloured"),
+  FilledColoured("filled_coloured"),
+  FrBlackWhite("fr_black_white"),
+  FrIconDark("fr_icon_dark"),
+  FrIconLight("fr_icon_light"),
+  FrLight("fr_light"),
+  FrMinimal("fr_minimal"),
+  FrNeonIcon("fr_neon_icon"),
+  FrSplit("fr_split"),
+  FrTextBlack("fr_text_black"),
+  FrTextWhite("fr_text_white"),
   ;
 
   companion object {
@@ -107,7 +131,8 @@ internal object AudioBadgePacks {
     AudioBadgeStyle.Frost -> frPacks["frost"].orEmpty()
     AudioBadgeStyle.Liquid -> nuvioPacks["liquid"].orEmpty()
     AudioBadgeStyle.Prism -> nuvioPacks["prism"].orEmpty()
-    AudioBadgeStyle.Text -> emptyList()
+    // nuviobadges.com packs are video-only: MediaBadgesRow loads them through RemoteBadgePacks.
+    else -> emptyList()
   }
 
   /** First badge whose pattern matches the track's format/title string, or null. */
