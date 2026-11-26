@@ -1819,14 +1819,16 @@ fun AudioPlayerControls(
           compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.ModulateAlpha
           alpha = if (currentTransitionFrame(size.width, size.height) == null) 1f
             else MusicMinimizeTransitionPolicy.chromeAlpha(currentMiniProgress())
-        }
-        .windowInsetsPadding(
-          if (visualizerUsesFullTopAndSides) {
-            WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom)
-          } else {
-            WindowInsets.safeDrawing
-          },
-        )
+        },
+      // Upstream mounts the immersive artwork before any insets or gutters; the padding
+      // belongs to the controls column (contentModifier), not to the scene root.
+      contentModifier = Modifier.windowInsetsPadding(
+        if (visualizerUsesFullTopAndSides) {
+          WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom)
+        } else {
+          WindowInsets.safeDrawing
+        },
+      )
         .padding(horizontal = if (visualizerUsesFullTopAndSides) 0.dp else 16.dp)
         .padding(top = if (visualizerUsesFullTopAndSides) 0.dp else 6.dp, bottom = 12.dp),
   ) {
@@ -2996,7 +2998,9 @@ fun AudioPlayerControls(
       }
       .graphicsLayer {
         val local = coverLocalBounds
-        val frame = if (coverShown && local != null) currentTransitionFrame(
+        // With the immersive background on, the background itself lands in the mini player;
+        // flying the small in-column cover would show a duplicate album art mid-morph.
+        val frame = if (coverShown && local != null && !showImmersiveArtwork) currentTransitionFrame(
           playerWidthPx.takeIf { it > 0f } ?: transitionViewportWidthPx, playerHeightPx) else null
         if (frame == null || local == null) {
           alpha = 0f

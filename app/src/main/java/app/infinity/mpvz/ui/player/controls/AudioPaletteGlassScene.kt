@@ -27,6 +27,9 @@ internal fun AudioPaletteGlassScene(
   bottomArgb: Int,
   enabled: Boolean,
   modifier: Modifier,
+  // Applied to the controls column only, never to immersiveArtwork: upstream mounts the
+  // full-bleed artwork on the unpadded scene root, so it runs under the system bars.
+  contentModifier: Modifier = Modifier,
   immersiveArtwork: @Composable () -> Unit = {},
   content: @Composable BoxScope.() -> Unit,
 ) {
@@ -72,10 +75,14 @@ internal fun AudioPaletteGlassScene(
       content = {
         // mpvRx-style layering: full-bleed artwork sits behind the palette/glass
         // backdrop and the controls column, fading into the page near the bottom.
+        // It is measured against the unpadded scene; the content wrapper takes
+        // contentModifier (insets + gutters) so the art alone runs edge to edge.
         Box(modifier = Modifier.matchParentSize()) {
           immersiveArtwork()
         }
-        content()
+        Box(modifier = Modifier.matchParentSize().then(contentModifier)) {
+          content()
+        }
       },
     )
   }
