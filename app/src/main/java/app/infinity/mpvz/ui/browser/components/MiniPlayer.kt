@@ -781,24 +781,41 @@ private fun MiniPlayerContent(
           }
         }
       }
+      // The whole pill is the progress indicator (mpvrx): the fill grows from the left edge up
+      // to the play head underneath the controls. It is painted in the draw phase so the
+      // once-a-second position ticks repaint instead of recomposing the glass.
+      val pillBase =
+        miniAmbient?.copy(alpha = 0.55f)
+          ?: MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.96f)
+      val pillFillStart = MaterialTheme.colorScheme.primary.copy(alpha = 0.26f)
+      val pillFillEnd = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
+      val pillPlayhead = MaterialTheme.colorScheme.primary.copy(alpha = 0.9f)
       Row(
         modifier = Modifier
           .fillMaxWidth()
           .drawBehind {
+            drawRect(pillBase)
             val dur = duration?.toFloat() ?: 0f
             val pos = positionState.value?.toFloat() ?: 0f
-            val progressFraction = if (dur > 0f) (pos / dur).coerceIn(0f, 1f) else 0f
-            val trackY = size.height - 2.dp.toPx()
-            val radius = androidx.compose.ui.geometry.CornerRadius(1.dp.toPx())
-            if (progressFraction > 0f) {
-              drawRoundRect(color = progressTrackColor, topLeft = androidx.compose.ui.geometry.Offset(0f, trackY), size = Size(size.width, 2.dp.toPx()), cornerRadius = radius)
-              drawRoundRect(color = primaryContainerColor.copy(alpha = 0.72f), topLeft = androidx.compose.ui.geometry.Offset(0f, trackY), size = Size(size.width * progressFraction, 2.dp.toPx()), cornerRadius = radius)
+            val fraction = if (dur > 0f) (pos / dur).coerceIn(0f, 1f) else 0f
+            if (fraction > 0f) {
+              val filled = size.width * fraction
+              drawRect(
+                brush = Brush.horizontalGradient(
+                  colors = listOf(pillFillStart, pillFillEnd),
+                  startX = 0f,
+                  endX = size.width,
+                ),
+                size = Size(filled, size.height),
+              )
+              val headX = (filled - 1.dp.toPx()).coerceAtLeast(0f)
+              drawRect(
+                color = pillPlayhead,
+                topLeft = androidx.compose.ui.geometry.Offset(headX, 0f),
+                size = Size(1.5.dp.toPx(), size.height),
+              )
             }
           }
-          .background(
-            miniAmbient?.copy(alpha = 0.55f)
-              ?: MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.96f),
-          )
           .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
       ) {
@@ -858,61 +875,19 @@ private fun MiniPlayerContent(
                 .basicMarquee(initialDelayMillis = 650),
             )
           }
+          val miniDurS = (duration ?: 0).toLong()
+          val miniPosS = (positionState.value ?: 0).toLong()
           Text(
-            text = artist,
+            text =
+              if (miniDurS > 0) {
+                "$artist · ${formatMiniTime(miniPosS)} / ${formatMiniTime(miniDurS)}"
+              } else {
+                artist
+              },
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
           )
-          // Visible progress: a thin seekable bar under the text, mpvrx-style. Tap position seeks.
-          // propInt values are whole seconds.
-          val miniDurS = (duration ?: 0).toLong()
-          val miniPosS = (positionState.value ?: 0).toLong()
-          val miniFraction = if (miniDurS > 0) (miniPosS.toFloat() / miniDurS).coerceIn(0f, 1f) else 0f
-          Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            modifier = Modifier.fillMaxWidth().padding(top = 3.dp),
-          ) {
-            Text(
-              text = formatMiniTime(miniPosS),
-              style = MaterialTheme.typography.labelSmall,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Box(
-              modifier = Modifier
-                .weight(1f)
-                .height(16.dp)
-                .pointerInput(miniDurS) {
-                  if (miniDurS <= 0) return@pointerInput
-                  detectTapGestures { offset ->
-                    val targetSeconds = (offset.x / size.width * miniDurS).coerceIn(0f, miniDurS.toFloat())
-                    runCatching { MPVLib.setPropertyDouble("time-pos", targetSeconds.toDouble()) }
-                  }
-                },
-            ) {
-              Box(
-                Modifier
-                  .fillMaxHeight(4.dp / 16.dp * 4)
-                  .height(4.dp)
-                  .fillMaxWidth()
-                  .align(Alignment.Center)
-                  .background(progressTrackColor.copy(alpha = 0.5f), RoundedCornerShape(3.dp)),
-              )
-              Box(
-                Modifier
-                  .height(4.dp)
-                  .fillMaxWidth(miniFraction.coerceAtLeast(0.01f))
-                  .align(Alignment.CenterStart)
-                  .background(primaryContainerColor, RoundedCornerShape(3.dp)),
-              )
-            }
-            Text(
-              text = "-" + formatMiniTime((miniDurS - miniPosS).coerceAtLeast(0)),
-              style = MaterialTheme.typography.labelSmall,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-          }
         }
 
         Spacer(modifier = Modifier.width(8.dp))

@@ -25,21 +25,21 @@ internal object PlaybackLoopbackLavfOptions {
       "reconnect_streamed=1,reconnect_delay_max=5,reconnect_max_retries=5," +
       "reconnect_delay_total_max=20"
 
-  private const val DEMUXER_RECONNECT =
-    "reconnect=1,reconnect_on_network_error=1,reconnect_streamed=1," +
-      "reconnect_delay_max=5,reconnect_max_retries=5,reconnect_delay_total_max=20"
-
   /** Primary http(s) URL, remote host: same value `MPVView` installs on init. */
-  const val REMOTE_STREAM = STREAM_RECONNECT
+  const val REMOTE_STREAM = "http_persistent=1,$STREAM_RECONNECT"
 
-  /** Demuxer-internal opens (HLS/DASH segments), remote host: same value `MPVView` installs. */
-  const val REMOTE_DEMUXER = "http_persistent=1,$DEMUXER_RECONNECT"
+  /**
+   * Demuxer-internal opens (HLS/DASH segments), remote host. `http_persistent` is a demuxer option
+   * of the hls/dash demuxers; the `reconnect*` family is a protocol option and must not be listed
+   * here, mpv rejects each one ("Could not set AVOption reconnect='1'").
+   */
+  const val REMOTE_DEMUXER = "http_persistent=1"
 
   /** Primary http(s) URL served by one of our loopback proxies. */
   const val LOOPBACK_STREAM = "http_persistent=0,$STREAM_RECONNECT"
 
   /** Demuxer-internal opens against a loopback proxy. */
-  const val LOOPBACK_DEMUXER = "http_persistent=0,$DEMUXER_RECONNECT"
+  const val LOOPBACK_DEMUXER = "http_persistent=0"
 
   private val LOOPBACK_HOSTS = setOf("127.0.0.1", "localhost", "::1", "0:0:0:0:0:0:0:1")
 

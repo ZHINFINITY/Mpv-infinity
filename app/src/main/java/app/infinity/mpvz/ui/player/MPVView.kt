@@ -833,20 +833,22 @@ class MPVView(
     PlaybackSession.setOptionString("demuxer-max-bytes", "128MiB")
     // Recover boundedly from transient HTTP/TLS disconnects, including non-seekable live inputs.
     // Do not use reconnect_at_eof globally: a legitimate VOD EOF must still finish normally.
-    // http_persistent=1 keeps one connection alive across HLS/DASH segments instead of a fresh
-    // TCP+TLS handshake per segment, which shows up as recurring buffering on high-latency CDNs.
+    // The http protocol options live in stream-lavf-o: libavformat applies that dict to the opened
+    // URLContext. In demuxer-lavf-o mpv rejects them one by one ("Could not set AVOption
+    // http_persistent='1'") and the policy silently never applies.
     PlaybackSession.setOptionString(
       "demuxer-lavf-o",
-      "http_persistent=1,reconnect=1,reconnect_on_network_error=1,reconnect_streamed=1," +
-        "reconnect_delay_max=5,reconnect_max_retries=5,reconnect_delay_total_max=20",
+      // Only the hls/dash demuxers own http_persistent; keep one connection per segment there.
+      "http_persistent=1",
     )
     // demuxer-lavf-o only reaches demuxer-internal opens (HLS/DASH segments). The primary http(s)
     // URL is opened by stream_lavf, which reads stream-lavf-o; without it a dropped connection or
     // one failed seek-reopen permanently stalls network playback (endless buffering).
     PlaybackSession.setOptionString(
       "stream-lavf-o",
-      "reconnect=1,reconnect_on_network_error=1,reconnect_on_http_error=5xx,reconnect_streamed=1," +
-        "reconnect_delay_max=5,reconnect_max_retries=5,reconnect_delay_total_max=20",
+      "http_persistent=1,reconnect=1,reconnect_on_network_error=1,reconnect_on_http_error=5xx," +
+        "reconnect_streamed=1,reconnect_delay_max=5,reconnect_max_retries=5," +
+        "reconnect_delay_total_max=20",
     )
     // Drop only video-output-bound late frames when rendering cannot keep up.
     // This prevents long-term jitter buildup without aggressively sacrificing smoothness.

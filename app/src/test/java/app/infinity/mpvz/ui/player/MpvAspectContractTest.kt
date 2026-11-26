@@ -250,24 +250,40 @@ class MpvAspectContractTest {
 
     // Loopback drops persistence, remote keeps the handshake-saving default MPVView installs.
     assertTrue(PlaybackLoopbackLavfOptions.LOOPBACK_STREAM.startsWith("http_persistent=0,"))
-    assertTrue(PlaybackLoopbackLavfOptions.LOOPBACK_DEMUXER.startsWith("http_persistent=0,"))
-    assertTrue(PlaybackLoopbackLavfOptions.REMOTE_DEMUXER.startsWith("http_persistent=1,"))
+    assertTrue(PlaybackLoopbackLavfOptions.LOOPBACK_DEMUXER.startsWith("http_persistent=0"))
+    assertTrue(PlaybackLoopbackLavfOptions.REMOTE_STREAM.startsWith("http_persistent=1,"))
+    // The reconnect family and http_persistent are http protocol options: libavformat applies
+    // stream-lavf-o to the opened URLContext. In demuxer-lavf-o mpv rejects each one
+    // ("Could not set AVOption reconnect='1'"), so a demuxer set carrying them silently lost the
+    // loopback policy and torrent/relay playback stalled on the first reuse.
+    val protocolOnlyKeys =
+      listOf(
+        "reconnect=1",
+        "reconnect_on_network_error=1",
+        "reconnect_streamed=1",
+        "reconnect_delay_max=5",
+        "reconnect_max_retries=5",
+        "reconnect_delay_total_max=20",
+      )
+    listOf(PlaybackLoopbackLavfOptions.REMOTE_DEMUXER, PlaybackLoopbackLavfOptions.LOOPBACK_DEMUXER)
+      .forEach { demuxer ->
+        assertTrue(demuxer, demuxer.startsWith("http_persistent="))
+        protocolOnlyKeys.forEach { key ->
+          assertFalse("demuxer-lavf-o must not carry $key: $demuxer", demuxer.contains(key))
+        }
+      }
     // The per-file fallback must be the same value MPVView installs on init, so a switch back
     // to a remote source restores exactly what the instance started with.
-    val demuxerHalves =
-      listOf(
-        "http_persistent=1,reconnect=1,reconnect_on_network_error=1,reconnect_streamed=1,",
-        "reconnect_delay_max=5,reconnect_max_retries=5,reconnect_delay_total_max=20",
-      )
     val streamHalves =
       listOf(
-        "reconnect=1,reconnect_on_network_error=1,reconnect_on_http_error=5xx,reconnect_streamed=1,",
-        "reconnect_delay_max=5,reconnect_max_retries=5,reconnect_delay_total_max=20",
+        "http_persistent=1,reconnect=1,reconnect_on_network_error=1,reconnect_on_http_error=5xx,",
+        "reconnect_streamed=1,reconnect_delay_max=5,reconnect_max_retries=5,",
+        "reconnect_delay_total_max=20",
       )
-    assertTrue(demuxerHalves.all { mpvView.contains("\"$it\"") })
     assertTrue(streamHalves.all { mpvView.contains("\"$it\"") })
-    assertEquals(PlaybackLoopbackLavfOptions.REMOTE_DEMUXER, demuxerHalves.joinToString(""))
     assertEquals(PlaybackLoopbackLavfOptions.REMOTE_STREAM, streamHalves.joinToString(""))
+    // MPVView's demuxer set carries the hls/dash persistence flag and nothing else.
+    assertTrue(mpvView.contains("\"${PlaybackLoopbackLavfOptions.REMOTE_DEMUXER}\""))
 
     // Chosen per opened file, right before the load, so a remote -> loopback switch cannot
     // inherit the other connection policy.
