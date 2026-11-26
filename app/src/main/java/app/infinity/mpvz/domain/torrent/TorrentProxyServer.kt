@@ -41,7 +41,7 @@ class TorrentProxyServer(
 
   companion object {
     private const val TAG = "TorrentProxyServer"
-    private const val READ_AHEAD_BYTES = 16L * 1024L * 1024L
+    private const val READ_AHEAD_BYTES = 32L * 1024L * 1024L
     private const val PIECE_WAIT_TIMEOUT_MS = 120_000L
     private const val PIECE_POLL_INTERVAL_MS = 40L
   }

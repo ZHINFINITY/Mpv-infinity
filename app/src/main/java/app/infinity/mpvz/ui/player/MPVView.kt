@@ -831,6 +831,18 @@ class MPVView(
     PlaybackSession.setOptionString("cache-pause", "yes")
     PlaybackSession.setOptionString("cache-pause-wait", "2")
     PlaybackSession.setOptionString("demuxer-max-bytes", "128MiB")
+    // Deep back-buffer: seeks backward into what was already watched play from memory instead of
+    // refetching from a slow or dead origin (torrent seeders, rate-limited direct links).
+    PlaybackSession.setOptionString("demuxer-max-back-bytes", "32MiB")
+    // Larger low-level stream buffer: fewer read round-trips per second of media, which the
+    // loopback torrent/relay proxies and slow direct links benefit from the most.
+    PlaybackSession.setOptionString("stream-buffer-size", "1MiB")
+    // Fail fast on a dead connect so the reconnect policy starts recovering instead of hanging
+    // the open for mpv's 60s default.
+    PlaybackSession.setOptionString("network-timeout", "15")
+    // After an underrun, wait for more than two seconds of buffer before resuming, so flaky
+    // sources do not stall-stop-stall in a loop.
+    PlaybackSession.setOptionString("cache-pause-wait", "4")
     // Recover boundedly from transient HTTP/TLS disconnects, including non-seekable live inputs.
     // Do not use reconnect_at_eof globally: a legitimate VOD EOF must still finish normally.
     // The http protocol options live in stream-lavf-o: libavformat applies that dict to the opened

@@ -875,15 +875,8 @@ private fun MiniPlayerContent(
                 .basicMarquee(initialDelayMillis = 650),
             )
           }
-          val miniDurS = (duration ?: 0).toLong()
-          val miniPosS = (positionState.value ?: 0).toLong()
           Text(
-            text =
-              if (miniDurS > 0) {
-                "$artist · ${formatMiniTime(miniPosS)} / ${formatMiniTime(miniDurS)}"
-              } else {
-                artist
-              },
+            text = artist,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
@@ -1009,12 +1002,6 @@ private fun MiniPlayerGlassButton(
       content()
     }
   }
-}
-
-/** Formats an ms position as m:ss for the mini player's time labels. */
-private fun formatMiniTime(ms: Long): String {
-  val totalSeconds = ms / 1000
-  return "%d:%02d".format(java.util.Locale.US, totalSeconds / 60, totalSeconds % 60)
 }
 
 /** Resolved static-cover fallback plus optional bounded GIF/WebP bytes for the active track. */

@@ -1028,9 +1028,26 @@ class PlayerViewModel(
   val albumArtBounds = MutableStateFlow<android.graphics.Rect?>(null)
   // The style and artwork/visualizer display choice are persisted via audioPreferences.
   val showVisualizerInAudioPlayer = MutableStateFlow(audioPreferences.showAudioVisualizer.get())
-  val equalizerState = MutableStateFlow(EqualizerState())
+  val equalizerState = MutableStateFlow(restoreEqualizerState())
   private val audioEqualizerManager = AudioEqualizerManager()
   private var equalizerMpvDebounceJob: Job? = null
+
+  private fun restoreEqualizerState(): EqualizerState =
+    EqualizerState(
+      isEnabled = audioPreferences.equalizerEnabled.get(),
+      mode = audioPreferences.equalizerMode.get(),
+      currentPreset = audioPreferences.equalizerPreset.get(),
+      bandGains = audioPreferences.equalizerBandGains.get(),
+      volumeBoostDb = audioPreferences.equalizerVolumeBoostDb.get(),
+    )
+
+  private fun persistEqualizerState(state: EqualizerState) {
+    audioPreferences.equalizerEnabled.set(state.isEnabled)
+    audioPreferences.equalizerMode.set(state.mode)
+    audioPreferences.equalizerPreset.set(state.currentPreset)
+    audioPreferences.equalizerBandGains.set(state.bandGains)
+    audioPreferences.equalizerVolumeBoostDb.set(state.volumeBoostDb)
+  }
 
   data class LyricsUiState(
     val isLoading: Boolean = false,
@@ -1387,6 +1404,7 @@ class PlayerViewModel(
 
   fun applyEqualizerMpvFilters(immediate: Boolean = false) {
     val state = equalizerState.value
+    persistEqualizerState(state)
 
     // 1. Hardware Android AudioFx (Equalizer & LoudnessEnhancer matching AFinity)
     audioEqualizerManager.updateState(
