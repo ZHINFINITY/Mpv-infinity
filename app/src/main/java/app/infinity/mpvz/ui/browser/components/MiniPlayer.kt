@@ -93,6 +93,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.foundation.gestures.detectTapGestures
+import `is`.xyz.mpv.MPVLib
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInWindow
@@ -862,6 +864,55 @@ private fun MiniPlayerContent(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
           )
+          // Visible progress: a thin seekable bar under the text, mpvrx-style. Tap position seeks.
+          // propInt values are whole seconds.
+          val miniDurS = (duration ?: 0).toLong()
+          val miniPosS = (positionState.value ?: 0).toLong()
+          val miniFraction = if (miniDurS > 0) (miniPosS.toFloat() / miniDurS).coerceIn(0f, 1f) else 0f
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.fillMaxWidth().padding(top = 3.dp),
+          ) {
+            Text(
+              text = formatMiniTime(miniPosS),
+              style = MaterialTheme.typography.labelSmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Box(
+              modifier = Modifier
+                .weight(1f)
+                .height(16.dp)
+                .pointerInput(miniDurS) {
+                  if (miniDurS <= 0) return@pointerInput
+                  detectTapGestures { offset ->
+                    val targetSeconds = (offset.x / size.width * miniDurS).coerceIn(0f, miniDurS.toFloat())
+                    runCatching { MPVLib.setPropertyDouble("time-pos", targetSeconds.toDouble()) }
+                  }
+                },
+            ) {
+              Box(
+                Modifier
+                  .fillMaxHeight(4.dp / 16.dp * 4)
+                  .height(4.dp)
+                  .fillMaxWidth()
+                  .align(Alignment.Center)
+                  .background(progressTrackColor.copy(alpha = 0.5f), RoundedCornerShape(3.dp)),
+              )
+              Box(
+                Modifier
+                  .height(4.dp)
+                  .fillMaxWidth(miniFraction.coerceAtLeast(0.01f))
+                  .align(Alignment.CenterStart)
+                  .background(primaryContainerColor, RoundedCornerShape(3.dp)),
+              )
+            }
+            Text(
+              text = "-" + formatMiniTime((miniDurS - miniPosS).coerceAtLeast(0)),
+              style = MaterialTheme.typography.labelSmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+          }
         }
 
         Spacer(modifier = Modifier.width(8.dp))
@@ -983,6 +1034,12 @@ private fun MiniPlayerGlassButton(
       content()
     }
   }
+}
+
+/** Formats an ms position as m:ss for the mini player's time labels. */
+private fun formatMiniTime(ms: Long): String {
+  val totalSeconds = ms / 1000
+  return "%d:%02d".format(java.util.Locale.US, totalSeconds / 60, totalSeconds % 60)
 }
 
 /** Resolved static-cover fallback plus optional bounded GIF/WebP bytes for the active track. */

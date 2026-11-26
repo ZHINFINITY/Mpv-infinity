@@ -836,6 +836,9 @@ fun AudioPlayerControls(
   }
 
   BackHandler(enabled = isStandbyActive || isLyricsFullscreen) {
+    if (isLyricsFullscreen) {
+      showInPlaceLyrics = false
+    }
     resetInactivityTimer()
   }
 
@@ -1907,7 +1910,15 @@ fun AudioPlayerControls(
 
     val losslessBadge = @Composable {
       if (collapsedAudioBadgeLabel.isNotBlank()) {
-        Surface(
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+          // mpvrx-style infinity mark: shown whenever the playing file is lossless.
+          Text(
+            text = "∞",
+            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+            color = MaterialTheme.colorScheme.onSecondaryContainer,
+            modifier = Modifier.padding(bottom = 2.dp),
+          )
+          Surface(
           shape = RoundedCornerShape(4.dp),
           color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f),
           border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
@@ -1935,6 +1946,7 @@ fun AudioPlayerControls(
             color = MaterialTheme.colorScheme.onSecondaryContainer,
             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
           )
+        }
         }
       }
     }
@@ -2522,7 +2534,8 @@ fun AudioPlayerControls(
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
             .clickable {
-              showInPlaceLyrics = true
+              // Toggle: tap once to open lyrics, tap again to return to the album art.
+              showInPlaceLyrics = !showInPlaceLyrics
               resetInactivityTimer()
             }
             .padding(horizontal = 4.dp, vertical = 4.dp),
@@ -3670,7 +3683,7 @@ private fun ExpressiveTransportSideButton(
         .size(size)
         .tvFocusHighlight(shape, enabled = enabled, focusedScale = 1.08f)
         .appPressFeedback(interactionSource, enabled, pressedScale = 0.90f, reduceMotion = reducedMotion)
-        .playerGlassPane(enabled = liquidGlassSurfaces, cornerRadius = 999.dp),
+        .playerGlassPane(enabled = liquidGlassSurfaces, cornerRadius = cornerRadius),
   ) {
     Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
       content()
@@ -3716,7 +3729,7 @@ private fun ExpressivePlayPauseButton(
         .height(height)
         .tvFocusHighlight(shape, enabled = true, focusedScale = 1.05f)
         .appPressFeedback(interactionSource, enabled = true, pressedScale = 0.94f, reduceMotion = reducedMotion)
-        .playerGlassPane(enabled = playLiquidGlass, cornerRadius = 999.dp),
+        .playerGlassPane(enabled = playLiquidGlass, cornerRadius = cornerRadius),
   ) {
     Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
       content()
