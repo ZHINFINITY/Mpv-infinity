@@ -633,6 +633,7 @@ object NetworkStreamingScreen : Screen {
 
       AddConnectionSheet(
         isOpen = showAddSheet,
+        savedConnections = connections,
         onDismiss = { showAddSheet = false },
         onSave = { connection ->
           viewModel.addConnection(connection)

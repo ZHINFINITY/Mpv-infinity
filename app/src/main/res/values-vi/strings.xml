@@ -1324,6 +1324,8 @@
   <string name="ui_add_to_playlist">Thêm vào danh sách phát</string>
   <string name="ui_copy_path">Sao chép đường dẫn</string>
   <string name="ui_add_network_connection">Thêm kết nối mạng</string>
+  <string name="ui_network_paste_url_hint">Dán địa chỉ đầy đủ như https://user@server:5006/folder để điền mọi trường</string>
+  <string name="ui_network_reuse_saved_server">Dùng lại máy chủ đã lưu</string>
   <string name="ui_name">Tên</string>
   <string name="ui_protocol">Giao thức</string>
   <string name="ui_host_ip_address">Địa chỉ máy chủ/IP</string>

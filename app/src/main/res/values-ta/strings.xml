@@ -1324,6 +1324,8 @@
   <string name="ui_add_to_playlist">சேர் க்கு இயக்கப்பட்டியல்</string>
   <string name="ui_copy_path">பாதையை நகலெடு</string>
   <string name="ui_add_network_connection">சேர் பிணையம் Connection</string>
+  <string name="ui_network_paste_url_hint">அனைத்து புலங்களையும் நிரப்ப https://user@server:5006/folder போன்ற முழு முகவரியை ஒட்டவும்</string>
+  <string name="ui_network_reuse_saved_server">சேமித்த சேவையகத்தை மீண்டும் பயன்படுத்து</string>
   <string name="ui_name">பெயர்</string>
   <string name="ui_protocol">விருப்பம்: Protocol</string>
   <string name="ui_host_ip_address">விருப்பம்: Host/IP Address</string>

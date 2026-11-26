@@ -62,17 +62,25 @@ class DirectLinkProxy private constructor() : NanoHTTPD("127.0.0.1", 0) {
 
     data class Eligibility(val contentLength: Long)
 
+    /** True for loopback URLs our own relays serve; those must never be re-proxied. */
+    fun isLoopbackUrl(url: String): Boolean =
+      url.startsWith("http://127.0.0.1:", true) ||
+        url.startsWith("http://localhost:", true) ||
+        url.startsWith("http://[::1]:", true) ||
+        url.startsWith("http://[::ffff:127.0.0.1]:", true)
+
     /**
      * Probes the remote server. Returns null when the link cannot be proxied (no range support,
      * unreachable, non-media-friendly response), in which case the caller should use the plain URL.
      */
-    fun probe(url: String): Eligibility? =
+    fun probe(url: String, headers: Map<String, String> = emptyMap()): Eligibility? =
       runCatching {
         val connection = URL(url).openConnection() as HttpURLConnection
         connection.requestMethod = "HEAD"
         connection.connectTimeout = CONNECT_TIMEOUT_MS
         connection.readTimeout = READ_TIMEOUT_MS
         connection.instanceFollowRedirects = true
+        headers.forEach { (name, value) -> connection.setRequestProperty(name, value) }
         val acceptsRanges =
           connection.getHeaderField("Accept-Ranges")?.contains("bytes", ignoreCase = true) == true
         val length = connection.contentLengthLong
@@ -94,16 +102,26 @@ class DirectLinkProxy private constructor() : NanoHTTPD("127.0.0.1", 0) {
     }
   }
 
-  private class RegisteredStream(val url: String, val mimeType: String, val fileSize: Long)
+  private class RegisteredStream(
+    val url: String,
+    val mimeType: String,
+    val fileSize: Long,
+    val headers: Map<String, String>,
+  )
 
   private val random = SecureRandom()
   private val streamsByToken = ConcurrentHashMap<String, RegisteredStream>()
 
   /** Registers a direct link and returns a credential-free loopback URL for mpv. */
   @Synchronized
-  fun register(url: String, fileSize: Long, mimeType: String): String {
+  fun register(
+    url: String,
+    fileSize: Long,
+    mimeType: String,
+    headers: Map<String, String> = emptyMap(),
+  ): String {
     val token = generateToken()
-    streamsByToken[token] = RegisteredStream(url, mimeType, fileSize)
+    streamsByToken[token] = RegisteredStream(url, mimeType, fileSize, headers)
     return URI("http", null, "127.0.0.1", listeningPort, "/$token", null, null).toASCIIString()
   }
 
@@ -134,7 +152,7 @@ class DirectLinkProxy private constructor() : NanoHTTPD("127.0.0.1", 0) {
     return newFixedLengthResponse(
       Response.Status.PARTIAL_CONTENT,
       stream.mimeType,
-      ParallelRangeInputStream(stream.url, start, end),
+      ParallelRangeInputStream(stream.url, stream.headers, start, end),
       end - start + 1L,
     ).apply {
       addHeader("Content-Range", "bytes $start-$end/${stream.fileSize}")
@@ -148,6 +166,7 @@ class DirectLinkProxy private constructor() : NanoHTTPD("127.0.0.1", 0) {
    */
   private class ParallelRangeInputStream(
     private val url: String,
+    private val headers: Map<String, String>,
     private val start: Long,
     private val end: Long,
   ) : InputStream() {
@@ -157,6 +176,7 @@ class DirectLinkProxy private constructor() : NanoHTTPD("127.0.0.1", 0) {
         connection.requestMethod = "GET"
         connection.connectTimeout = CONNECT_TIMEOUT_MS
         connection.readTimeout = READ_TIMEOUT_MS
+        headers.forEach { (name, value) -> connection.setRequestProperty(name, value) }
         connection.setRequestProperty("Range", "bytes=$start-$end")
         if (connection.responseCode != HttpURLConnection.HTTP_PARTIAL) {
           throw IOException("Unexpected range response ${connection.responseCode}")

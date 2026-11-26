@@ -154,6 +154,38 @@ object ServerUrlUtils {
     }
   }
 
+  /** Fields recovered from a pasted server address such as `https://user@nas:5006/dav`. */
+  data class ParsedServerAddress(
+    val scheme: String?,
+    val host: String,
+    val port: Int?,
+    val path: String?,
+    val username: String?,
+  )
+
+  /**
+   * Splits a pasted address into its parts so connection forms can fill every field at once.
+   * Returns null for plain host names/IPs (nothing to split) and for unparsable input.
+   */
+  fun parseServerAddress(raw: String): ParsedServerAddress? {
+    val trimmed = raw.trim()
+    if (trimmed.isEmpty()) return null
+    val schemeMatch = Regex("""^([A-Za-z][A-Za-z0-9+.-]*)://""").find(trimmed)
+    val hasExtras = schemeMatch != null || trimmed.contains('/') || trimmed.contains('@') ||
+      (trimmed.count { it == ':' } == 1)
+    if (!hasExtras) return null
+    val scheme = schemeMatch?.groupValues?.get(1)?.lowercase()
+    val uri = runCatching { URI(if (scheme != null) trimmed else "placeholder://$trimmed") }.getOrNull() ?: return null
+    val host = uri.host?.removePrefix("[")?.removeSuffix("]")?.takeIf { it.isNotBlank() } ?: return null
+    return ParsedServerAddress(
+      scheme = scheme,
+      host = host,
+      port = uri.port.takeIf { it in 1..65535 },
+      path = uri.rawPath?.takeIf { it.isNotBlank() && it != "/" }?.let { java.net.URLDecoder.decode(it, "UTF-8") },
+      username = uri.rawUserInfo?.substringBefore(':')?.takeIf { it.isNotBlank() },
+    )
+  }
+
   fun normalizeUrl(rawUrl: String, defaultPort: Int? = null): String {
     return generateCandidateUrls(rawUrl, defaultPort).firstOrNull() ?: rawUrl.trim()
   }

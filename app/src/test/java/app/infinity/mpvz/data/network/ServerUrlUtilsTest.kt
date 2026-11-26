@@ -29,4 +29,33 @@ class ServerUrlUtilsTest {
       ).single(),
     )
   }
+
+  @Test
+  fun pastedWebDavUrlFillsEveryConnectionField() {
+    val parsed = ServerUrlUtils.parseServerAddress("https://alice@nas.local:5006/remote.php/dav%20files")
+    assertEquals(
+      ServerUrlUtils.ParsedServerAddress(
+        scheme = "https",
+        host = "nas.local",
+        port = 5006,
+        path = "/remote.php/dav files",
+        username = "alice",
+      ),
+      parsed,
+    )
+  }
+
+  @Test
+  fun hostWithPortButNoSchemeIsSplit() {
+    val parsed = ServerUrlUtils.parseServerAddress("192.168.1.10:2121")
+    assertEquals("192.168.1.10", parsed?.host)
+    assertEquals(2121, parsed?.port)
+    assertEquals(null, parsed?.scheme)
+  }
+
+  @Test
+  fun plainHostIsLeftForTheUserToFinishTyping() {
+    assertEquals(null, ServerUrlUtils.parseServerAddress("192.168.1.10"))
+    assertEquals(null, ServerUrlUtils.parseServerAddress("nas"))
+  }
 }

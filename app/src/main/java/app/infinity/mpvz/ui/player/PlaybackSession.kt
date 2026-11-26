@@ -2283,13 +2283,27 @@ object PlaybackSession : MPVLib.EventObserver {
   private fun resolveDirectLinkViaProxy(item: PlaybackItem): ResolvedPlayable? {
     val url = item.playableUri
     if (!url.startsWith("http://", true) && !url.startsWith("https://", true)) return null
-    val eligibility = DirectLinkProxy.probe(url) ?: return null
+    // Loopback URLs belong to our own relays (torrent bridge, network streaming proxy, HLS
+    // proxy, and the DirectLinkProxy itself). Feeding one relay into another adds a local hop
+    // that destroys the torrent bridge's sequential piece prefetch, so never re-proxy them.
+    if (DirectLinkProxy.isLoopbackUrl(url)) return null
+    val headers = item.headers
+    // Network I/O must stay off the main thread (field log: NetworkOnMainThreadException from
+    // this probe). On a background caller thread it runs inline; from the main thread we block
+    // an IO worker instead.
+    val eligibility =
+      if (Looper.myLooper() == Looper.getMainLooper()) {
+        kotlinx.coroutines.runBlocking(Dispatchers.IO) { DirectLinkProxy.probe(url, headers) }
+      } else {
+        DirectLinkProxy.probe(url, headers)
+      } ?: return null
     val proxy = DirectLinkProxy.getInstance()
     val proxyUrl =
       proxy.register(
         url = url,
         fileSize = eligibility.contentLength,
         mimeType = item.mimeType ?: "application/octet-stream",
+        headers = headers,
       )
     Log.d(TAG, "Routing direct link through DirectLinkProxy (parallel range fetch)")
     return ResolvedPlayable(
@@ -2401,7 +2415,7 @@ object PlaybackSession : MPVLib.EventObserver {
       return ResolvedPlayable(uri, NetworkStreamRegistration(hlsProxy = hlsProxy, streamId = streamId))
     }
 
-    resolveDirectLinkViaProxy(item)?.let { return it }
+    kotlinx.coroutines.withContext(Dispatchers.IO) { resolveDirectLinkViaProxy(item) }?.let { return it }
 
     val context = applicationContext
     if (item.playableUri.startsWith("fd://") && item.originalUri.startsWith("content://")) {
@@ -2409,7 +2423,6 @@ object PlaybackSession : MPVLib.EventObserver {
         ?: error("Unable to reopen content URI for playback")
       return ResolvedPlayable(resolved, ownedFd = resolved.fdNumberOrNull())
     }
-
     if (context != null) {
       val candidates = sequenceOf(item.playableUri, item.originalUri)
         .filter { it.startsWith("content://") }

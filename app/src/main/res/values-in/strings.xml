@@ -1324,6 +1324,8 @@
   <string name="ui_add_to_playlist">Tambahkan ke Daftar Putar</string>
   <string name="ui_copy_path">Salin jalur</string>
   <string name="ui_add_network_connection">Tambahkan Koneksi Jaringan</string>
+  <string name="ui_network_paste_url_hint">Tempel alamat lengkap seperti https://user@server:5006/folder untuk mengisi semua kolom</string>
+  <string name="ui_network_reuse_saved_server">Gunakan lagi server tersimpan</string>
   <string name="ui_name">Nama</string>
   <string name="ui_protocol">Protokol</string>
   <string name="ui_host_ip_address">Alamat Host/IP</string>
