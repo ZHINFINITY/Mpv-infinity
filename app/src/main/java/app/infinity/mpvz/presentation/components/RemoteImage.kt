@@ -190,7 +190,11 @@ internal object RemoteImageLoader {
       null, "" -> readFileBounded(File(url), maxBytes)
       "http", "https" -> {
         val httpUrl = url.toHttpUrlOrNull() ?: return@withContext null
-        val cacheFile = File(File(context.cacheDir, CACHE_DIRECTORY).apply { mkdirs() }, hash(url))
+        val cacheFile =
+          File(
+            File(context.cacheDir, CACHE_DIRECTORY).apply { mkdirs() },
+            hash(app.infinity.mpvz.utils.media.VolatileUrlKey.normalize(url)),
+          )
         if (cacheFile.exists()) return@withContext readFileBounded(cacheFile, maxBytes)
 
         val host = httpUrl.host
@@ -266,7 +270,9 @@ internal object RemoteImageLoader {
     val httpUrl = url.toHttpUrlOrNull() ?: return null
 
     val cacheDirectory = File(context.cacheDir, CACHE_DIRECTORY).apply { mkdirs() }
-    val cacheFile = File(cacheDirectory, hash(url))
+    // Credential query params rotate between launches; key the cache on the stable part.
+    val cacheKey = app.infinity.mpvz.utils.media.VolatileUrlKey.normalize(url)
+    val cacheFile = File(cacheDirectory, hash(cacheKey))
     decodeSampled(cacheFile)?.let { bitmap ->
       synchronized(memoryCache) { memoryCache.put(url, bitmap) }
       return bitmap

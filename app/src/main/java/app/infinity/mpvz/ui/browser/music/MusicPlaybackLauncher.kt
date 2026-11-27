@@ -63,8 +63,11 @@ internal object MusicPlaybackLauncher {
     if (path.isBlank()) return false
     val scheme = runCatching { Uri.parse(path).scheme?.lowercase(Locale.ROOT) }.getOrNull()
     if (scheme != null && scheme != "file" && scheme != "content") return false
-    val extension = path.substringBefore('?').substringBefore('#').fileExtension()
+    val extension = path.substringBefore('?').substringBefore('#').fileExtension().lowercase(Locale.ROOT)
     if (extension in AUDIOBOOK_EXTENSIONS) return false
+    // Positive check: only audio may open the music player. The scanner can index video files as
+    // songs, and queuing one from the folders tab used to hand a video to the music player.
+    if (extension.isNotEmpty() && extension !in FileTypeUtils.AUDIO_EXTENSIONS) return false
     return !AudiobookMarkerUtils.isAudiobookPath(path)
   }
 

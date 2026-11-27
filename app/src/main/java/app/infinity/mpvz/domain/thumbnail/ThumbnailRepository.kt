@@ -30,6 +30,7 @@ import app.infinity.mpvz.domain.network.NetworkConnection
 import app.infinity.mpvz.preferences.ThumbnailMode
 import app.infinity.mpvz.repository.NetworkRepository
 import app.infinity.mpvz.ui.player.resolveLocalPath
+import app.infinity.mpvz.utils.media.VolatileUrlKey
 import `is`.xyz.mpv.FastThumbnails
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -555,7 +556,9 @@ class ThumbnailRepository(
 
   private fun videoBaseKey(video: Video): String {
     if (isNetworkUrl(video.path)) {
-      val base = video.path.ifBlank { video.uri.toString() }
+      // Stream URLs carry the server session token; normalise it away so the cache key survives
+      // a token reissue, otherwise every launch re-extracts the same thumbnail.
+      val base = VolatileUrlKey.normalize(video.path.ifBlank { video.uri.toString() })
       return "$base|network"
     }
 
