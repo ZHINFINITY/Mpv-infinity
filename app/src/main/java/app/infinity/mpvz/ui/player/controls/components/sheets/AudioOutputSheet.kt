@@ -51,6 +51,43 @@ private fun AudioDeviceInfo.defaultLabel(fallback: String): String =
   productName?.toString()?.trim()?.takeIf { it.isNotEmpty() && !it.equals("null", true) } ?: fallback
 
 /**
+ * Route types that exist on the phone but can never play a media AudioTrack: tuners, the
+ * remote-submix tap and LE broadcast announcements. Selecting one of those used to hand mpv a
+ * preferred device that produced no audio at all, so they are not offered.
+ */
+private fun AudioDeviceInfo.isMediaOutput(): Boolean =
+  when (type) {
+    AudioDeviceInfo.TYPE_UNKNOWN,
+    AudioDeviceInfo.TYPE_BUILTIN_EARPIECE,
+    AudioDeviceInfo.TYPE_TELEPHONY,
+    AudioDeviceInfo.TYPE_FM,
+    AudioDeviceInfo.TYPE_FM_TUNER,
+    AudioDeviceInfo.TYPE_TV_TUNER,
+    AudioDeviceInfo.TYPE_REMOTE_SUBMIX,
+    AudioDeviceInfo.TYPE_BLE_BROADCAST,
+    AudioDeviceInfo.TYPE_IP,
+    AudioDeviceInfo.TYPE_BUS,
+    -> false
+    else -> true
+  }
+
+/**
+ * Some OEM ROMs (Xiaomi/HyperOS here) publish the phone itself as an extra output whose product
+ * name is the model number ("25053PC47I"). It is the builtin speaker under another name and plays
+ * nothing when an AudioTrack is bound to it.
+ */
+private fun AudioDeviceInfo.isSelfAlias(): Boolean {
+  if (type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER ||
+    type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER_SAFE
+  ) {
+    return false
+  }
+  val name = productName?.toString()?.trim()?.lowercase().orEmpty()
+  if (name.isEmpty()) return false
+  return name == Build.MODEL.lowercase() || name == Build.DEVICE.lowercase()
+}
+
+/**
  * One physical Bluetooth headset is reported as separate A2DP, SCO and BLE outputs, so the sheet
  * listed the same pair twice with the same icon. Entries that share a product name share a key.
  */
@@ -59,6 +96,8 @@ private fun AudioDeviceInfo.outputGroupKey(): String =
     AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
     AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
     AudioDeviceInfo.TYPE_BLE_HEADSET,
+    AudioDeviceInfo.TYPE_BLE_SPEAKER,
+    AudioDeviceInfo.TYPE_HEARING_AID,
     ->
       "bt:" +
         (productName?.toString()?.trim()?.lowercase()?.takeIf { it.isNotEmpty() && it != "null" }
@@ -79,6 +118,17 @@ private fun List<AudioDeviceInfo>.collapseOutputs(): List<AudioDeviceInfo> =
       ?: group.first()
   }
 
+/**
+ * The "safe" speaker variant is a volume-limited alias with no media track of its own, so a pick on
+ * it is routed through the plain builtin speaker that the same phone always also reports.
+ */
+private fun AudioDeviceInfo.asRoutableOutput(devices: List<AudioDeviceInfo>): AudioDeviceInfo =
+  if (type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER_SAFE) {
+    devices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER } ?: this
+  } else {
+    this
+  }
+
 /** Every output type gets its own icon and label instead of one shared "Audio output" row. */
 private fun AudioDeviceInfo.labelAndIcon(): Pair<String, app.infinity.mpvz.ui.icons.AppIcon>? =
   when (type) {
@@ -88,6 +138,8 @@ private fun AudioDeviceInfo.labelAndIcon(): Pair<String, app.infinity.mpvz.ui.ic
     AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
     AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
     AudioDeviceInfo.TYPE_BLE_HEADSET,
+    AudioDeviceInfo.TYPE_BLE_SPEAKER,
+    AudioDeviceInfo.TYPE_HEARING_AID,
     -> defaultLabel("Bluetooth") to Icons.RoundedFilled.Bluetooth
     AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
     AudioDeviceInfo.TYPE_WIRED_HEADSET,
@@ -106,6 +158,7 @@ private fun AudioDeviceInfo.labelAndIcon(): Pair<String, app.infinity.mpvz.ui.ic
     AudioDeviceInfo.TYPE_DOCK -> "Dock" to Icons.RoundedFilled.Cast
     AudioDeviceInfo.TYPE_LINE_ANALOG,
     AudioDeviceInfo.TYPE_LINE_DIGITAL,
+    AudioDeviceInfo.TYPE_AUX_LINE,
     -> "Line out" to Icons.RoundedFilled.VolumeUp
     else -> defaultLabel("Audio output") to Icons.RoundedFilled.VolumeUp
   }
@@ -137,8 +190,12 @@ fun AudioOutputSheet(
       } else {
         emptyList()
       }
-    }.filter { it.type != AudioDeviceInfo.TYPE_UNKNOWN && it.labelAndIcon() != null }
-      .collapseOutputs()
+    }.filter {
+      it.isMediaOutput() &&
+        !it.isSelfAlias() &&
+        it.type != AudioDeviceInfo.TYPE_UNKNOWN &&
+        it.labelAndIcon() != null
+    }.collapseOutputs()
 
   PlayerSheet(
     onDismissRequest = onDismissRequest,
@@ -183,12 +240,13 @@ fun AudioOutputSheet(
                   RoundedCornerShape(12.dp),
                 )
                 .clickable {
-                  selectedDeviceId = device.id
-                  selectedGroupKey = device.outputGroupKey()
+                  val target = device.asRoutableOutput(devices)
+                  selectedDeviceId = target.id
+                  selectedGroupKey = target.outputGroupKey()
                   // Media routing, not communication routing: setCommunicationDevice rejects
                   // HDMI/line/dock outputs with IllegalArgumentException and never moved the
                   // music stream, which is why Bluetooth -> speaker did nothing.
-                  AudioOutputRouter.select(device)
+                  AudioOutputRouter.select(target)
                 }
                 .padding(horizontal = 16.dp, vertical = 12.dp),
           ) {

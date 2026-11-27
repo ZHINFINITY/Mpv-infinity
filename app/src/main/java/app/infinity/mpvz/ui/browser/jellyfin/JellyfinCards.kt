@@ -1625,15 +1625,6 @@ fun JellyfinEpisodeCard(
           }
         null -> {}
       }
-
-      IconButton(onClick = onPlay) {
-        Icon(
-          imageVector = Icons.RoundedFilled.PlayArrow,
-          contentDescription = "Play",
-          tint = MaterialTheme.colorScheme.primary,
-          modifier = Modifier.size(26.dp),
-        )
-      }
     }
   }
 }
