@@ -142,6 +142,19 @@ class GlassMaterialRolePolicyTest {
     assertTrue(GlassSurfacePolicy.RegularMaximumFilmAlpha <= 0.5f)
   }
 
+  @Test fun glassPopupContainersAreNotDoubleFilmed() {
+    val settings = source("ui/preferences/components/SettingsGlass.kt")
+    val scrim = GlassSurfacePolicy.GlassContainerScrimAlpha
+    // The pane already paints an adaptive film for legibility, so the container adds a light scrim.
+    assertTrue("container scrim must stay light, was $scrim", scrim <= 0.25f)
+    assertTrue(settings.contains("GlassSurfacePolicy.GlassContainerScrimAlpha"))
+    assertTrue("old 0.42 slab scrim came back", !settings.contains("coerceAtLeast(0.42f)"))
+    // Pane film plus scrim: the old pair reached ~0.71 (a flat grey slab), the new one stays light
+    // enough that the frosted backdrop is still visible through the popup body.
+    val combined = 1f - (1f - GlassSurfacePolicy.RegularMaximumFilmAlpha) * (1f - scrim)
+    assertTrue("popup body is opaque again: $combined", combined <= 0.62f)
+  }
+
   @Test fun numericInputsRemainFiniteAndBounded() {
     for (opacity in listOf(Float.NaN, Float.POSITIVE_INFINITY, -100f, 100f)) {
       val alpha = GlassSurfacePolicy.regularAdaptiveFilmAlpha(opacity, Float.NaN, Color.Black, Color.White, Float.NaN, Float.NaN)

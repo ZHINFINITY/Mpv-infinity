@@ -861,8 +861,12 @@ class MPVView(
     // http_persistent='1'") and the policy silently never applies.
     PlaybackSession.setOptionString(
       "demuxer-lavf-o",
-      // Only the hls/dash demuxers own http_persistent; keep one connection per segment there.
-      "http_persistent=1",
+      // hls/dash demuxer options. Persistent connections save a TCP+TLS handshake per segment;
+      // http_multiple fetches the next segment over a second connection so one slow segment does
+      // not stall the chain; seg_max_retry=6 (ffmpeg retries a failed segment once by default)
+      // keeps a single dropped segment read from aborting the whole download and showing up as
+      // endless buffering.
+      "http_persistent=1,http_multiple=1,seg_max_retry=6",
     )
     // demuxer-lavf-o only reaches demuxer-internal opens (HLS/DASH segments). The primary http(s)
     // URL is opened by stream_lavf, which reads stream-lavf-o; without it a dropped connection or

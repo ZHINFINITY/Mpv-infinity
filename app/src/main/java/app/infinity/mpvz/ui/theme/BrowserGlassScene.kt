@@ -536,6 +536,8 @@ internal fun Modifier.browserGlassPane(
     else GlassSurfacePolicy.navigationFrostDp(tuning.frost, refraction = capabilities.refraction)
   val floating = enabled && drawRim && !edgeBar
   var paneOrigin by remember { mutableStateOf(Offset.Zero) }
+  // Plain holder: reporting a missing scene must not write snapshot state from the draw phase.
+  val sceneMissLogged = remember { booleanArrayOf(false) }
   // The navigation pill keeps its own shader path; this pane retains a per-pane lens handle.
   // This handle retains static geometry and refreshes the lightweight effect chain only when motion changes.
   // Edge bars never bend: the lens edge term would draw a bright line along the bar's bottom.
@@ -577,6 +579,15 @@ internal fun Modifier.browserGlassPane(
           val bounds = scene?.stripBounds
           val hasScene = popupSceneReady && scene != null && bounds != null && bounds.width > 0f && bounds.height > 0f &&
             GlassScenePolicy.canDrawRecordedScene(scene.isRecording, scene.hasValidDisplayList)
+          if (!hasScene && popupWindow && app.infinity.mpvz.BuildConfig.DEBUG && !sceneMissLogged[0]) {
+            sceneMissLogged[0] = true
+            android.util.Log.d(
+              "GlassScene",
+              "popup pane has no frost: popupReady=${scene?.popupReady} bounds=${scene?.stripBounds} " +
+                "recording=${scene?.isRecording} displayList=${scene?.hasValidDisplayList} " +
+                "capture=${capabilities.capture} enabled=$enabled",
+            )
+          }
           if (hasScene) {
             val motion = deformation.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0f
             val updatedEffect =

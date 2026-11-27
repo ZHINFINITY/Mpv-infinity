@@ -70,11 +70,10 @@ fun settingsGlassContainerColor(fallback: androidx.compose.ui.graphics.Color): a
   val appearance = koinInject<AppearancePreferences>()
   val enabled by appearance.liquidGlassSurfaces.collectAsState()
   return if (enabled) {
-    // Glass optics sample the backdrop behind the pane. A custom theme (image or video
-    // wallpaper) or a dialog window can leave nothing to sample, and the popup then rendered
-    // fully transparent with unreadable text over the content below. Keep a soft scrim so
-    // every glass surface still reads as a frosted pane under any theme.
-    fallback.copy(alpha = fallback.alpha.coerceAtLeast(0.42f))
+    // Glass optics sample the backdrop behind the pane and paint their own adaptive film, which
+    // already guarantees text contrast (see GlassSurfacePolicy.regularAdaptiveFilmAlpha). Only a
+    // light scrim is added on top: a heavier one (0.42) double-filmed every popup into a grey slab.
+    fallback.copy(alpha = fallback.alpha.coerceAtLeast(GlassSurfacePolicy.GlassContainerScrimAlpha))
   } else {
     fallback
   }

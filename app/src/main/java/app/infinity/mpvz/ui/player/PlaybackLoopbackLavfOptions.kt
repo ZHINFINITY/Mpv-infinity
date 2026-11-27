@@ -31,9 +31,11 @@ internal object PlaybackLoopbackLavfOptions {
   /**
    * Demuxer-internal opens (HLS/DASH segments), remote host. `http_persistent` is a demuxer option
    * of the hls/dash demuxers; the `reconnect*` family is a protocol option and must not be listed
-   * here, mpv rejects each one ("Could not set AVOption reconnect='1'").
+   * here, mpv rejects each one ("Could not set AVOption reconnect='1'"). `http_multiple` downloads
+   * the next segment over a second connection and `seg_max_retry` (ffmpeg default: 1) retries a
+   * failed segment instead of aborting the whole segment chain.
    */
-  const val REMOTE_DEMUXER = "http_persistent=1"
+  const val REMOTE_DEMUXER = "http_persistent=1,http_multiple=1,seg_max_retry=6"
 
   /** Primary http(s) URL served by one of our loopback proxies. */
   const val LOOPBACK_STREAM = "http_persistent=0,$STREAM_RECONNECT"
