@@ -1338,15 +1338,33 @@ fun AudioPlayerControls(
   }
 
   val ambientModeEnabled by audioPreferences.audioAmbientMode.collectAsState()
+  val ambientSatBoost by viewModel.ambientSatBoost.collectAsState()
+  val ambientWarmth by viewModel.ambientWarmth.collectAsState()
 
   val ambientColors by produceState<Pair<Color, Color>?>(
     initialValue = null,
     key1 = albumArtBitmap,
-    key2 = listOf(ambientModeEnabled, audioPaletteBackground, showVisualizer, showInPlaceLyrics),
+    key2 = listOf(ambientModeEnabled, audioPaletteBackground, showVisualizer, showInPlaceLyrics, ambientSatBoost, ambientWarmth),
   ) {
     if (!audioPaletteBackground || !ambientModeEnabled || albumArtBitmap == null) {
       value = null
       return@produceState
+    }
+    // The AmbientSheet's colour controls drive the mpv video shader, which never runs for
+    // audio-only items. Apply the same saturation/warmth here so the music player's palette
+    // responds to them too.
+    fun applyMusicAmbientTweaks(color: Color): Color {
+      val hsv = FloatArray(3)
+      android.graphics.Color.colorToHSV(color.copy(alpha = 1f).toArgb(), hsv)
+      hsv[1] = (hsv[1] * ambientSatBoost).coerceIn(0f, 1f)
+      if (ambientWarmth > 0f) {
+        hsv[0] = (hsv[0] + 12f * ambientWarmth) % 360f
+        hsv[2] = (hsv[2] * (1f + 0.15f * ambientWarmth)).coerceIn(0f, 1f)
+      } else if (ambientWarmth < 0f) {
+        hsv[0] = (hsv[0] + 360f + 14f * ambientWarmth) % 360f
+        hsv[2] = (hsv[2] * (1f + 0.10f * ambientWarmth)).coerceIn(0f, 1f)
+      }
+      return Color(android.graphics.Color.HSVToColor(hsv)).copy(alpha = color.alpha)
     }
     withContext(Dispatchers.Default) {
       runCatching {
@@ -1365,8 +1383,8 @@ fun AudioPlayerControls(
 
         // Keep the extracted colors visibly present over the surface while retaining enough
         // transparency for foreground controls and artwork to remain readable.
-        val topColor = Color(if (base != 0) base else accent).copy(alpha = 0.62f)
-        val bottomColor = Color(if (accent != 0) accent else base).copy(alpha = 0.46f)
+        val topColor = applyMusicAmbientTweaks(Color(if (base != 0) base else accent)).copy(alpha = 0.62f)
+        val bottomColor = applyMusicAmbientTweaks(Color(if (accent != 0) accent else base)).copy(alpha = 0.46f)
         Pair(topColor, bottomColor)
       }.onSuccess { colors ->
         value = colors

@@ -95,7 +95,10 @@ class LyricsRepository(
     forceRefresh: Boolean = false,
   ): LyricsResult = withContext(Dispatchers.IO) {
     if (!forceRefresh) {
-      cache.get(mediaPath)?.let { return@withContext it }
+      // A cached miss (no embedded or online lyrics) is not sticky: the first load often runs
+      // before mpv has published Title/Artist metadata, so an empty result must be retried
+      // once metadata arrives instead of being served forever from the cache.
+      cache.get(mediaPath)?.takeIf { it.activeLyrics != null }?.let { return@withContext it }
     }
 
     Log.d(TAG, "Loading lyrics for: $title by $artist")
@@ -134,7 +137,9 @@ class LyricsRepository(
       availableSources = sources.distinct(),
     )
 
-    cache.put(mediaPath, result)
+    if (result.activeLyrics != null) {
+      cache.put(mediaPath, result)
+    }
     result
   }
 

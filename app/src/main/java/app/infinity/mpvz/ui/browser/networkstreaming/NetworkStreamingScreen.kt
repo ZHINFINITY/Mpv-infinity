@@ -182,7 +182,11 @@ object NetworkStreamingScreen : Screen {
     var showAddMediaDialog by remember { mutableStateOf(false) }
     var editingConnection by remember { mutableStateOf<NetworkConnection?>(null) }
     var showTorrentPicker by remember { mutableStateOf(false) }
-    val navigationBarHeight = app.infinity.mpvz.ui.browser.LocalNavigationBarHeight.current
+    val navigationBarHeight =
+      app.infinity.mpvz.ui.browser.LocalNavigationBarHeight.current
+        .takeIf { it > 0.dp }
+        ?: (app.infinity.mpvz.ui.browser.NavigationBarState.navigationBarClearance +
+          app.infinity.mpvz.ui.browser.NavigationBarState.miniPlayerClearance)
     val coroutineScope = rememberCoroutineScope()
 
     // yt-dlp install gate for the "paste link -> Play" flow: instead of silently installing

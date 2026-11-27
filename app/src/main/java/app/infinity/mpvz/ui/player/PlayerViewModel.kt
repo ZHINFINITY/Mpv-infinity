@@ -2337,6 +2337,24 @@ class PlayerViewModel(
         }
         launch { PlaybackSession.propInt["volume-max"].collect { _volumeBoostCap.value = it } }
         launch {
+          // Lyrics: the first load often runs before mpv has published media-title / metadata
+          // Title, so the embedded extractor and the online fetch both come up empty. Retry
+          // once the title becomes available if the lyrics pane is still empty.
+          var lastRetriedTitle: String? = null
+          combine(
+            PlaybackSession.propString["media-title"],
+            PlaybackSession.propString["metadata/by-key/Title"],
+          ) { mediaTitle, metaTitle -> mediaTitle ?: metaTitle ?: "" }
+            .collect { title ->
+              val state = lyricsUiState.value
+              if (title.isBlank() || state.isLoading) return@collect
+              if (state.lyrics != null || state.embeddedLyrics != null || state.onlineLyrics != null) return@collect
+              if (title == lastRetriedTitle) return@collect
+              lastRetriedTitle = title
+              loadLyricsForCurrentTrack()
+            }
+        }
+        launch {
           PlaybackSession.queue
             .map { it.repeatMode }
             .distinctUntilChanged()
