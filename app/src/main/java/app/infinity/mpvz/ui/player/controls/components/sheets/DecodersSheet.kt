@@ -67,8 +67,9 @@ fun DecodersSheet(
         if (!directMediaCodecAllowed) {
           item(key = "hwplus-unavailable-info") {
             Text(
-              "HW+ is unavailable in this Vulkan build because direct MediaCodec-to-Vulkan import " +
-                "is not enabled. HW still uses hardware decoding through a copy path.",
+              "HW+ needs a renderer that can take decoder frames without a copy, and this " +
+                "output/build cannot (mpv logs \"cannot copy surface of this format\"). HW still " +
+                "uses the hardware decoder through its copy path.",
             )
           }
         }

@@ -452,6 +452,11 @@ class MPVView(
       RendererBackendPolicy.hwdecForRequestedDecoder(
         hardwareDecodingEnabled = decoderPreferences.tryHWDecoding.get(),
         requested = decoderPreferences.requestedDecoder.get(),
+        directMediaCodecAvailable =
+          RendererBackendPolicy.canUseDirectMediaCodec(
+            usesVulkan = useVulkan,
+            buildSupportsMediaCodecVulkan = BuildConfig.MPV_SUPPORTS_MEDIACODEC_VULKAN,
+          ),
       ) ?: preferredHwdecMode(useVulkan)
     val mpvFlowFrameInterpolationPreference = decoderPreferences.mpvFlowFrameInterpolation.get()
     val displayRefreshRate =

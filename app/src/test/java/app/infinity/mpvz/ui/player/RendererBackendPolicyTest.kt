@@ -59,22 +59,47 @@ class RendererBackendPolicyTest {
   }
 
   @Test
-  fun explicitDecoderPickOverridesTheSafeDefault() {
-    // "HW+" is what the user picked; it must survive a new file instead of snapping back to the
-    // copy-mode default that showed up as "HW".
+  fun directMediaCodecRequiresTheVulkanImportPath() {
+    // On the OpenGL output mpv cannot take MediaCodec frames: it logs "cannot copy surface of
+    // this format to CPU memory" and restarts the decoder in copy mode on every load.
+    assertEquals(true, RendererBackendPolicy.canUseDirectMediaCodec(true, true))
+    assertEquals(false, RendererBackendPolicy.canUseDirectMediaCodec(true, false))
+    assertEquals(false, RendererBackendPolicy.canUseDirectMediaCodec(false, true))
+    assertEquals(false, RendererBackendPolicy.canUseDirectMediaCodec(false, false))
+  }
+
+  @Test
+  fun explicitDecoderPickIsClampedToWhatTheRendererCanDo() {
+    // "HW+" survives a new file when the renderer can import decoder frames ...
     assertEquals(
       "mediacodec,mediacodec-copy,no",
-      RendererBackendPolicy.hwdecForRequestedDecoder(true, "mediacodec"),
+      RendererBackendPolicy.hwdecForRequestedDecoder(
+        hardwareDecodingEnabled = true,
+        requested = "mediacodec",
+        directMediaCodecAvailable = true,
+      ),
+    )
+    // ... and asks for the copy path directly when it cannot, instead of failing first per file.
+    assertEquals(
+      "mediacodec-copy,no",
+      RendererBackendPolicy.hwdecForRequestedDecoder(
+        hardwareDecodingEnabled = true,
+        requested = "mediacodec",
+        directMediaCodecAvailable = false,
+      ),
     )
     assertEquals(
       "mediacodec-copy,no",
-      RendererBackendPolicy.hwdecForRequestedDecoder(true, "mediacodec-copy"),
+      RendererBackendPolicy.hwdecForRequestedDecoder(true, "mediacodec-copy", true),
     )
-    assertEquals("no", RendererBackendPolicy.hwdecForRequestedDecoder(true, "no"))
+    assertEquals("no", RendererBackendPolicy.hwdecForRequestedDecoder(true, "no", true))
     // Auto picks keep the renderer policy, and hardware off always wins.
-    assertEquals(null, RendererBackendPolicy.hwdecForRequestedDecoder(true, "auto"))
-    assertEquals(null, RendererBackendPolicy.hwdecForRequestedDecoder(true, "auto-copy"))
-    assertEquals(null, RendererBackendPolicy.hwdecForRequestedDecoder(true, ""))
-    assertEquals("no", RendererBackendPolicy.hwdecForRequestedDecoder(false, "mediacodec"))
+    assertEquals(null, RendererBackendPolicy.hwdecForRequestedDecoder(true, "auto", true))
+    assertEquals(null, RendererBackendPolicy.hwdecForRequestedDecoder(true, "auto-copy", true))
+    assertEquals(null, RendererBackendPolicy.hwdecForRequestedDecoder(true, "", true))
+    assertEquals(
+      "no",
+      RendererBackendPolicy.hwdecForRequestedDecoder(false, "mediacodec", true),
+    )
   }
 }

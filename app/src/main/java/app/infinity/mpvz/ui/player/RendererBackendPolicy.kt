@@ -19,10 +19,16 @@ internal object RendererBackendPolicy {
       userEnabledVulkan &&
       !forceOpenGlFallback
 
+  /**
+   * Zero-copy MediaCodec needs somewhere to hand the decoder surface: only the Vulkan import
+   * path has one. On the OpenGL output mpv cannot take `mediacodec` frames, so every load ends in
+   * `vf:fatal Cannot convert decoder/filter output` and mpv silently restarts in copy mode — the
+   * "starts as HW" the user saw, plus a wasted decoder init on each file.
+   */
   fun canUseDirectMediaCodec(
     usesVulkan: Boolean,
     buildSupportsMediaCodecVulkan: Boolean,
-  ): Boolean = !usesVulkan || buildSupportsMediaCodecVulkan
+  ): Boolean = usesVulkan && buildSupportsMediaCodecVulkan
 
   fun canUseDirectGpuFlow(
     renderer: String,
@@ -39,19 +45,25 @@ internal object RendererBackendPolicy {
   )
 
   /**
-   * An explicit pick from the decoder sheet wins over the safe default. "HW+" (direct MediaCodec
-   * import) is honoured on OpenGL too, where the reported mode would otherwise always be
-   * `mediacodec-copy`; the user accepts the known seek caveat by choosing it. Auto picks return
-   * null so [preferredHwdecMode] still picks the safe mode for the active renderer.
+   * An explicit pick from the decoder sheet wins over the safe default, but only as far as the
+   * active renderer can honour it: HW+ (direct import) is clamped to the copy path when the
+   * output cannot take decoder frames, so the player never burns a failed direct attempt per
+   * file. Auto picks return null so [preferredHwdecMode] still picks the safe mode.
    */
   fun hwdecForRequestedDecoder(
     hardwareDecodingEnabled: Boolean,
     requested: String,
+    directMediaCodecAvailable: Boolean,
   ): String? {
     if (!hardwareDecodingEnabled) return "no"
     return when (val value = requested.trim()) {
       "", "auto", "auto-copy" -> null
-      "mediacodec" -> "mediacodec,mediacodec-copy,no"
+      "mediacodec" ->
+        if (directMediaCodecAvailable) {
+          "mediacodec,mediacodec-copy,no"
+        } else {
+          "mediacodec-copy,no"
+        }
       "mediacodec-copy" -> "mediacodec-copy,no"
       else -> value
     }
