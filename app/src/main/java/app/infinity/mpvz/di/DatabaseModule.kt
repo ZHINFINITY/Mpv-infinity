@@ -905,6 +905,10 @@ val DatabaseModule =
         ).build()
     }
 
+    single { get<MpvInfinityDatabase>().frameCaptureDao() }
+
+    single { get<MpvInfinityDatabase>().snapshotFolderDao() }
+
     singleOf(::FrameCaptureRepositoryImpl).bind(FrameCaptureRepository::class)
 
     singleOf(::WatchStatsRepository)
