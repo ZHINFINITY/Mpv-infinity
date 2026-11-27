@@ -64,5 +64,13 @@ fun Modifier.settingsGlassSurface(
 fun settingsGlassContainerColor(fallback: androidx.compose.ui.graphics.Color): androidx.compose.ui.graphics.Color {
   val appearance = koinInject<AppearancePreferences>()
   val enabled by appearance.liquidGlassSurfaces.collectAsState()
-  return if (enabled) androidx.compose.ui.graphics.Color.Transparent else fallback
+  return if (enabled) {
+    // Glass optics sample the backdrop behind the pane. A custom theme (image or video
+    // wallpaper) or a dialog window can leave nothing to sample, and the popup then rendered
+    // fully transparent with unreadable text over the content below. Keep a soft scrim so
+    // every glass surface still reads as a frosted pane under any theme.
+    fallback.copy(alpha = fallback.alpha.coerceAtLeast(0.42f))
+  } else {
+    fallback
+  }
 }

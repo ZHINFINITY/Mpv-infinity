@@ -54,13 +54,28 @@ private fun AudioDeviceInfo.labelAndIcon(): Pair<String, app.infinity.mpvz.ui.ic
     AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
     AudioDeviceInfo.TYPE_WIRED_HEADSET,
     AudioDeviceInfo.TYPE_USB_HEADSET,
+    AudioDeviceInfo.TYPE_USB_DEVICE,
+    AudioDeviceInfo.TYPE_USB_ACCESSORY,
     -> "Headphones" to Icons.RoundedFilled.Headset
     AudioDeviceInfo.TYPE_BUILTIN_SPEAKER,
     AudioDeviceInfo.TYPE_TELEPHONY,
     -> "Speaker" to Icons.RoundedFilled.Speaker
-    AudioDeviceInfo.TYPE_BUILTIN_EARPIECE -> null // never a media output; routing here sends audio to the earpiece
+    AudioDeviceInfo.TYPE_HDMI -> "HDMI" to Icons.RoundedFilled.VolumeUp
     else -> "Audio output" to Icons.RoundedFilled.VolumeUp
   }
+
+/** True for outputs a user would pick to hear media: plugged-in or wireless devices first. */
+private fun AudioDeviceInfo.isPreferredMediaSink(): Boolean =
+  type in
+    setOf(
+      AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+      AudioDeviceInfo.TYPE_WIRED_HEADSET,
+      AudioDeviceInfo.TYPE_USB_HEADSET,
+      AudioDeviceInfo.TYPE_USB_DEVICE,
+      AudioDeviceInfo.TYPE_USB_ACCESSORY,
+      AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
+      AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+    )
 
 @Composable
 fun AudioOutputSheet(
@@ -74,12 +89,21 @@ fun AudioOutputSheet(
   }
   val maxVolume = remember { audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC) }
   var selectedDeviceId by remember {
-    mutableStateOf(audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).firstOrNull()?.id)
+    mutableStateOf(
+      // The communication list starts at the built-in speaker, so earbuds that media is really
+      // playing through were shown as "Speaker". Prefer a plugged-in or wireless media output.
+      audioManager
+        .getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+        .let { outputs -> outputs.firstOrNull { it.isPreferredMediaSink() } ?: outputs.firstOrNull() }
+        ?.id,
+    )
   }
   val devices =
     remember {
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        audioManager.availableCommunicationDevices
+        // Media outputs, not availableCommunicationDevices: USB-C and wired earbuds often have
+        // no communication route at all and were missing from (or mislabelled in) this list.
+        audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).filter { it.isSink }
       } else {
         emptyList()
       }

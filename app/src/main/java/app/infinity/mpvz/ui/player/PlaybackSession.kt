@@ -1089,8 +1089,10 @@ object PlaybackSession : MPVLib.EventObserver {
       loadedPlaybackItem = null
       val resolvedItem = item ?: PlaybackItem.fromUri(playableUri)
       // The core is reused across video and music, so a music item used to inherit the previous
-      // video's stats page until the music UI hid it a second later. Hide it as the item loads.
-      if (resolvedItem.isDefinitelyAudioOnly()) StatsLuaOverlay.hide()
+      // video's stats page until the music UI hid it a second later. Hide it as the item loads,
+      // before the first frame: streaming music URLs carry no extension or mime type, so
+      // "definitely audio" misses them and the page stayed up for that first second.
+      if (resolvedItem.declaredMediaKind() != DeclaredPlaybackMediaKind.VIDEO) StatsLuaOverlay.hide()
       if (resolvedItem.audiobook != null) AudiobookPlayback.ensureStarted()
       if (resolvedItem.audiobook == null && speedBeforeAudiobook != null) {
         if (!MpvConfigOverridePolicy.isOwnedByMpvConf("speed")) {

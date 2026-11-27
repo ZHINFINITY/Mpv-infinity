@@ -22,7 +22,7 @@ package app.infinity.mpvz.ui.player
 internal object PlaybackLoopbackLavfOptions {
   private const val STREAM_RECONNECT =
     "reconnect=1,reconnect_on_network_error=1,reconnect_on_http_error=5xx," +
-      "reconnect_streamed=1,reconnect_delay_max=5,reconnect_max_retries=5," +
+      "reconnect_streamed=1,reconnect_delay_max=1,reconnect_max_retries=8," +
       "reconnect_delay_total_max=20"
 
   /** Primary http(s) URL, remote host: same value `MPVView` installs on init. */

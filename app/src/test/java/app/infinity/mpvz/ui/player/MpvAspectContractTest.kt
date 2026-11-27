@@ -261,8 +261,8 @@ class MpvAspectContractTest {
         "reconnect=1",
         "reconnect_on_network_error=1",
         "reconnect_streamed=1",
-        "reconnect_delay_max=5",
-        "reconnect_max_retries=5",
+        "reconnect_delay_max=1",
+        "reconnect_max_retries=8",
         "reconnect_delay_total_max=20",
       )
     listOf(PlaybackLoopbackLavfOptions.REMOTE_DEMUXER, PlaybackLoopbackLavfOptions.LOOPBACK_DEMUXER)
@@ -277,7 +277,7 @@ class MpvAspectContractTest {
     val streamHalves =
       listOf(
         "http_persistent=1,reconnect=1,reconnect_on_network_error=1,reconnect_on_http_error=5xx,",
-        "reconnect_streamed=1,reconnect_delay_max=5,reconnect_max_retries=5,",
+        "reconnect_streamed=1,reconnect_delay_max=1,reconnect_max_retries=8,",
         "reconnect_delay_total_max=20",
       )
     assertTrue(streamHalves.all { mpvView.contains("\"$it\"") })

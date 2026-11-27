@@ -845,19 +845,13 @@ class MPVView(
     PlaybackSession.setOptionString("demuxer-max-back-bytes", "32MiB")
     // Larger low-level stream buffer: fewer read round-trips per second of media, which the
     // loopback torrent/relay proxies and slow direct links benefit from the most.
-    PlaybackSession.setOptionString("stream-buffer-size", "1MiB")
+    PlaybackSession.setOptionString("stream-buffer-size", "4MiB")
     // Fail fast on a dead connect so the reconnect policy starts recovering instead of hanging
     // the open for mpv's 60s default.
     PlaybackSession.setOptionString("network-timeout", "15")
-    // After an underrun, wait for more than two seconds of buffer before resuming, so flaky
-    // sources do not stall-stop-stall in a loop.
-    PlaybackSession.setOptionString("cache-pause-wait", "4")
     // Hold the first frames until a small buffer is in, so playback doesn't stutter in its
     // first seconds on a slow-start source.
     PlaybackSession.setOptionString("cache-pause-initial", "yes")
-    // mpv's own network profile: read ahead this many seconds regardless of how little the
-    // demuxer thinks it needs, up to demuxer-max-bytes.
-    PlaybackSession.setOptionString("demuxer-readahead-secs", "20")
     // Recover boundedly from transient HTTP/TLS disconnects, including non-seekable live inputs.
     // Do not use reconnect_at_eof globally: a legitimate VOD EOF must still finish normally.
     // The http protocol options live in stream-lavf-o: libavformat applies that dict to the opened
@@ -870,11 +864,12 @@ class MPVView(
     )
     // demuxer-lavf-o only reaches demuxer-internal opens (HLS/DASH segments). The primary http(s)
     // URL is opened by stream_lavf, which reads stream-lavf-o; without it a dropped connection or
-    // one failed seek-reopen permanently stalls network playback (endless buffering).
+    // one failed seek-reopen permanently stalls network playback (endless buffering). The short
+    // reconnect delay keeps a hiccup from freezing playback for the whole backoff window.
     PlaybackSession.setOptionString(
       "stream-lavf-o",
       "http_persistent=1,reconnect=1,reconnect_on_network_error=1,reconnect_on_http_error=5xx," +
-        "reconnect_streamed=1,reconnect_delay_max=5,reconnect_max_retries=5," +
+        "reconnect_streamed=1,reconnect_delay_max=1,reconnect_max_retries=8," +
         "reconnect_delay_total_max=20",
     )
     // Drop only video-output-bound late frames when rendering cannot keep up.
