@@ -80,6 +80,12 @@
   <string name="pref_nav_navidrome_summary">Pokaż lub ukryj Navidrome w ten dolny nawigacja pasek</string>
   <string name="pref_nav_audiobooks_title">Pokaż Audiobooks karta</string>
   <string name="pref_nav_audiobooks_summary">Pokaż lub ukryj Lokalne i Audiobookshelf audiobooks w ten dolny nawigacja pasek</string>
+
+  <string name="pref_nav_profile_title">Pokaż kartę profilu</string>
+  <string name="pref_nav_profile_summary">Pokaż lub ukryj sekcję profilu na dolnym pasku nawigacji</string>
+  <string name="playlist_zip_option_title">Odtwórz plik zip</string>
+  <string name="playlist_zip_option_summary">Wybierz archiwum zip z filmami lub muzyką i odtwórz je jak playlistę</string>
+  <string name="playlist_zip_option_failed">Nie udało się otworzyć pliku zip</string>
   <string name="pref_section_network">Sieć</string>
   <string name="pref_media_servers_title">Multimedia Servers</string>
   <string name="pref_media_servers_summary">Zarządzaj Jellyfin, Navidrome, i Audiobookshelf connections</string>

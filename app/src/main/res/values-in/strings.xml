@@ -80,6 +80,12 @@
   <string name="pref_nav_navidrome_summary">Tampilkan atau sembunyikan Navidrome di bilah navigasi bawah</string>
   <string name="pref_nav_audiobooks_title">Tampilkan tab Audiobook</string>
   <string name="pref_nav_audiobooks_summary">Tampilkan atau sembunyikan audiobook lokal dan Audiobookshelf di bilah navigasi bawah</string>
+
+  <string name="pref_nav_profile_title">Tampilkan tab Profil</string>
+  <string name="pref_nav_profile_summary">Tampilkan atau sembunyikan bagian Profil di bilah navigasi bawah</string>
+  <string name="playlist_zip_option_title">Putar file zip</string>
+  <string name="playlist_zip_option_summary">Pilih arsip zip berisi video atau musik lalu putar seperti daftar putar</string>
+  <string name="playlist_zip_option_failed">Tidak dapat membuka file zip</string>
   <string name="pref_section_network">Jaringan</string>
   <string name="pref_media_servers_title">Server media</string>
   <string name="pref_media_servers_summary">Kelola koneksi Jellyfin, Navidrome, dan Audiobookshelf</string>

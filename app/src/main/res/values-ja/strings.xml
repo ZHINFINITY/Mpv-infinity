@@ -80,6 +80,12 @@
   <string name="pref_nav_navidrome_summary">下部ナビゲーションバーのNavidromeを表示または非表示</string>
   <string name="pref_nav_audiobooks_title">オーディオブックタブを表示</string>
   <string name="pref_nav_audiobooks_summary">下部ナビゲーションバーのローカルおよびAudiobookshelfのオーディオブックを表示または非表示</string>
+
+  <string name="pref_nav_profile_title">プロフィールタブを表示</string>
+  <string name="pref_nav_profile_summary">下部ナビゲーションバーのプロフィール欄の表示を切り替えます</string>
+  <string name="playlist_zip_option_title">zip ファイルを再生</string>
+  <string name="playlist_zip_option_summary">動画や音楽の zip アーカイブを選んでプレイリストのように再生します</string>
+  <string name="playlist_zip_option_failed">zip ファイルを開けませんでした</string>
   <string name="pref_section_network">ネットワーク</string>
   <string name="pref_media_servers_title">メディアサーバー</string>
   <string name="pref_media_servers_summary">Jellyfin、Navidrome、Audiobookshelfの接続を管理</string>

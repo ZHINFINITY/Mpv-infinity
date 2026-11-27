@@ -86,6 +86,12 @@
   <string name="pref_nav_navidrome_summary">Show or hide Navidrome in the bottom navigation bar</string>
   <string name="pref_nav_audiobooks_title">Show Audiobooks tab</string>
   <string name="pref_nav_audiobooks_summary">Show or hide local and Audiobookshelf audiobooks in the bottom navigation bar</string>
+
+  <string name="pref_nav_profile_title">Show Profile tab</string>
+  <string name="pref_nav_profile_summary">Show or hide the Profile section in the bottom navigation bar</string>
+  <string name="playlist_zip_option_title">Play a zip file</string>
+  <string name="playlist_zip_option_summary">Pick a zip archive of videos or music and play it like a playlist</string>
+  <string name="playlist_zip_option_failed">Could not open that zip file</string>
   <string name="pref_section_network">Network</string>
   <string name="pref_media_servers_title">Media Servers</string>
   <string name="pref_media_servers_summary">Manage Jellyfin, Navidrome, and Audiobookshelf connections</string>

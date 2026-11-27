@@ -80,6 +80,12 @@
   <string name="pref_nav_navidrome_summary">نمایش یا پنهان کردنNavidromeدر نوار ناوبری پایین</string>
   <string name="pref_nav_audiobooks_title">صفحه نمایش Audiobooks</string>
   <string name="pref_nav_audiobooks_summary">نمایش یا پنهان کردن محلی وAudiobookshelfکتاب های صوتی در نوار ناوبری پایین</string>
+
+  <string name="pref_nav_profile_title">نمایش برگه پروفایل</string>
+  <string name="pref_nav_profile_summary">نمایش یا پنهان کردن بخش پروفایل در نوار ناوبری پایین</string>
+  <string name="playlist_zip_option_title">پخش یک فایل zip</string>
+  <string name="playlist_zip_option_summary">یک آرشیو zip از ویدیو یا موسیقی انتخاب کنید و مثل یک فهرست پخش کنید</string>
+  <string name="playlist_zip_option_failed">باز کردن فایل zip ممکن نشد</string>
   <string name="pref_section_network">شبکه Network</string>
   <string name="pref_media_servers_title">Media Servers</string>
   <string name="pref_media_servers_summary">مدیریت مدیریتJellyfin,NavidromeوAudiobookshelfاتصالات</string>

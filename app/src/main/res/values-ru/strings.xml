@@ -80,6 +80,12 @@
   <string name="pref_nav_navidrome_summary">Показывать или скрывать Navidrome на нижней панели навигации</string>
   <string name="pref_nav_audiobooks_title">Показывать вкладку аудиокниг</string>
   <string name="pref_nav_audiobooks_summary">Показывать локальные аудиокниги и аудиокниги Audiobookshelf на нижней панели навигации</string>
+
+  <string name="pref_nav_profile_title">Показывать вкладку профиля</string>
+  <string name="pref_nav_profile_summary">Показать или скрыть раздел профиля в нижней панели навигации</string>
+  <string name="playlist_zip_option_title">Воспроизвести zip-файл</string>
+  <string name="playlist_zip_option_summary">Выберите zip-архив с видео или музыкой и воспроизведите его как плейлист</string>
+  <string name="playlist_zip_option_failed">Не удалось открыть zip-файл</string>
   <string name="pref_section_network">Сеть</string>
   <string name="pref_media_servers_title">Медиасерверы</string>
   <string name="pref_media_servers_summary">Управление подключениями Jellyfin, Navidrome и Audiobookshelf</string>

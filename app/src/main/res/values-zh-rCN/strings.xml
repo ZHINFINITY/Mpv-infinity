@@ -80,6 +80,12 @@
   <string name="pref_nav_navidrome_summary">显示或隐藏底部导航栏中的 Navidrome</string>
   <string name="pref_nav_audiobooks_title">显示 Audiobooks 标签页</string>
   <string name="pref_nav_audiobooks_summary">显示或隐藏底部导航栏中的本地有声书和 Audiobookshelf 有声书</string>
+
+  <string name="pref_nav_profile_title">显示个人资料页</string>
+  <string name="pref_nav_profile_summary">在底部导航栏中显示或隐藏个人资料区</string>
+  <string name="playlist_zip_option_title">播放 zip 文件</string>
+  <string name="playlist_zip_option_summary">选择包含视频或音乐的 zip 压缩包，像播放列表一样播放</string>
+  <string name="playlist_zip_option_failed">无法打开该 zip 文件</string>
   <string name="pref_section_network">网络</string>
   <string name="pref_media_servers_title">媒体服务器</string>
   <string name="pref_media_servers_summary">管理 Jellyfin、Navidrome 和 Audiobookshelf 连接</string>

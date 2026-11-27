@@ -80,6 +80,12 @@
   <string name="pref_nav_navidrome_summary">नीचे के नेविगेशन बार में Navidrome दिखाएँ या छिपाएँ</string>
   <string name="pref_nav_audiobooks_title">ऑडियोबुक टैब दिखाएँ</string>
   <string name="pref_nav_audiobooks_summary">नीचे के नेविगेशन बार में स्थानीय और Audiobookshelf ऑडियोबुक दिखाएँ या छिपाएँ</string>
+
+  <string name="pref_nav_profile_title">प्रोफ़ाइल टैब दिखाएँ</string>
+  <string name="pref_nav_profile_summary">निचे नेविगेशन बार में प्रोफ़ाइल अनुभाग दिखाएँ या छिपाएँ</string>
+  <string name="playlist_zip_option_title">zip फ़ाइल चलाएँ</string>
+  <string name="playlist_zip_option_summary">वीडियो या संगीत का zip संग्रह चुनें और प्लेलिस्ट की तरह चलाएँ</string>
+  <string name="playlist_zip_option_failed">zip फ़ाइल नहीं खोली जा सकी</string>
   <string name="pref_section_network">नेटवर्क</string>
   <string name="pref_media_servers_title">मीडिया सर्वर</string>
   <string name="pref_media_servers_summary">Jellyfin, Navidrome और Audiobookshelf कनेक्शन प्रबंधित करें</string>

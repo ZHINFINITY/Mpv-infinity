@@ -80,6 +80,12 @@
   <string name="pref_nav_navidrome_summary">காட்டு அல்லது மறை Navidrome இல் கீழ் வழிசெலுத்தல் பட்டை</string>
   <string name="pref_nav_audiobooks_title">காட்டு Audiobooks தாவல்</string>
   <string name="pref_nav_audiobooks_summary">காட்டு அல்லது மறை உள்ளூர் மற்றும் Audiobookshelf audiobooks இல் கீழ் வழிசெலுத்தல் பட்டை</string>
+
+  <string name="pref_nav_profile_title">சுயவிவரத் தத்தலைக் காட்டு</string>
+  <string name="pref_nav_profile_summary">கீழ் வழிசெலுத்தல் பட்டியில் சுயவிவரப் பகுதியைக் காட்டு அல்லது மறை</string>
+  <string name="playlist_zip_option_title">zip கோப்பை இயக்கு</string>
+  <string name="playlist_zip_option_summary">காணொளி அல்லது இசை zip காப்பகத்தைத் தேர்ந்தெடுத்து பாடல் பட்டியலாக இயக்கவும்</string>
+  <string name="playlist_zip_option_failed">zip கோப்பைத் திறக்க முடியவில்லை</string>
   <string name="pref_section_network">பிணையம்</string>
   <string name="pref_media_servers_title">ஊடகம் Servers</string>
   <string name="pref_media_servers_summary">நிர்வகி Jellyfin, Navidrome, மற்றும் Audiobookshelf connections</string>

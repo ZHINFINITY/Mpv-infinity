@@ -291,11 +291,6 @@ object ProfileScreen : Screen {
     val isRefreshing = remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val missingFileMessage = stringResource(R.string.ui_recent_file_no_longer_exists)
-    val showHeaderAvatar by remember {
-      derivedStateOf {
-        listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 160
-      }
-    }
     val heroCollapseProgress by remember {
       derivedStateOf {
         if (listState.firstVisibleItemIndex > 0) 1f
@@ -303,9 +298,6 @@ object ProfileScreen : Screen {
       }
     }
     val reduceMotion = AppMotion.shouldReduceMotion()
-    val headerAlphaSpec = if (reduceMotion) AppMotion.ReducedAlpha else AppMotion.Effect.Alpha
-    val headerOffsetSpec = if (reduceMotion) AppMotion.ReducedOffset else AppMotion.Spatial.ExpressiveOffset
-    val headerScaleSpec = if (reduceMotion) AppMotion.ReducedAlpha else AppMotion.Spatial.ExpressiveDefault
 
     fun playRecent(video: Video) {
       scope.launch {
@@ -330,56 +322,30 @@ object ProfileScreen : Screen {
           title = "",
           showTitle = false,
           additionalActions = {
-            AnimatedContent(
-              targetState = showHeaderAvatar,
-              transitionSpec = {
-                if (reduceMotion) {
-                  fadeIn(headerAlphaSpec).togetherWith(fadeOut(headerAlphaSpec))
-                } else if (targetState) {
-                  (fadeIn(headerAlphaSpec) + slideInVertically(headerOffsetSpec) { it / 2 } + scaleIn(headerScaleSpec, initialScale = 0.86f))
-                    .togetherWith(fadeOut(headerAlphaSpec) + slideOutVertically(headerOffsetSpec) { -it / 2 })
-                } else {
-                  (fadeIn(headerAlphaSpec) + slideInVertically(headerOffsetSpec) { -it / 2 })
-                    .togetherWith(fadeOut(headerAlphaSpec) + slideOutVertically(headerOffsetSpec) { it / 2 } + scaleOut(headerScaleSpec, targetScale = 0.86f))
-                }
-              },
-              label = "profileHeaderTransition",
-            ) { isCollapsed ->
-              if (isCollapsed) {
-                Row(
-                  verticalAlignment = Alignment.CenterVertically,
-                  horizontalArrangement = Arrangement.spacedBy(10.dp),
-                  modifier =
-                    Modifier
-                      .clip(CircleShape)
-                      .clickable {
-                        scope.launch { listState.animateScrollToItem(0) }
-                      }
-                      .padding(vertical = 4.dp, horizontal = 4.dp),
-                ) {
-                  ProfileAvatar(
-                    size = 36.dp,
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    contentDescription = profileName,
-                  )
-                  Text(
-                    text = profileName.ifBlank { stringResource(R.string.ui_profile) },
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onSurface.onWallpaper(),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                  )
-                }
-              } else {
-                Text(
-                  text = stringResource(R.string.ui_profile),
-                  style = MaterialTheme.typography.headlineMedium,
-                  fontWeight = FontWeight.ExtraBold,
-                  color = MaterialTheme.colorScheme.primary.onWallpaper(),
-                  modifier = Modifier.padding(start = 8.dp),
-                )
-              }
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(10.dp),
+              modifier =
+                Modifier
+                  .clip(CircleShape)
+                  .clickable {
+                    scope.launch { listState.animateScrollToItem(0) }
+                  }
+                  .padding(vertical = 4.dp, horizontal = 4.dp),
+            ) {
+              ProfileAvatar(
+                size = 36.dp,
+                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                contentDescription = profileName,
+              )
+              Text(
+                text = profileName.ifBlank { stringResource(R.string.ui_profile) },
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onSurface.onWallpaper(),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+              )
             }
           },
         )

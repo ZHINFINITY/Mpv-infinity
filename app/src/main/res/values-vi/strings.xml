@@ -80,6 +80,12 @@
   <string name="pref_nav_navidrome_summary">Hiện hoặc ẩn Navidrome trong thanh điều hướng dưới cùng</string>
   <string name="pref_nav_audiobooks_title">Hiện thẻ Sách nói</string>
   <string name="pref_nav_audiobooks_summary">Hiện hoặc ẩn sách nói cục bộ và sách nói Audiobookshelf trong thanh điều hướng dưới cùng</string>
+
+  <string name="pref_nav_profile_title">Hiện tab Hồ sơ</string>
+  <string name="pref_nav_profile_summary">Hiện hoặc ẩn mục Hồ sơ trên thanh điều hướng dưới cùng</string>
+  <string name="playlist_zip_option_title">Phát tệp zip</string>
+  <string name="playlist_zip_option_summary">Chọn kho lưu trữ zip chứa video hoặc nhạc và phát như một danh sách phát</string>
+  <string name="playlist_zip_option_failed">Không thể mở tệp zip</string>
   <string name="pref_section_network">Mạng</string>
   <string name="pref_media_servers_title">Máy chủ đa phương tiện</string>
   <string name="pref_media_servers_summary">Quản lý kết nối Jellyfin, Navidrome và Audiobookshelf</string>

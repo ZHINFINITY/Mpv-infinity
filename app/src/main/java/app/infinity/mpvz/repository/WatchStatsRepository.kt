@@ -45,7 +45,8 @@ class WatchStatsRepository(
   private val mutex = Mutex()
   private val state = MutableStateFlow(load())
 
-  val revision: StateFlow<Long> = MutableStateFlow(0L)
+  private val revisionFlow = MutableStateFlow(0L)
+  val revision: StateFlow<Long> = revisionFlow.asStateFlow()
 
   fun snapshot(): WatchStatsSnapshot = state.value
 
@@ -55,6 +56,7 @@ class WatchStatsRepository(
     seconds: Long,
     artworkUri: String? = null,
     sourceUri: String? = null,
+    countsAsSession: Boolean = true,
   ) {
     if (seconds <= 0L || title.isBlank()) return
     mutex.withLock {
@@ -64,7 +66,7 @@ class WatchStatsRepository(
       val updated =
         current.copy(
           totalSeconds = current.totalSeconds + seconds,
-          sessions = current.sessions + 1,
+          sessions = if (countsAsSession) current.sessions + 1 else current.sessions,
           videoSeconds = if (isAudio) current.videoSeconds else current.videoSeconds + seconds,
           audioSeconds = if (isAudio) current.audioSeconds + seconds else current.audioSeconds,
           days = mergeDay(current.days, seconds),
@@ -83,6 +85,7 @@ class WatchStatsRepository(
         )
       state.value = updated
       persist(updated)
+      revisionFlow.value += 1L
     }
   }
 
@@ -90,6 +93,7 @@ class WatchStatsRepository(
     mutex.withLock {
       state.value = WatchStatsSnapshot()
       persist(state.value)
+      revisionFlow.value += 1L
     }
   }
 

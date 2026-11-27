@@ -63,12 +63,23 @@ fun PlaylistActionSheet(
   onCreatePlaylist: suspend (String) -> Long,
   onCreateM3UPlaylistFromFile: suspend (Uri, Boolean) -> Result<Long>,
   onCreateM3UPlaylist: suspend (String, String?, Boolean) -> Result<Long>,
+  onPlayZipFile: (Uri) -> Unit = {},
   context: android.content.Context,
   modifier: Modifier = Modifier,
 ) {
   var showCreateDialog by remember { mutableStateOf(false) }
   var showM3UDialog by remember { mutableStateOf(false) }
   var radioImport by remember { mutableStateOf(false) }
+
+  val zipPickerLauncher =
+    rememberLauncherForActivityResult(
+      contract = ActivityResultContracts.GetContent(),
+    ) { uri: Uri? ->
+      uri?.let {
+        onDismiss()
+        onPlayZipFile(it)
+      }
+    }
 
   if (!isOpen) return
 
@@ -202,6 +213,20 @@ fun PlaylistActionSheet(
               style = MaterialTheme.typography.bodySmall,
               color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+          }
+        }
+      }
+
+      Card(
+        onClick = { zipPickerLauncher.launch("*/*") },
+        modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)),
+      ) {
+        Row(modifier = Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+          Icon(imageVector = Icons.RoundedFilled.Folder, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
+          Column(modifier = Modifier.weight(1f)) {
+            Text(text = stringResource(app.infinity.mpvz.R.string.playlist_zip_option_title), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+            Text(text = stringResource(app.infinity.mpvz.R.string.playlist_zip_option_summary), style = MaterialTheme.typography.bodySmall)
           }
         }
       }

@@ -7616,6 +7616,8 @@ class PlayerActivity :
     }
   }
 
+  private var watchStatsLastRecordAtMs: Long = 0L
+
   private suspend fun recordWatchStatsSegment(seconds: Long) {
     val item = PlaybackSession.queue.value.currentItem ?: return
     val playing =
@@ -7628,13 +7630,19 @@ class PlayerActivity :
     val title = item.title?.takeIf { it.isNotBlank() }
       ?: item.originalUri.substringAfterLast('/').takeIf { it.isNotBlank() }
       ?: return
+    val nowMs = System.currentTimeMillis()
+    // A new "session" starts after a 2-minute gap (new item or a long pause), not on
+    // every 15-second tick, so the session count stays meaningful.
+    val countsAsSession = nowMs - watchStatsLastRecordAtMs > 120_000L
     watchStatsRepository.record(
       title = title,
       isAudio = item.declaredMediaKind() == DeclaredPlaybackMediaKind.AUDIO,
       seconds = seconds,
       artworkUri = item.artworkUri,
       sourceUri = item.originalUri,
+      countsAsSession = countsAsSession,
     )
+    watchStatsLastRecordAtMs = nowMs
   }
 
   private fun capturePlaybackStateSnapshot(mediaTitle: String): PlaybackStateSnapshot? {
