@@ -76,7 +76,7 @@ internal fun interpolationControlsAvailable(activity: PlayerActivity): Boolean {
     currentlyEnabled = enabled,
     vulkanAvailable = vulkanAvailable,
     nativeEngine = activity.isNativeEngineActive(),
-    mpvRuntimeAvailable = BuildConfig.MPV_HAS_FONGMI_MEMC,
+    mpvRuntimeAvailable = BuildConfig.MPV_HAS_PINNED_MEMC,
     configOwned = configOwned,
     anime4kActive = animeEnabled && animeMode != "OFF",
   )

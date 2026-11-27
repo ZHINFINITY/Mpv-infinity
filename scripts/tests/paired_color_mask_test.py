@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regression checks for FongMi's paired-color mask and selective contour resolver."""
+"""Regression checks for Pinned's paired-color mask and selective contour resolver."""
 from __future__ import annotations
 
 import argparse
@@ -12,8 +12,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
-import patch_fongmi_motion_downsample as DOWNSAMPLE  # noqa: E402
-import patch_fongmi_paired_color_mask as PATCHER  # noqa: E402
+import patch_motion_downsample as DOWNSAMPLE  # noqa: E402
+import patch_paired_color_mask as PATCHER  # noqa: E402
 
 TARGET_FPS_OPTIONS = (48, 60, 72, 90, 96, 120, 144)
 DISPLAY_FPS_OPTIONS = (60, 90, 120, 144)
@@ -123,7 +123,7 @@ def compile_resolver(source: str) -> None:
         print("Skipping selective resolver GLSL compile: glslangValidator is unavailable")
         return
     if not PATCHER.has_paired_color_mask(source):
-        raise AssertionError("GLSL compile requires the validated patched FongMi source")
+        raise AssertionError("GLSL compile requires the validated patched Pinned source")
     shader = f"""#version 450
 layout(local_size_x = 1, local_size_y = 1) in;
 layout(set = 0, binding = 0) uniform sampler2D source0;
@@ -154,7 +154,7 @@ vec4 run_resolver() {{
 }}
 void main() {{ imageStore(output_image, ivec2(0), run_resolver()); }}
 """
-    with tempfile.TemporaryDirectory(prefix="fongmi-selective-contour-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="pinned-selective-contour-") as tmp:
         shader_path = Path(tmp) / "selective_contour.comp"
         spirv_path = Path(tmp) / "selective_contour.spv"
         shader_path.write_text(shader, encoding="utf-8")
@@ -174,7 +174,7 @@ def verify_reprepare_cycle(source: str) -> None:
     """Model the build script's second prepare call without changing synthesis."""
     base_source = PATCHER.unpatch_source(source)
     antialias_enabled = DOWNSAMPLE.has_antialias_filter(base_source)
-    with tempfile.TemporaryDirectory(prefix="fongmi-reprepare-cycle-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="pinned-reprepare-cycle-") as tmp:
         motion_path = Path(tmp) / "motion.c"
         motion_path.write_text(source, encoding="utf-8")
         assert PATCHER.strip_patch(motion_path), "the prior prepare pass must be stripped"
@@ -197,7 +197,7 @@ def source_fixture() -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--source", type=Path, help="raw or prepared pinned FongMi motion.c")
+    parser.add_argument("--source", type=Path, help="raw or prepared pinned Pinned motion.c")
     args = parser.parse_args()
 
     original = args.source.read_text(encoding="utf-8") if args.source else source_fixture()

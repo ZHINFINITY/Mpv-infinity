@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify the Native Region3 shader and MPV FongMi MEMC marker in an APK."""
+"""Verify the Native Region3 shader and MPV Pinned MEMC marker in an APK."""
 import ast
 import hashlib
 import json
@@ -12,7 +12,7 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1]
 MPV_LIBRARY = "lib/arm64-v8a/libmpv.so"
 NATIVE_LIBRARY = "lib/arm64-v8a/libmedia3flow_vulkan.so"
-FONGMI_MEMC_OPTION = b"motion-interpolation"
+PINNED_MEMC_OPTION = b"motion-interpolation"
 
 
 def region3_shader(root: Path = ROOT) -> bytes:
@@ -38,21 +38,21 @@ def verify_apk(apk: Path, root: Path = ROOT) -> dict:
         except KeyError as error:
             raise AssertionError(f"APK is missing required native library: {error.args[0]}") from error
 
-    if FONGMI_MEMC_OPTION not in mpv_data:
-        raise AssertionError(f"{MPV_LIBRARY} does not contain the FongMi MEMC option marker")
+    if PINNED_MEMC_OPTION not in mpv_data:
+        raise AssertionError(f"{MPV_LIBRARY} does not contain the Pinned MEMC option marker")
     if shader not in native_data:
         raise AssertionError(f"{NATIVE_LIBRARY} does not contain the exact Native Region3 synthesis shader")
 
     return {
         "apk": apk.name,
         "mpv_library": MPV_LIBRARY,
-        "mpv_memc_marker": FONGMI_MEMC_OPTION.decode("ascii"),
+        "mpv_memc_marker": PINNED_MEMC_OPTION.decode("ascii"),
         "native_library": NATIVE_LIBRARY,
         "shader_sha256": hashlib.sha256(shader).hexdigest(),
         "shader_bytes": len(shader),
         "verified_libraries": [MPV_LIBRARY, NATIVE_LIBRARY],
         "commit": os.environ.get("GITHUB_SHA"),
-        "claim": "MPV FongMi MEMC option and Native Region3 shader embedding verified; no phone visual/performance claim.",
+        "claim": "MPV Pinned MEMC option and Native Region3 shader embedding verified; no phone visual/performance claim.",
     }
 
 

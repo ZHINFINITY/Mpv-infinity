@@ -92,7 +92,7 @@ int main(void)
         }
     }
 
-    puts("FongMi clock phase/cadence matrix passed for every app target (48, 60, 72, 90, 96, 120, 144 fps)");
+    puts("Pinned clock phase/cadence matrix passed for every app target (48, 60, 72, 90, 96, 120, 144 fps)");
     puts("Covered 24/30-fps sources and 60/90/120/144-Hz displays, including 120-fps direct and quantized paths");
     return 0;
 }

@@ -20,7 +20,7 @@ expected_sha256() {
 }
 
 # Match the order and zero-fuzz/idempotency checks used by
-# mpvlibAndroid's FongMi AAR build at commit d04217abe8e72e4a099269f045855bf69b87d53b.
+# mpvlibAndroid's Pinned AAR build at commit d04217abe8e72e4a099269f045855bf69b87d53b.
 for patch_name in \
   libbluray-1.4.1-still-eof.patch \
   libbluray-1.4.1-checked-seek.patch \
@@ -48,9 +48,9 @@ done
 for symbol in bd_seek_time_checked bd_get_titles_with_menu_info; do
   if ! grep -q "$symbol" "$source_dir/src/libbluray/bluray.h" || \
      ! grep -q "$symbol" "$source_dir/src/libbluray/bluray.c"; then
-    echo "Patched libbluray is missing required FongMi MPV API: $symbol" >&2
+    echo "Patched libbluray is missing required Pinned MPV API: $symbol" >&2
     exit 1
   fi
 done
 
-printf '%s\n' "Verified MPV-RX FongMi libbluray 1.4.1 patch set in $source_dir"
+printf '%s\n' "Verified MPV-RX Pinned libbluray 1.4.1 patch set in $source_dir"

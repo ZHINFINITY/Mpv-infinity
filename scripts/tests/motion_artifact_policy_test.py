@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for the app-owned safeguards applied to the pinned FongMi shader."""
+"""Tests for the app-owned safeguards applied to the pinned Pinned shader."""
 from __future__ import annotations
 
 import argparse
@@ -9,14 +9,14 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-PATCHER_PATH = ROOT / "scripts/patch_fongmi_motion_artifact.py"
+PATCHER_PATH = ROOT / "scripts/patch_motion_artifact.py"
 PATCHER_SOURCE = PATCHER_PATH.read_text(encoding="utf-8")
-SPEC = importlib.util.spec_from_file_location("patch_fongmi_motion_artifact", PATCHER_PATH)
+SPEC = importlib.util.spec_from_file_location("patch_motion_artifact", PATCHER_PATH)
 assert SPEC and SPEC.loader
 PATCHER = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(PATCHER)
 parser = argparse.ArgumentParser()
-parser.add_argument("--source", type=Path, help="active pinned FongMi motion.c built by the runtime workflow")
+parser.add_argument("--source", type=Path, help="active pinned Pinned motion.c built by the runtime workflow")
 args = parser.parse_args()
 
 BASE_PIXEL_HEADER = """    vec4 synthesize_pixel(sampler2D source0, sampler2D source1, sampler2D warp0,
@@ -162,13 +162,13 @@ def fixture(trust: str = BASE_TRUST, output: str = BASE_OUTPUT, output_indent: s
         + BASE_REFINEMENT
         + "\n"
         + BASE_WARP
-        + "\nFongMi reconstruction prefix\n"
+        + "\nPinned reconstruction prefix\n"
         "static const char reconstruction_body[] = GLSL(\n"
         + BASE_RECONSTRUCTION
         + "\n);\n"
         + BASE_SCENE
         + "\n"
-        "FongMi synthesis prefix\n"
+        "Pinned synthesis prefix\n"
         "static const char synthesis_pixel_header[] = GLSL(\n"
         + BASE_PIXEL_HEADER
         + "\n"
@@ -176,7 +176,7 @@ def fixture(trust: str = BASE_TRUST, output: str = BASE_OUTPUT, output_indent: s
         + "\n"
         + PATCHER._indent_block(output, output_indent)
         + "\n);\n"
-        "FongMi synthesis suffix\n"
+        "Pinned synthesis suffix\n"
     )
 
 
@@ -517,7 +517,7 @@ assert "color = source_blend * (1.0 - visibility_sum) +" in patched
 assert "visibility += conflict_weight * phase * vec2(f.z, r.z) * evidence;" in patched
 assert "visibility *= clamp(boundary_trust * region3_local_trust, 0.0, 1.0);" in patched
 assert "visibility *= clamp(spatial_visibility_scale, 0.0, 1.0);" in patched
-assert "FongMi synthesis prefix\n" in patched and "FongMi synthesis suffix\n" in patched
+assert "Pinned synthesis prefix\n" in patched and "Pinned synthesis suffix\n" in patched
 texture_flow = (3.25, -2.5)
 assert aperture_normal(1.0, 0.0, 1.0) is None
 assert aperture_refined_vector(texture_flow, (1.0, 0.0, 1.0)) == texture_flow
@@ -794,7 +794,7 @@ assert regressive_primary_trust != patched
 assert regressive_pixel_fallback != patched
 
 for invalid in (
-    "unrecognized FongMi source",
+    "unrecognized Pinned source",
     fixture() + fixture(),
     fixture(LEGACY_TRUST.replace("color-conflict fallback only when motion trust remains", "unexpected")),
     patched.replace("float chroma_error =", "float chroma_error_missing ="),
@@ -1115,7 +1115,7 @@ uniform_dark = [[0.2 for _ in range(16)] for _ in range(16)]
 uniform_bright = [[0.35 for _ in range(16)] for _ in range(16)]
 assert spatial_scene_cut_score(uniform_dark, uniform_bright) == 0.0
 
-retained_source = (ROOT / "app/src/main/cpp/mpvflow/fongmi/motion.c").read_text(encoding="utf-8")
+retained_source = (ROOT / "app/src/main/cpp/mpvflow/pinned/motion.c").read_text(encoding="utf-8")
 retained_result, retained_changed = PATCHER.transform_source(retained_source)
 assert not retained_changed and retained_result == retained_source, "retained snapshot should mirror active refinement, grid, synthesis, reconstruction, warp, and scene-cut safeguards"
 assert "vec2 scene_change = texelFetch(scene, ivec2(0), 0).rg;" in retained_source
@@ -1133,7 +1133,7 @@ if args.source:
     )
     assert "nearest_frame_weight" not in active_source
 print(
-    "FongMi artifact policy passed: max taper trust step "
+    "Pinned artifact policy passed: max taper trust step "
     f"{old_step:.4f} -> {new_step:.4f}; local directional softness is capped at 0.24 "
     "with trajectory stability capping primary warp confidence and no per-pixel temporal source switch; "
     "spatial cut detection flags palette-matched scene changes without firing on one-tile motion; "

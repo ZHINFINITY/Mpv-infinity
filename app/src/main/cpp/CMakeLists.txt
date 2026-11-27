@@ -137,7 +137,7 @@ if(MPVFLOW_ENABLE_VULKAN_BACKEND)
     string(REPLACE "\r" "" MPVFLOW_PLACEBO_EXPORTS "${MPVFLOW_PLACEBO_EXPORTS}")
     string(REPLACE "\n" ";" MPVFLOW_PLACEBO_EXPORT_LINES "${MPVFLOW_PLACEBO_EXPORTS}")
     # Select headers from the exact versioned logging ABI exported by this AAR.
-    # Legacy AARs keep API 374/387; MPVRx's FongMi arm64 runtime exports API 391.
+    # Legacy AARs keep API 374/387; MPVRx's Pinned arm64 runtime exports API 391.
     set(MPVFLOW_PLACEBO_API_VERSIONS)
     foreach(MPVFLOW_EXPORT_LINE IN LISTS MPVFLOW_PLACEBO_EXPORT_LINES)
         if(MPVFLOW_EXPORT_LINE MATCHES "[ \t]pl_log_create_([0-9]+)(@[^ \t]+)?$")

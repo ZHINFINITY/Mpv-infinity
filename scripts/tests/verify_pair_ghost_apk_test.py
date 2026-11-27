@@ -22,12 +22,12 @@ class PairGhostApkVerifierTest(unittest.TestCase):
             archive.writestr(VERIFIER.NATIVE_LIBRARY, native)
         return apk
 
-    def test_accepts_fongmi_memc_in_mpv_and_pair_policy_in_native(self):
+    def test_accepts_pinned_memc_in_mpv_and_pair_policy_in_native(self):
         pair_policy = b"\0".join(VERIFIER.PAIR_GHOST_MARKERS)
         with tempfile.TemporaryDirectory() as temp:
             apk = self.write_apk(
                 Path(temp),
-                b"FongMi\0motion-interpolation\0",
+                b"Pinned\0motion-interpolation\0",
                 b"Native\0" + pair_policy + b"\0",
             )
             report = VERIFIER.verify_apk(apk)
@@ -43,11 +43,11 @@ class PairGhostApkVerifierTest(unittest.TestCase):
             with self.assertRaisesRegex(AssertionError, "lacks pair policy evidence"):
                 VERIFIER.verify_apk(apk)
 
-    def test_rejects_mpv_library_missing_fongmi_memc_marker(self):
+    def test_rejects_mpv_library_missing_pinned_memc_marker(self):
         pair_policy = b"\0".join(VERIFIER.PAIR_GHOST_MARKERS)
         with tempfile.TemporaryDirectory() as temp:
             apk = self.write_apk(Path(temp), b"legacy pair ghost only", pair_policy)
-            with self.assertRaisesRegex(AssertionError, "FongMi MEMC option marker"):
+            with self.assertRaisesRegex(AssertionError, "Pinned MEMC option marker"):
                 VERIFIER.verify_apk(apk)
 
 

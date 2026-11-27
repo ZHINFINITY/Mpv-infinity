@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compile the app-owned FongMi pan/zoom compute shader with glslang."""
+"""Compile the app-owned Pinned pan/zoom compute shader with glslang."""
 from __future__ import annotations
 
 import importlib.util
@@ -9,7 +9,7 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-PATCHER_PATH = ROOT / "scripts/patch_fongmi_motion_artifact.py"
+PATCHER_PATH = ROOT / "scripts/patch_motion_artifact.py"
 SPEC = importlib.util.spec_from_file_location("camera_motion_patcher", PATCHER_PATH)
 assert SPEC and SPEC.loader
 PATCHER = importlib.util.module_from_spec(SPEC)
@@ -44,7 +44,7 @@ void main()
 }}
 """
 
-with tempfile.TemporaryDirectory(prefix="fongmi-camera-pan-zoom-") as directory:
+with tempfile.TemporaryDirectory(prefix="pinned-camera-pan-zoom-") as directory:
     source = Path(directory) / "camera_pan_zoom.comp"
     source.write_text(shader, encoding="utf-8")
     subprocess.run(
@@ -52,4 +52,4 @@ with tempfile.TemporaryDirectory(prefix="fongmi-camera-pan-zoom-") as directory:
         check=True,
         text=True,
     )
-print("FongMi pan/zoom camera-fit compute shader compiled with glslang")
+print("Pinned pan/zoom camera-fit compute shader compiled with glslang")

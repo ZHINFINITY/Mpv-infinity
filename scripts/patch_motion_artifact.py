@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Apply app-owned motion, synthesis, and camera-model guards to pinned FongMi motion.
+"""Apply app-owned motion, synthesis, and camera-model guards to pinned Pinned motion.
 
 The patch is version-guarded and limited to refinement, the analysis grid, and
 synthesis/reconstruction/inverse-warp logic in pinned upstream
@@ -788,7 +788,7 @@ def _indent_block(block: str, indent: str) -> str:
 def _replace_one(pattern: re.Pattern[str], source: str, replacement, label: str) -> str:
     matches = list(pattern.finditer(source))
     if len(matches) != 1:
-        raise ValueError(f"Pinned FongMi {label} anchor count is {len(matches)}; refusing an unverified patch")
+        raise ValueError(f"Pinned Pinned {label} anchor count is {len(matches)}; refusing an unverified patch")
     return pattern.sub(replacement, source, count=1)
 
 
@@ -806,7 +806,7 @@ def _output_matches(source: str):
 def _replace_output(source: str, label: str) -> str:
     matches = _output_matches(source)
     if len(matches) != 1:
-        raise ValueError(f"Pinned FongMi {label} anchor count is {len(matches)}; refusing an unverified patch")
+        raise ValueError(f"Pinned Pinned {label} anchor count is {len(matches)}; refusing an unverified patch")
     pattern, block, _ = matches[0]
     return pattern.sub(lambda match: _indent_block(block, match.group("indent")), source, count=1)
 
@@ -915,14 +915,14 @@ def _has_spatial_trust_guard(source: str) -> bool:
 def _patch_spatial_trust(source: str) -> str:
     if SPATIAL_TRUST_MARKER in source:
         if not _has_spatial_trust_guard(source):
-            raise ValueError("FongMi spatial trust marker/source mismatch")
+            raise ValueError("Pinned spatial trust marker/source mismatch")
         return source
     if any(token in source for token in (
         "float spatial_trust_consensus(",
         "float spatial_island =",
         "spatial_trust_consensus(warp0, warp1, uv, f, r)",
     )):
-        raise ValueError("FongMi spatial trust source contains a partial guard")
+        raise ValueError("Pinned spatial trust source contains a partial guard")
     source = _replace_one(
         NEIGHBORHOOD_END_PATTERN,
         source,
@@ -957,7 +957,7 @@ def _patch_spatial_trust(source: str) -> str:
         "spatial trust transition cap",
     )
     if not _has_spatial_trust_guard(source):
-        raise ValueError("FongMi spatial trust island guard failed its postconditions")
+        raise ValueError("Pinned spatial trust island guard failed its postconditions")
     return source
 
 
@@ -974,10 +974,10 @@ def _has_spatial_visibility_scale(source: str) -> bool:
 def _patch_spatial_visibility_scale(source: str) -> str:
     if SPATIAL_VISIBILITY_CAP_MARKER in source:
         if not _has_spatial_visibility_scale(source):
-            raise ValueError("FongMi spatial visibility-cap marker/source mismatch")
+            raise ValueError("Pinned spatial visibility-cap marker/source mismatch")
         return source
     if not _has_spatial_trust_guard(source):
-        raise ValueError("FongMi spatial visibility cap requires the verified spatial trust guard")
+        raise ValueError("Pinned spatial visibility cap requires the verified spatial trust guard")
     start_pattern = re.compile(
         r"(?m)^(?P<indent>[ \t]*)if \(boundary_activation > 0\.0\) \{\n"
         r"(?P=indent)[ \t]+float spatial_consensus = spatial_trust_consensus\(warp0, warp1, uv, f, r\);$"
@@ -1016,7 +1016,7 @@ def _patch_spatial_visibility_scale(source: str) -> str:
         "spatial visibility downward-cap ratio",
     )
     if not _has_spatial_visibility_scale(source):
-        raise ValueError("FongMi spatial visibility-cap patch failed its postconditions")
+        raise ValueError("Pinned spatial visibility-cap patch failed its postconditions")
     return source
 
 
@@ -1043,12 +1043,12 @@ def _has_spatial_medoid_fallback(source: str) -> bool:
 def _patch_spatial_medoid_fallback(source: str) -> str:
     if SPATIAL_MEDOID_MARKER in source:
         if source.count("void motion_field_medoid(sampler2D warp0, sampler2D warp1, vec2 uv,") != 1:
-            raise ValueError("FongMi spatial medoid helper marker/source mismatch")
+            raise ValueError("Pinned spatial medoid helper marker/source mismatch")
         if _has_spatial_medoid_fallback(source):
             return source
     else:
         if "motion_field_medoid(" in source:
-            raise ValueError("FongMi spatial medoid source contains a partial fallback")
+            raise ValueError("Pinned spatial medoid source contains a partial fallback")
         source = _replace_one(
             NEIGHBORHOOD_END_PATTERN,
             source,
@@ -1063,7 +1063,7 @@ def _patch_spatial_medoid_fallback(source: str) -> str:
             "motion_field_medoid(forward, backward, uv, f, r, coherent0, coherent1, coherent_support);",
         )
     ):
-        raise ValueError("FongMi spatial medoid output contains a partial fallback")
+        raise ValueError("Pinned spatial medoid output contains a partial fallback")
     anchors = (
         re.compile(r"(?m)^(?P<indent>[ \t]*)color = mix\(source_blend, mix\(warped0, warped1, alpha\), clamp\(trust, 0\.0, 1\.0\)\);$"),
         re.compile(r"(?m)^(?P<indent>[ \t]*)return mix\(source_blend, mix\(warped0, warped1, blend\), clamp\(trust, 0\.0, 1\.0\)\);$"),
@@ -1072,7 +1072,7 @@ def _patch_spatial_medoid_fallback(source: str) -> str:
     matches = [(pattern, found_matches[0]) for pattern, found_matches in found if found_matches]
     if len(matches) != 1 or len(matches[0][1:]) != 1:
         counts = [len(items) for _, items in found]
-        raise ValueError(f"Pinned FongMi spatial medoid output anchor counts are {counts}")
+        raise ValueError(f"Pinned Pinned spatial medoid output anchor counts are {counts}")
     pattern, match = matches[0]
     indent = match.group("indent")
     if pattern is anchors[0]:
@@ -1115,7 +1115,7 @@ def _patch_spatial_medoid_fallback(source: str) -> str:
         count=1,
     )
     if not _has_spatial_medoid_fallback(source):
-        raise ValueError("FongMi spatial medoid fallback failed its postconditions")
+        raise ValueError("Pinned spatial medoid fallback failed its postconditions")
     return source
 
 
@@ -1159,9 +1159,9 @@ def _patch_source_visibility(source: str) -> str:
     if SOURCE_VISIBILITY_MARKER in source:
         if _has_source_visibility(source):
             return source
-        raise ValueError("FongMi source-specific visibility marker/source mismatch")
+        raise ValueError("Pinned source-specific visibility marker/source mismatch")
     if "float relative_fit(" in source:
-        raise ValueError("FongMi source-specific visibility helper is only partially present")
+        raise ValueError("Pinned source-specific visibility helper is only partially present")
     source = _replace_one(
         PIXEL_HEADER_PATTERN,
         source,
@@ -1174,7 +1174,7 @@ def _patch_source_visibility(source: str) -> str:
     )
     matches = list(SOURCE_VISIBILITY_OUTPUT_PATTERN.finditer(source))
     if len(matches) != 1:
-        raise ValueError(f"Pinned FongMi source visibility output anchor count is {len(matches)}")
+        raise ValueError(f"Pinned Pinned source visibility output anchor count is {len(matches)}")
     match = matches[0]
     block = (
         SOURCE_VISIBILITY_OUTPUT_BLOCK_LEGACY
@@ -1187,7 +1187,7 @@ def _patch_source_visibility(source: str) -> str:
         count=1,
     )
     if not _has_source_visibility(source):
-        raise ValueError("FongMi source-specific visibility patch failed its postconditions")
+        raise ValueError("Pinned source-specific visibility patch failed its postconditions")
     return source
 
 
@@ -1229,7 +1229,7 @@ def _has_global_translation_cycle_guard(source: str) -> bool:
 def _patch_global_translation_cycle_guard(source: str) -> str:
     if GLOBAL_TRANSLATION_CYCLE_MARKER in source:
         if not _has_global_translation_cycle_guard(source):
-            raise ValueError("FongMi global-translation cycle marker/source mismatch")
+            raise ValueError("Pinned global-translation cycle marker/source mismatch")
         return source
     if (
         MARKER in source
@@ -1244,7 +1244,7 @@ def _patch_global_translation_cycle_guard(source: str) -> str:
         "global-translation reverse-cycle guard",
     )
     if not _has_global_translation_cycle_guard(source):
-        raise ValueError("FongMi global-translation cycle guard failed its postconditions")
+        raise ValueError("Pinned global-translation cycle guard failed its postconditions")
     return source
 
 
@@ -1275,11 +1275,11 @@ def _patch_camera_similarity(source: str) -> str:
     if CAMERA_SIMILARITY_MARKER in source:
         if _has_camera_similarity_model(source):
             return source
-        raise ValueError("FongMi camera-similarity marker/source mismatch")
+        raise ValueError("Pinned camera-similarity marker/source mismatch")
     if any(token in source for token in (
         "camera_fit_header", "camera_fit_pass", "camera_prior.z * centered",
     )):
-        raise ValueError("FongMi camera-similarity source contains a partial fit")
+        raise ValueError("Pinned camera-similarity source contains a partial fit")
 
     source = _replace_one(
         re.compile(r"(?m)^(?P<indent>[ \t]*)#define MATCH_SHARED_BYTES \(49 \* 16 \+ 169 \* 4\)$"),
@@ -1418,7 +1418,7 @@ if (camera_prior.w > 0.20 && abs(camera_prior.z) < 0.25 &&
         "camera model reconstruction candidate",
     )
     if not _has_camera_similarity_model(source):
-        raise ValueError("FongMi camera-similarity model failed its postconditions")
+        raise ValueError("Pinned camera-similarity model failed its postconditions")
     return source
 
 
@@ -1461,12 +1461,12 @@ def _insert_primary_trajectory_trust_cap(source: str) -> str:
     trust_matches = list(WARP_TRUST_DECLARATION_PATTERN.finditer(source))
     reliability_matches = list(WARP_PRIMARY_TRUST_PATTERN.finditer(source))
     if len(trust_matches) != 1 or len(reliability_matches) != 1:
-        raise ValueError("FongMi primary trajectory trust insertion anchors are not unique")
+        raise ValueError("Pinned primary trajectory trust insertion anchors are not unique")
     trust_match = trust_matches[0]
     reliability_match = reliability_matches[0]
     anchor = trust_match if trust_match.start() > reliability_match.start() else reliability_match
     if source.index("float trajectory_quality =") > anchor.start():
-        raise ValueError("FongMi trajectory quality must be computed before the trust cap")
+        raise ValueError("Pinned trajectory quality must be computed before the trust cap")
     indent = anchor.group("indent")
     return (
         source[:anchor.end()]
@@ -1621,7 +1621,7 @@ def _is_patched(source: str) -> bool:
 def _patch_aperture_boundary_step(source: str) -> str:
     if REFINEMENT_BOUNDARY_STEP_MARKER in source:
         if not _has_refinement_aperture_normal(source):
-            raise ValueError("FongMi boundary-safe aperture marker/source mismatch")
+            raise ValueError("Pinned boundary-safe aperture marker/source mismatch")
         return source
     source = _replace_one(
         REFINEMENT_HEADER_PATTERN,
@@ -1656,7 +1656,7 @@ def _patch_aperture_boundary_step(source: str) -> str:
         "boundary-safe dense normal candidate",
     )
     if not _has_refinement_aperture_normal(source):
-        raise ValueError("FongMi boundary-safe aperture-step patch failed its postconditions")
+        raise ValueError("Pinned boundary-safe aperture-step patch failed its postconditions")
     return source
 
 
@@ -1669,7 +1669,7 @@ def _patch_refinement_aperture_normal(source: str) -> str:
             source, require_boundary=False
         )
         if not legacy_aperture and not old_tangent_aperture:
-            raise ValueError("FongMi refinement aperture-normal marker/source mismatch")
+            raise ValueError("Pinned refinement aperture-normal marker/source mismatch")
         if legacy_aperture:
             source = _replace_one(
                 REFINEMENT_PROJECTED_PATTERN,
@@ -1703,14 +1703,14 @@ def _patch_refinement_aperture_normal(source: str) -> str:
             )
         source = _patch_aperture_boundary_step(source)
         if not _has_refinement_aperture_normal(source):
-            raise ValueError("FongMi tangent-preserving aperture upgrade failed its postconditions")
+            raise ValueError("Pinned tangent-preserving aperture upgrade failed its postconditions")
         return source
     if any(token in source for token in (
         "bool aperture_ambiguous = false;",
         "float tensor_discriminant = sqrt(max(",
         "aperture_normal = abs(xy) > 0.000001",
     )):
-        raise ValueError("FongMi refinement source contains a partial aperture-normal guard")
+        raise ValueError("Pinned refinement source contains a partial aperture-normal guard")
 
     source = _replace_one(
         REFINEMENT_OUTER_PATTERN,
@@ -1797,14 +1797,14 @@ def _patch_refinement_aperture_normal(source: str) -> str:
     )
     source = _patch_aperture_boundary_step(source)
     if not _has_refinement_aperture_normal(source):
-        raise ValueError("FongMi aperture-normal refinement patch failed its postconditions")
+        raise ValueError("Pinned aperture-normal refinement patch failed its postconditions")
     return source
 
 
 def _patch_reconstruction(source: str) -> str:
     if RECONSTRUCTION_MARKER in source:
         if not _has_reconstruction_guard(source):
-            raise ValueError("FongMi reconstruction evidence marker/source mismatch")
+            raise ValueError("Pinned reconstruction evidence marker/source mismatch")
         return source
     source = _replace_one(
         RECONSTRUCTION_PATTERN,
@@ -1813,22 +1813,22 @@ def _patch_reconstruction(source: str) -> str:
         "reconstruction evidence selector",
     )
     if not _has_reconstruction_guard(source):
-        raise ValueError("FongMi reconstruction evidence patch failed its postconditions")
+        raise ValueError("Pinned reconstruction evidence patch failed its postconditions")
     return source
 
 
 def _patch_warp_trajectory(source: str) -> str:
     if REJECTED_WARP_TRUST_MARKER in source or "trust *= trajectory_quality;" in source:
-        raise ValueError("FongMi source contains the rejected primary trajectory-trust multiplier")
+        raise ValueError("Pinned source contains the rejected primary trajectory-trust multiplier")
     if WARP_TRAJECTORY_MARKER in source:
         if not _has_warp_trajectory_path_guard(source):
-            raise ValueError("FongMi warp trajectory V1 marker/source mismatch")
+            raise ValueError("Pinned warp trajectory V1 marker/source mismatch")
         if PRIMARY_TRAJECTORY_TRUST_MARKER in source and not _has_warp_primary_trust_cap(source):
-            raise ValueError("FongMi primary trajectory trust marker/source mismatch")
+            raise ValueError("Pinned primary trajectory trust marker/source mismatch")
         if PRIMARY_TRAJECTORY_TRUST_MARKER not in source:
             source = _insert_primary_trajectory_trust_cap(source)
         if not _has_warp_trajectory_guard(source):
-            raise ValueError("FongMi primary trajectory trust cap failed its postconditions")
+            raise ValueError("Pinned primary trajectory trust cap failed its postconditions")
         return source
     source = _replace_one(
         WARP_START_PATTERN,
@@ -1855,21 +1855,21 @@ def _patch_warp_trajectory(source: str) -> str:
     )
     source = _insert_primary_trajectory_trust_cap(source)
     if not _has_warp_trajectory_guard(source):
-        raise ValueError("FongMi trajectory trust cap failed its postconditions")
+        raise ValueError("Pinned trajectory trust cap failed its postconditions")
     return source
 
 
 def _patch_warp_best_residual(source: str) -> str:
     if WARP_BEST_RESIDUAL_MARKER in source:
         if not _has_warp_best_residual_guard(source):
-            raise ValueError("FongMi best inverse-residual marker/source mismatch")
+            raise ValueError("Pinned best inverse-residual marker/source mismatch")
         return source
     if any(token in source for token in (
         "vec2 best_source = source;",
         "vec4 best_field = f;",
         "candidate_residual < best_residual",
     )):
-        raise ValueError("FongMi inverse-warp source contains a partial best-residual guard")
+        raise ValueError("Pinned inverse-warp source contains a partial best-residual guard")
     if "vec4 initial_field = textureLod(forward, uv, 0.0);" not in source:
         source = _replace_one(
             WARP_INITIAL_MOTION_PATTERN,
@@ -1899,20 +1899,20 @@ def _patch_warp_best_residual(source: str) -> str:
         "selected inverse-warp source-coordinate displacement",
     )
     if not _has_warp_best_residual_guard(source):
-        raise ValueError("FongMi best inverse-residual warp patch failed its postconditions")
+        raise ValueError("Pinned best inverse-residual warp patch failed its postconditions")
     return source
 
 def _patch_scene_cut(source: str) -> str:
     if SCENE_CUT_MARKER in source:
         if not _has_scene_cut_guard(source):
-            raise ValueError("FongMi spatial scene-cut marker/source mismatch")
+            raise ValueError("Pinned spatial scene-cut marker/source mismatch")
         return source
     if any(token in source for token in (
         "float tile_luma_delta[16];",
         "tile_luma_delta[tile_index] +=",
         "float spatial_cut = 0.0;",
     )):
-        raise ValueError("FongMi spatial scene-cut source contains a partial guard")
+        raise ValueError("Pinned spatial scene-cut source contains a partial guard")
     source = _replace_one(
         SCENE_INIT_PATTERN,
         source,
@@ -1944,7 +1944,7 @@ def _patch_scene_cut(source: str) -> str:
         "scene detector spatial cut score",
     )
     if not _has_scene_cut_guard(source):
-        raise ValueError("FongMi spatial scene-cut patch failed its postconditions")
+        raise ValueError("Pinned spatial scene-cut patch failed its postconditions")
     return source
 
 
@@ -1952,7 +1952,7 @@ def _patch_analysis_downsample(source: str) -> str:
     if ANALYSIS_DOWNSAMPLE_MARKER in source:
         if _has_analysis_downsample_filter(source):
             return source
-        raise ValueError("FongMi analysis downsample marker/source mismatch")
+        raise ValueError("Pinned analysis downsample marker/source mismatch")
     source = _replace_one(
         ANALYSIS_DOWNSAMPLE_SAMPLE_PATTERN,
         source,
@@ -1960,13 +1960,13 @@ def _patch_analysis_downsample(source: str) -> str:
         "anti-aliased motion-analysis downsample",
     )
     if not _has_analysis_downsample_filter(source):
-        raise ValueError("FongMi analysis downsample filter failed its postconditions")
+        raise ValueError("Pinned analysis downsample filter failed its postconditions")
     return source
 
 
 def _patch_fine_motion_grid(source: str) -> str:
     if HIGH_RES_FINE_GRID_MARKER in source and FINE_GRID_MARKER not in source:
-        raise ValueError("FongMi high-resolution grid marker is missing its base-grid marker")
+        raise ValueError("Pinned high-resolution grid marker is missing its base-grid marker")
     if FINE_GRID_MARKER in source:
         if _has_fine_motion_grid(source):
             return source
@@ -1980,7 +1980,7 @@ def _patch_fine_motion_grid(source: str) -> str:
             source = source.replace("spacing = 2;", "spacing = 3;", 1)
             if _has_fine_motion_grid(source):
                 return source
-            raise ValueError("FongMi high-resolution finest motion-grid adjustment failed its postconditions")
+            raise ValueError("Pinned high-resolution finest motion-grid adjustment failed its postconditions")
         if (
             source.count(FINE_GRID_MARKER) == 1
             and source.count(FINE_GRID_ASSIGNMENT) == 1
@@ -1996,13 +1996,13 @@ def _patch_fine_motion_grid(source: str) -> str:
                 "high-resolution finest motion-grid refinement",
             )
             if not _has_fine_motion_grid(source):
-                raise ValueError("FongMi high-resolution finest motion-grid upgrade failed its postconditions")
+                raise ValueError("Pinned high-resolution finest motion-grid upgrade failed its postconditions")
             return source
-        raise ValueError("FongMi fine motion-grid marker/source mismatch")
+        raise ValueError("Pinned fine motion-grid marker/source mismatch")
     if HIGH_RES_FINE_GRID_MARKER in source or HIGH_RES_FINE_GRID_CONDITION in source:
-        raise ValueError("FongMi high-resolution grid refinement is only partially present")
+        raise ValueError("Pinned high-resolution grid refinement is only partially present")
     if FINE_GRID_ASSIGNMENT in source:
-        raise ValueError("FongMi fine motion-grid assignment is missing its marker")
+        raise ValueError("Pinned fine motion-grid assignment is missing its marker")
     source = _replace_one(
         FINE_GRID_PATTERN,
         source,
@@ -2010,14 +2010,14 @@ def _patch_fine_motion_grid(source: str) -> str:
         "finest motion-vector grid spacing",
     )
     if not _has_fine_motion_grid(source):
-        raise ValueError("FongMi fine motion-grid patch failed its postconditions")
+        raise ValueError("Pinned fine motion-grid patch failed its postconditions")
     return source
 
 
 def _patch_v3_synthesis(source: str) -> str:
     """Upgrade an already-patched V3 tree without reapplying the raw-source patch."""
     if not _is_synthesis_patched_v3(source):
-        raise ValueError("FongMi motion artifact V3 marker/source mismatch")
+        raise ValueError("Pinned motion artifact V3 marker/source mismatch")
     source = source.replace(PREVIOUS_MARKER, MARKER, 1)
     source = _replace_one(
         V3_REGION_QUALITY_PATTERN,
@@ -2047,7 +2047,7 @@ def _patch_v3_synthesis(source: str) -> str:
     source = _patch_spatial_medoid_fallback(source)
     source = _patch_source_visibility(source)
     if not _is_synthesis_patched(source):
-        raise ValueError("FongMi motion artifact V3-to-V4 upgrade failed its postconditions")
+        raise ValueError("Pinned motion artifact V3-to-V4 upgrade failed its postconditions")
     return source
 
 
@@ -2060,7 +2060,7 @@ def transform_source(source: str) -> tuple[str, bool]:
         elif _is_synthesis_patched_core(source, require_spatial=False):
             patched = _patch_spatial_trust(source)
         else:
-            raise ValueError("FongMi motion artifact V4 marker/source mismatch or rejected pixelwise output behavior")
+            raise ValueError("Pinned motion artifact V4 marker/source mismatch or rejected pixelwise output behavior")
         patched = _patch_reconstruction(patched)
         patched = _patch_global_translation_cycle_guard(patched)
         patched = _patch_warp_trajectory(patched)
@@ -2074,7 +2074,7 @@ def transform_source(source: str) -> tuple[str, bool]:
         patched = _patch_source_visibility(patched)
         patched = _patch_camera_similarity(patched)
         if not _is_patched(patched):
-            raise ValueError("FongMi motion artifact postconditions failed")
+            raise ValueError("Pinned motion artifact postconditions failed")
         return patched, patched != original
 
     if PREVIOUS_MARKER in source:
@@ -2090,7 +2090,7 @@ def transform_source(source: str) -> tuple[str, bool]:
         source = _patch_spatial_visibility_scale(source)
         source = _patch_camera_similarity(source)
         if not _is_patched(source):
-            raise ValueError("FongMi motion artifact V3-to-V4 patch failed its postconditions")
+            raise ValueError("Pinned motion artifact V3-to-V4 patch failed its postconditions")
         return source, source != original
 
     if LEGACY_MARKER in source:
@@ -2111,7 +2111,7 @@ def transform_source(source: str) -> tuple[str, bool]:
             r"[ \t]+color_error\);"
         )
         if len(list(taper_pattern.finditer(source))) != 1:
-            raise ValueError("Pinned FongMi synthesis taper anchor changed; refusing an unverified patch")
+            raise ValueError("Pinned Pinned synthesis taper anchor changed; refusing an unverified patch")
 
     source = _replace_one(
         PIXEL_HEADER_PATTERN,
@@ -2146,14 +2146,14 @@ def transform_source(source: str) -> tuple[str, bool]:
     source = _patch_refinement_aperture_normal(source)
     source = _patch_camera_similarity(source)
     if not _is_patched(source):
-        raise ValueError("FongMi motion artifact V4 patch failed its postconditions")
+        raise ValueError("Pinned motion artifact V4 patch failed its postconditions")
     return source, True
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Test-only legacy FongMi transformer for synthetic exact-anchor fixtures; "
+            "Test-only legacy Pinned transformer for synthetic exact-anchor fixtures; "
             "no legacy upstream/runtime revision is supported. It is not part of the "
             "current build workflow and does not support active MPVRx runtime revision "
             "95ec8e929f8ad2f97c8415c486971493a0b408df."
@@ -2166,7 +2166,7 @@ def main() -> None:
     args = parser.parse_args()
     source_path = args.mpv_dir / SOURCE_RELATIVE
     if not source_path.is_file():
-        raise SystemExit(f"Pinned FongMi motion source is missing: {source_path}")
+        raise SystemExit(f"Pinned Pinned motion source is missing: {source_path}")
     source = source_path.read_text(encoding="utf-8")
     try:
         patched, changed = transform_source(source)
@@ -2174,9 +2174,9 @@ def main() -> None:
         raise SystemExit(str(error)) from error
     if changed:
         source_path.write_text(patched, encoding="utf-8")
-        print("Applied MPVFlow FongMi camera pan/zoom, antialiased analysis downsample, aperture-normal, fine-grid, synthesis, inverse-warp, and scene-cut guards")
+        print("Applied MPVFlow Pinned camera pan/zoom, antialiased analysis downsample, aperture-normal, fine-grid, synthesis, inverse-warp, and scene-cut guards")
     else:
-        print("MPVFlow FongMi camera pan/zoom, antialiased analysis downsample, aperture-normal, fine-grid, synthesis, inverse-warp, and scene-cut guards are already applied")
+        print("MPVFlow Pinned camera pan/zoom, antialiased analysis downsample, aperture-normal, fine-grid, synthesis, inverse-warp, and scene-cut guards are already applied")
 
 
 if __name__ == "__main__":

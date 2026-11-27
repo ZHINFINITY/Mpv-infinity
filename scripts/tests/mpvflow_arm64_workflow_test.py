@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Guard the isolated FongMi 645 Standard arm64 Debug workflow."""
+"""Guard the isolated Pinned 645 Standard arm64 Debug workflow."""
 from pathlib import Path
 import re
 import sys
@@ -26,7 +26,7 @@ VULKAN_HEADERS_SHA = "a4f8ada9f4f97c45b8c89c57997be9cebaae65d2"
 
 class Arm64WorkflowTest(unittest.TestCase):
     def test_workflow_is_only_standard_arm64_debug(self):
-        self.assertIn("Mpv-infinity FongMi 645 arm64 Debug APK", TEXT)
+        self.assertIn("Mpv-infinity Pinned 645 arm64 Debug APK", TEXT)
         self.assertIn("workflow_dispatch:", TEXT)
         self.assertNotIn("inputs:", TEXT)
         self.assertNotIn("jelly_test", TEXT)
@@ -40,30 +40,30 @@ class Arm64WorkflowTest(unittest.TestCase):
     def test_source_checkouts_and_build_require_runtime_cache_miss(self):
         names = (
             "Checkout pinned Android MPV build tools",
-            "Build Mpv-infinity FongMi 645 MPV native arm64 Debug runtime",
+            "Build Mpv-infinity Pinned 645 MPV native arm64 Debug runtime",
         )
         for name in names:
             with self.subTest(step=name):
                 self.assertIn(CACHE_MISS, STEPS[name])
-                self.assertGreater(TEXT.index("- name: " + name), TEXT.index("- name: Restore verified Mpv-infinity FongMi 645 arm64 runtime"))
-        source_checkout = STEPS["Checkout pinned FongMi MPV source"]
+                self.assertGreater(TEXT.index("- name: " + name), TEXT.index("- name: Restore verified Mpv-infinity Pinned 645 arm64 runtime"))
+        source_checkout = STEPS["Checkout pinned Pinned MPV source"]
         self.assertNotIn(CACHE_MISS, source_checkout)
-        self.assertLess(TEXT.index("- name: Checkout pinned FongMi MPV source"), TEXT.index("- name: Verify exact FongMi motion source and 480px integration"))
+        self.assertLess(TEXT.index("- name: Checkout pinned Pinned MPV source"), TEXT.index("- name: Verify exact Pinned motion source and 480px integration"))
 
     def test_runtime_cache_is_exactly_pinned_and_has_no_legacy_fallback(self):
-        restore = STEPS["Restore verified Mpv-infinity FongMi 645 arm64 runtime"]
+        restore = STEPS["Restore verified Mpv-infinity Pinned 645 arm64 runtime"]
         for pin in (
             "mpvflow-arm64-runtime-v8-builder-1efc82739f6f7034",
-            f"mpv-fongmi-{MPV_SHA}",
-            f"libplacebo-fongmi-{PLACEBO_SHA}",
-            f"ffmpeg-fongmi-{FFMPEG_SHA}",
+            f"mpv-pinned-{MPV_SHA}",
+            f"libplacebo-pinned-{PLACEBO_SHA}",
+            f"ffmpeg-pinned-{FFMPEG_SHA}",
             f"vulkan-headers-khronos-{VULKAN_HEADERS_SHA}",
             "scripts/mpvrx_motion_source.py",
-            "scripts/patch_fongmi_motion_downsample.py",
-            "scripts/patch_fongmi_paired_color_mask.py",
+            "scripts/patch_motion_downsample.py",
+            "scripts/patch_paired_color_mask.py",
             "scripts/prepare-mpvflow-vulkan-headers.py",
             "scripts/prepare-mpvflow.py",
-            "scripts/patches/mpvlibandroid-fongmi/**",
+            "scripts/patches/mpvlibandroid-pinned/**",
             "app/src/main/cpp/**",
         ):
             self.assertIn(pin, restore)
@@ -83,7 +83,7 @@ class Arm64WorkflowTest(unittest.TestCase):
             self.assertNotIn(obsolete, restore + TEXT)
         self.assertIn("id: mpvflow-runtime-cache", restore)
         self.assertEqual(TEXT.count("uses: actions/cache/restore@v4"), 1)
-        self.assertIn("steps.mpvflow-runtime-cache.outputs.cache-hit == 'true'", STEPS["Use cached Mpv-infinity FongMi 645 arm64 runtime"])
+        self.assertIn("steps.mpvflow-runtime-cache.outputs.cache-hit == 'true'", STEPS["Use cached Mpv-infinity Pinned 645 arm64 runtime"])
 
     def test_vendored_api391_headers_are_verified_in_build_workflows(self):
         generated = "app/mpvflow-generated/libplacebo-api-391"
@@ -117,7 +117,7 @@ class Arm64WorkflowTest(unittest.TestCase):
         core_runner = Path(__file__).resolve().parents[2] / "scripts/test-mpvflow-core.sh"
         self.assertTrue(core_runner.stat().st_mode & 0o111, "the workflow invokes the core runner directly")
         for script in (
-            "scripts/tests/mpvflow_fongmi_native_source_test.py",
+            "scripts/tests/mpvflow_pinned_native_source_test.py",
             "scripts/tests/mpvrx_motion_source_test.py",
             "scripts/tests/mpvrx_motion_downsample_test.py",
             "scripts/tests/mpvflow_android_subprocess_test.py",
@@ -128,16 +128,16 @@ class Arm64WorkflowTest(unittest.TestCase):
             "scripts/tests/verify_pair_ghost_apk_test.py",
         ):
             self.assertIn(script, core_runner.read_text(encoding="utf-8"))
-        self.assertLess(TEXT.index("- name: Run MPVFlow core and GPU shader regression tests"), TEXT.index("- name: Build Mpv-infinity FongMi 645 MPV native arm64 Debug runtime"))
+        self.assertLess(TEXT.index("- name: Run MPVFlow core and GPU shader regression tests"), TEXT.index("- name: Build Mpv-infinity Pinned 645 MPV native arm64 Debug runtime"))
 
     def test_pinned_source_and_preserved_safeguards_are_verified(self):
-        source = STEPS["Verify exact FongMi motion source and 480px integration"]
-        self.assertIn(f"ref: {MPV_SHA}", STEPS["Checkout pinned FongMi MPV source"])
+        source = STEPS["Verify exact Pinned motion source and 480px integration"]
+        self.assertIn(f"ref: {MPV_SHA}", STEPS["Checkout pinned Pinned MPV source"])
         self.assertIn("--mpv-dir mpv-source", source)
-        verify = STEPS["Verify Mpv-infinity FongMi motion source after preparation"]
+        verify = STEPS["Verify Mpv-infinity Pinned motion source after preparation"]
         self.assertIn("--require-analysis-downsample-aa", verify)
         self.assertIn("--require-paired-color-mask", verify)
-        build = STEPS["Build Mpv-infinity FongMi 645 MPV native arm64 Debug runtime"]
+        build = STEPS["Build Mpv-infinity Pinned 645 MPV native arm64 Debug runtime"]
         self.assertIn("MPVFLOW_ANALYSIS_DOWNSAMPLE_AA: '1'", build)
         self.assertNotIn("JELLY", build)
         self.assertNotIn("MPVFLOW_DEBUG_CAPTURE", build)
@@ -165,7 +165,7 @@ class Arm64WorkflowTest(unittest.TestCase):
         for script in ("scripts/verify-media3-dca-apk.py", "scripts/verify-region3-shader-apk.py", "scripts/verify-pair-ghost-apk.py"):
             self.assertIn(script, verify)
         upload = STEPS["Upload single Standard arm64-v8a Debug APK"]
-        self.assertIn("mpv-infinity-fongmi-645f8ec-arm64-v8a-debug-${{ github.sha }}", upload)
+        self.assertIn("mpv-infinity-pinned-645f8ec-arm64-v8a-debug-${{ github.sha }}", upload)
         self.assertIn("standard/debug/*arm64-v8a*.apk", upload)
         self.assertIn("retention-days: 3", upload)
         self.assertLess(TEXT.index("- name: Verify Standard arm64 Debug APK contents"), TEXT.index("- name: Upload single Standard arm64-v8a Debug APK"))

@@ -1055,8 +1055,8 @@ private val OPEN_SOURCE_LIBRARIES =
       url = "https://ffmpeg.org/legal.html",
     ),
     OpenSourceLibrary(
-      name = "FongMi FFmpeg (MPVFlow runtime)",
-      artifact = "release-9.1-fongmi commit f2c5162b7c4b3e8835de270ff78cecc524decad1 in the experimental arm64 runtime",
+      name = "Pinned FFmpeg (MPVFlow runtime)",
+      artifact = "release-9.1-pinned commit f2c5162b7c4b3e8835de270ff78cecc524decad1 in the experimental arm64 runtime",
       descriptionRes = R.string.oss_ffmpeg_mpv_runtime_description,
       license = "LGPL-3.0-or-later",
       url = "https://github.com/FongMi/FFmpeg/commit/f2c5162b7c4b3e8835de270ff78cecc524decad1",

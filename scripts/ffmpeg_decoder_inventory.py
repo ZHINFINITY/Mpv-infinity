@@ -14,7 +14,7 @@ its record exists *and* some pointer in the image refers to that record (its cod
 The checked-in runtime pins FFmpeg n9.0.2; the experimental arm64 overlay pins FongMi/FFmpeg
 commit ``f2c5162b7c4b3e8835de270ff78cecc524decad1`` (n9.1). Both source layouts use
 ``sizeof(AVCodec) == 56`` and keep ``FFCodec.is_decoder`` at bit 24 of the following 32-bit
-flags word. FongMi n9.1 adds color/alpha bitfields after that bit without shifting it. These
+flags word. Pinned n9.1 adds color/alpha bitfields after that bit without shifting it. These
 private-ABI offsets must be revalidated if either FFmpeg pin or the target ABI changes.
 
 Pointers are read from the file image (RELR/implicit-addend relocations, as the Android NDK

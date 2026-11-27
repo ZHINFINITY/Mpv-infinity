@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Apply a bounded anti-alias filter to the pinned FongMi analysis reduction."""
+"""Apply a bounded anti-alias filter to the pinned Pinned analysis reduction."""
 from __future__ import annotations
 
 import hashlib
@@ -47,16 +47,16 @@ def transform_source(source: str, *, verify_upstream_hash: bool = True) -> tuple
     if MARKER in source:
         if has_antialias_filter(source) and source.count(PATCHED_BLOCK) == 1:
             return source, False
-        raise ValueError("FongMi analysis-downsample marker/source mismatch")
+        raise ValueError("Pinned analysis-downsample marker/source mismatch")
 
     if verify_upstream_hash and _sha256(source.encode("utf-8")) != UPSTREAM_MOTION_SHA256:
-        raise ValueError("unexpected FongMi motion.c source; expected exact pinned source")
+        raise ValueError("unexpected Pinned motion.c source; expected exact pinned source")
     if source.count(ORIGINAL_BLOCK) != 1:
-        raise ValueError("expected one exact FongMi motion-analysis downsample block")
+        raise ValueError("expected one exact Pinned motion-analysis downsample block")
 
     patched = source.replace(ORIGINAL_BLOCK, PATCHED_BLOCK, 1)
     if not has_antialias_filter(patched) or patched.count(PATCHED_BLOCK) != 1:
-        raise ValueError("FongMi analysis-downsample patch failed its postconditions")
+        raise ValueError("Pinned analysis-downsample patch failed its postconditions")
     return patched, True
 
 
@@ -67,7 +67,7 @@ def apply_patch(path: Path, *, enabled: bool = True) -> bool:
         if MARKER in source:
             raise ValueError("app-owned downsample patch found without explicit test-workflow opt-in")
         if _sha256(source.encode("utf-8")) != UPSTREAM_MOTION_SHA256:
-            raise ValueError("unmodified pinned FongMi source required when antialiasing is disabled")
+            raise ValueError("unmodified pinned Pinned source required when antialiasing is disabled")
         return False
     patched, changed = transform_source(source)
     if changed:

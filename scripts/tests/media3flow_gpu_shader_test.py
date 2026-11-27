@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Guard Native Media3 Vulkan compute architecture and the separate FongMi MPV route."""
+"""Guard Native Media3 Vulkan compute architecture and the separate Pinned MPV route."""
 from __future__ import annotations
 
 import pathlib
@@ -105,7 +105,7 @@ for marker in (
     assert marker in SINK, f"GLES uniform must be cached after shader linking: {marker}"
 
 # Native Media3 dispatches through MPVFlow's libplacebo-backed Vulkan core;
-# MPV uses FongMi's independent native gpu-next motion implementation.
+# MPV uses Pinned's independent native gpu-next motion implementation.
 for marker in (
     "nativePrepareFrame(", "nativeAnalyzePair(", "nativeSynthesize(",
     "nativeCreateFrameImage(", "nativeHoldImageForExternal(",
@@ -123,7 +123,7 @@ assert re.search(
 ), "Native Media3 must pass resolver, soft blend, and the existing conflict bias into shared synthesis"
 assert 'PlaybackSession.setOptionString("motion-interpolation", targetFps.toString())' in MPV_VIEW
 assert '"motion-interpolation", OPT_INT(motion_fps)' in MPV_PREPARE
-assert "FONGMI_PATCH" not in MPV_PREPARE
+assert "PINNED_PATCH" not in MPV_PREPARE
 assert "mpvflow_gpu_synthesize_with_policy(" in JNI, "Media3 must share the production Vulkan synthesis policy"
 assert "mpvflow_gpu_synthesize_with_policy_to_texture(" in JNI
 assert "outputStorageImageSupported" in JNI and "VK_IMAGE_USAGE_STORAGE_BIT" in JNI

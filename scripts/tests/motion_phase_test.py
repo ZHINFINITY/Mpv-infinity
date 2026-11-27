@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify active FongMi MPV output cadence and phase against the pinned runtime."""
+"""Verify active Pinned MPV output cadence and phase against the pinned runtime."""
 from __future__ import annotations
 
 import argparse
@@ -17,7 +17,7 @@ EXPECTED_TARGET_FPS = (48, 60, 72, 90, 96, 120, 144)
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--mpv-dir", required=True, type=Path,
-                        help="pinned FongMi MPV source used by the runtime build")
+                        help="pinned Pinned MPV source used by the runtime build")
     args = parser.parse_args()
     mpv_dir = args.mpv_dir.resolve()
     vo_path = mpv_dir / "video/out/vo_gpu_next.c"
@@ -26,7 +26,7 @@ def main() -> None:
     required = (vo_path, motion_path, clock_header)
     missing = [str(path) for path in required if not path.is_file()]
     if missing:
-        parser.error("pinned FongMi source is missing: " + ", ".join(missing))
+        parser.error("pinned Pinned source is missing: " + ", ".join(missing))
 
     if (mpv_dir / ".git").exists():
         revision = subprocess.run(
@@ -34,7 +34,7 @@ def main() -> None:
             check=True, capture_output=True, text=True,
         ).stdout.strip()
         if revision != EXPECTED_REVISION:
-            parser.error(f"expected pinned FongMi revision {EXPECTED_REVISION}, got {revision}")
+            parser.error(f"expected pinned Pinned revision {EXPECTED_REVISION}, got {revision}")
 
     preferences_path = ROOT / "app/src/main/java/app/infinity/mpvz/preferences/DecoderPreferences.kt"
     sheet_path = ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/sheets/FrameInterpolationFpsSheet.kt"
@@ -63,18 +63,18 @@ def main() -> None:
         ("target clock", "return mp_motion_clock_sample(&p->motion_clock, pts, speed, p->motion_fps);" in vo),
         ("draw-frame PTS use", "output_pts = motion_output_pts(p, frame, output_pts);" in vo),
         ("motion clock implementation", "mp_motion_clock_sample" in header and "floor(clock->elapsed * fps + 1e-7)" in header),
-        ("FongMi phase weighting", "vec2 phase = vec2(1.0 - blend, blend);" in motion),
+        ("Pinned phase weighting", "vec2 phase = vec2(1.0 - blend, blend);" in motion),
         ("paired inverse-warp phase", "float weight = direction ? 1.0f - alpha : alpha;" in motion),
         ("VO forwards pair alpha", "mp_motion_render_views(mix->motion, &images->frames[0], &images->frames[1], mix->alpha, &output);" in vo),
     )
     failed = [name for name, ok in contracts if not ok]
     if failed:
-        parser.error("active FongMi cadence/phase source contract failed: " + ", ".join(failed))
+        parser.error("active Pinned cadence/phase source contract failed: " + ", ".join(failed))
 
     temp_parent = os.environ.get("TMPDIR")
-    with tempfile.TemporaryDirectory(prefix="fongmi-motion-phase-", dir=temp_parent) as tmp:
-        binary = Path(tmp) / "fongmi_motion_phase_test"
-        test_source = ROOT / "scripts/tests/fongmi_motion_phase_test.c"
+    with tempfile.TemporaryDirectory(prefix="pinned-motion-phase-", dir=temp_parent) as tmp:
+        binary = Path(tmp) / "pinned_motion_phase_test"
+        test_source = ROOT / "scripts/tests/pinned_motion_phase_test.c"
         subprocess.run(
             ["cc", "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror",
              "-I", str(mpv_dir), str(test_source), "-lm", "-o", str(binary)],
@@ -82,7 +82,7 @@ def main() -> None:
         )
         subprocess.run([str(binary)], check=True)
 
-    print("Verified all app target FPS options on the active pinned FongMi cadence and shader-phase path")
+    print("Verified all app target FPS options on the active pinned Pinned cadence and shader-phase path")
 
 
 if __name__ == "__main__":

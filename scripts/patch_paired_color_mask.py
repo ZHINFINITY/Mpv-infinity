@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Taper FongMi's paired-color recovery and gate conflicting warp lanes locally."""
+"""Taper Pinned's paired-color recovery and gate conflicting warp lanes locally."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -257,13 +257,13 @@ def transform_source(source: str) -> tuple[str, bool]:
     ):
         raise ValueError("Mpv-infinity paired-color mask found without a valid resolver marker")
     if source.count(CONFLICT_WEIGHT) != 1 or source.count(PAIRED_ERROR_ANCHOR) != 1:
-        raise ValueError("expected the exact active FongMi conflict-weight and paired-error mask")
+        raise ValueError("expected the exact active Pinned conflict-weight and paired-error mask")
     if (
         source.count(ORIGINAL_BLOCK) != 1
         or source.count(VISIBILITY_ANCHOR) != 1
         or source.count(FINAL_BLEND_ANCHOR) != 1
     ):
-        raise ValueError("expected one exact FongMi paired-color support, visibility, and final blend block")
+        raise ValueError("expected one exact Pinned paired-color support, visibility, and final blend block")
 
     patched = source.replace(ORIGINAL_BLOCK, PATCHED_BLOCK, 1)
     patched = patched.replace(FINAL_BLEND_ANCHOR, ARTIFACT_STRENGTH_BLOCK, 1)

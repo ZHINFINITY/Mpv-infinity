@@ -17,7 +17,7 @@ class MpvAspectContractTest {
     val mpvView = source("ui/player/MPVView.kt")
     val transition = viewModel.substringAfter("fun changeVideoAspect(")
       .substringBefore("fun setCustomAspectRatio(")
-    val fongmiInterpolationOptions = mpvView.substringAfter("val mpvFlowRendererOptionResult =")
+    val pinnedInterpolationOptions = mpvView.substringAfter("val mpvFlowRendererOptionResult =")
       .substringBefore("val appVideoFilters =")
 
     assertTrue(transition.contains("setMpvAspectOverrideIfChanged"))
@@ -28,19 +28,19 @@ class MpvAspectContractTest {
     assertFalse(transition.contains("unbindSurface("))
     assertFalse(transition.contains("initializeSession("))
     assertFalse(transition.contains("mpvFlowFrameInterpolation"))
-    // FongMi uses a target-FPS option; do not revive mpv's separate boolean mixer.
+    // Pinned uses a target-FPS option; do not revive mpv's separate boolean mixer.
     assertTrue(
-      fongmiInterpolationOptions.contains(
+      pinnedInterpolationOptions.contains(
         "val targetFps = if (mpvFlowFrameInterpolationEnabled) mpvFlowTargetFps else 0",
       ),
     )
     assertTrue(
-      fongmiInterpolationOptions.contains(
+      pinnedInterpolationOptions.contains(
         "PlaybackSession.setOptionString(\"motion-interpolation\", targetFps.toString())",
       ),
     )
     assertFalse(
-      fongmiInterpolationOptions.contains("PlaybackSession.setOptionString(\"interpolation\","),
+      pinnedInterpolationOptions.contains("PlaybackSession.setOptionString(\"interpolation\","),
     )
   }
 

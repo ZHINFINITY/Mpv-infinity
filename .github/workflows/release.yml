@@ -116,7 +116,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: native-builder/app/build/outputs/apk
-          key: mpvflow-arm64-runtime-v8-builder-1efc82739f6f7034-mpv-fongmi-645f8ecdd3c94379048e9ee3e7014e174de0bd02-libplacebo-fongmi-63659d96d1bff7d7a5a1368e9538056a193fc6fb-ffmpeg-fongmi-f2c5162b7c4b3e8835de270ff78cecc524decad1-vulkan-headers-khronos-a4f8ada9f4f97c45b8c89c57997be9cebaae65d2-cores2-${{ hashFiles('scripts/build-mpvflow-mpv-runtime.sh', 'scripts/mpvrx_motion_source.py', 'scripts/patch_audiotrack_device.py', 'scripts/patch_fongmi_paired_color_mask.py', 'scripts/prepare-mpvflow.py', 'scripts/prepare-mpvflow-vulkan-headers.py', 'scripts/patch-ffmpeg-symver.py', 'scripts/patches/mpvlibandroid-fongmi/**', 'app/src/main/cpp/**', 'THIRD_PARTY_LICENSES/**', 'app/src/main/assets/mpv/licenses/**') }}
+          key: mpvflow-arm64-runtime-v8-builder-1efc82739f6f7034-mpv-pinned-645f8ecdd3c94379048e9ee3e7014e174de0bd02-libplacebo-pinned-63659d96d1bff7d7a5a1368e9538056a193fc6fb-ffmpeg-pinned-f2c5162b7c4b3e8835de270ff78cecc524decad1-vulkan-headers-khronos-a4f8ada9f4f97c45b8c89c57997be9cebaae65d2-cores2-${{ hashFiles('scripts/build-mpvflow-mpv-runtime.sh', 'scripts/mpvrx_motion_source.py', 'scripts/patch_audiotrack_device.py', 'scripts/patch_paired_color_mask.py', 'scripts/prepare-mpvflow.py', 'scripts/prepare-mpvflow-vulkan-headers.py', 'scripts/patch-ffmpeg-symver.py', 'scripts/patches/mpvlibandroid-pinned/**', 'app/src/main/cpp/**', 'THIRD_PARTY_LICENSES/**', 'app/src/main/assets/mpv/licenses/**') }}
 
       - name: Checkout pinned Android MPV build tools
         if: ${{ steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' }}
@@ -152,7 +152,7 @@ jobs:
         env:
           MPVFLOW_MPV_BUILD_CORES: '2'
 
-      - name: Verify Mpv-infinity FongMi motion source after preparation
+      - name: Verify Mpv-infinity Pinned motion source after preparation
         if: ${{ steps.mpvflow-runtime-cache.outputs.cache-hit != 'true' }}
         run: python3 scripts/tests/mpvrx_motion_source_test.py --mpv-dir native-builder/buildscripts/deps/mpv --require-paired-color-mask
 

@@ -22,12 +22,12 @@ class Region3ShaderApkVerifierTest(unittest.TestCase):
             archive.writestr(VERIFIER.NATIVE_LIBRARY, native)
         return apk
 
-    def test_accepts_fongmi_mpv_option_and_native_region3_shader_separately(self):
+    def test_accepts_pinned_mpv_option_and_native_region3_shader_separately(self):
         shader = VERIFIER.region3_shader(ROOT)
         with tempfile.TemporaryDirectory() as temp:
             apk = self.write_apk(
                 Path(temp),
-                b"FongMi\0motion-interpolation\0",
+                b"Pinned\0motion-interpolation\0",
                 b"Native\0" + shader + b"\0",
             )
             result = VERIFIER.verify_apk(apk, ROOT)
@@ -41,11 +41,11 @@ class Region3ShaderApkVerifierTest(unittest.TestCase):
             with self.assertRaisesRegex(AssertionError, "Native Region3 synthesis shader"):
                 VERIFIER.verify_apk(apk, ROOT)
 
-    def test_rejects_mpv_library_missing_fongmi_memc_marker(self):
+    def test_rejects_mpv_library_missing_pinned_memc_marker(self):
         shader = VERIFIER.region3_shader(ROOT)
         with tempfile.TemporaryDirectory() as temp:
             apk = self.write_apk(Path(temp), b"legacy interpolation only", shader)
-            with self.assertRaisesRegex(AssertionError, "FongMi MEMC option marker"):
+            with self.assertRaisesRegex(AssertionError, "Pinned MEMC option marker"):
                 VERIFIER.verify_apk(apk, ROOT)
 
 

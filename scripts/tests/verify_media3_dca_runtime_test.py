@@ -18,14 +18,14 @@ from ffmpeg_runtime_config import (  # noqa: E402
 )
 
 
-FONGMI_SHA = "f2c5162b7c4b3e8835de270ff78cecc524decad1"
-FONGMI_VERSION = f"git-2026-11-10-f2c5162-mpvflow-fongmi-{FONGMI_SHA}"
+PINNED_SHA = "f2c5162b7c4b3e8835de270ff78cecc524decad1"
+PINNED_VERSION = f"git-2026-11-10-f2c5162-mpvflow-pinned-{PINNED_SHA}"
 BASE_RUNTIME = """FFmpeg version n9.0.2
 --target-os=android --enable-version3 --disable-everything --enable-decoder=dca
 libavcodec license: LGPL version 3 or later
 DCA (DTS Coherent Acoustics)
 """
-FONGMI_RUNTIME = BASE_RUNTIME.replace("n9.0.2", FONGMI_VERSION).replace(
+PINNED_RUNTIME = BASE_RUNTIME.replace("n9.0.2", PINNED_VERSION).replace(
     "--enable-version3", "--disable-gpl --disable-nonfree --enable-version3", 1
 )
 
@@ -56,20 +56,20 @@ class EffectiveRuntimeConfigTest(unittest.TestCase):
         flags = verify_runtime_evidence(BASE_RUNTIME)
         self.assertEqual({"CONFIG_GPL": 0, "CONFIG_NONFREE": 0}, flags)
 
-    def test_pinned_fongmi_runtime_requires_the_exact_source_marker(self) -> None:
-        flags = verify_runtime_evidence(FONGMI_RUNTIME)
-        self.assertEqual("n9.1-FongMi-f2c5162b", ffmpeg_runtime_version(FONGMI_RUNTIME))
+    def test_pinned_pinned_runtime_requires_the_exact_source_marker(self) -> None:
+        flags = verify_runtime_evidence(PINNED_RUNTIME)
+        self.assertEqual("n9.1-Pinned-f2c5162b", ffmpeg_runtime_version(PINNED_RUNTIME))
         self.assertEqual({"CONFIG_GPL": 0, "CONFIG_NONFREE": 0}, flags)
 
-    def test_pinned_fongmi_runtime_accepts_git_abbreviation_lengths(self) -> None:
+    def test_pinned_pinned_runtime_accepts_git_abbreviation_lengths(self) -> None:
         for length in (7, 10, 12, 20, 40):
             version = (
-                f"git-2026-11-10-{FONGMI_SHA[:length]}-"
-                f"mpvflow-fongmi-{FONGMI_SHA}"
+                f"git-2026-11-10-{PINNED_SHA[:length]}-"
+                f"mpvflow-pinned-{PINNED_SHA}"
             )
             runtime = BASE_RUNTIME.replace("n9.0.2", version)
             with self.subTest(length=length):
-                self.assertEqual("n9.1-FongMi-f2c5162b", ffmpeg_runtime_version(runtime))
+                self.assertEqual("n9.1-Pinned-f2c5162b", ffmpeg_runtime_version(runtime))
 
     def test_unpinned_or_wrong_ffmpeg_markers_are_rejected(self) -> None:
         for version in (
@@ -78,18 +78,18 @@ class EffectiveRuntimeConfigTest(unittest.TestCase):
             "n9.2.0",
             "n9.10.0",
             "9.1.git",
-            f"n8.0.2-mpvflow-fongmi-{FONGMI_SHA}",
-            f"n9.1.0-mpvflow-fongmi-{FONGMI_SHA}",
-            f"9.1.git-mpvflow-fongmi-{FONGMI_SHA}",
-            f"git-2026-11-10-deadbee-mpvflow-fongmi-{FONGMI_SHA}",
-            f"git-2026-11-11-f2c5162-mpvflow-fongmi-{FONGMI_SHA}",
-            f"git-2026-11-10-f-mpvflow-fongmi-{FONGMI_SHA}",
-            f"garbage-mpvflow-fongmi-{FONGMI_SHA}",
-            "git-2026-11-10-f2c5162-mpvflow-fongmi-wrongcommit",
+            f"n8.0.2-mpvflow-pinned-{PINNED_SHA}",
+            f"n9.1.0-mpvflow-pinned-{PINNED_SHA}",
+            f"9.1.git-mpvflow-pinned-{PINNED_SHA}",
+            f"git-2026-11-10-deadbee-mpvflow-pinned-{PINNED_SHA}",
+            f"git-2026-11-11-f2c5162-mpvflow-pinned-{PINNED_SHA}",
+            f"git-2026-11-10-f-mpvflow-pinned-{PINNED_SHA}",
+            f"garbage-mpvflow-pinned-{PINNED_SHA}",
+            "git-2026-11-10-f2c5162-mpvflow-pinned-wrongcommit",
         ):
             with self.subTest(version=version):
                 runtime = BASE_RUNTIME.replace("n9.0.2", version)
-                with self.assertRaisesRegex(RuntimeEvidenceError, "exact FongMi version marker"):
+                with self.assertRaisesRegex(RuntimeEvidenceError, "exact Pinned version marker"):
                     verify_runtime_evidence(runtime)
 
     def test_runtime_requires_a_version_marker(self) -> None:

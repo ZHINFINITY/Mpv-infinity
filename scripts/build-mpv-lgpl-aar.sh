@@ -43,7 +43,7 @@ if [[ "${#ARCHES[@]}" -eq 0 ]]; then
 fi
 ABIS="$(IFS=,; printf '%s' "${ABI_LIST[*]}")"
 VARIANTS=(mpvlib.aar mpvlib-no-vulkun.aar)
-LEGACY_VARIANT=mpvlib-fongmi.aar
+LEGACY_VARIANT=mpvlib-pinned.aar
 RESUME_BUILD="${MPV_LGPL_RESUME:-0}"
 
 if [[ "$RESUME_BUILD" == "1" && -z "${MPV_LGPL_BUILD_ROOT:-}" ]]; then
@@ -411,4 +411,4 @@ for variant in mpvlib.aar mpvlib-no-vulkun.aar; do
 done
 rm -f "$ROOT/app/libs/$LEGACY_VARIANT"
 BUILD_COMPLETE=1
-printf '\nInstalled GPL-free Standard and No-Vulkan AARs for: %s\nRemoved the legacy FongMi AAR from the next build.\n' "$ABIS"
+printf '\nInstalled GPL-free Standard and No-Vulkan AARs for: %s\nRemoved the legacy Pinned AAR from the next build.\n' "$ABIS"

@@ -166,7 +166,7 @@ class MPVView(
     val requestedMpvFlowComputeApi = decoderPreferences.mpvFlowComputeApi.get()
     val mpvFlowFrameInterpolationActive =
       mpvFlowRequested &&
-        BuildConfig.MPV_HAS_FONGMI_MEMC &&
+        BuildConfig.MPV_HAS_PINNED_MEMC &&
         !frameInterpolationConfigOwned &&
         (forceMpvInterpolationOwner || decoderPreferences.playbackEngine.get() != PlaybackEngineMode.NATIVE)
     val mpvFlowSoftBlendDebugActive =
@@ -473,7 +473,7 @@ class MPVView(
     val anime4kActive = decoderPreferences.enableAnime4K.get() && decoderPreferences.anime4kMode.get() != "OFF"
     val mpvFlowFrameInterpolationCandidate =
       mpvFlowFrameInterpolationPreference &&
-        BuildConfig.MPV_HAS_FONGMI_MEMC &&
+        BuildConfig.MPV_HAS_PINNED_MEMC &&
         !frameInterpolationConfigOwned &&
         !anime4kActive &&
         RendererBackendPolicy.canUseDirectGpuFlow(backend.vo, backend.gpuApi) &&
@@ -487,7 +487,7 @@ class MPVView(
           PlaybackSession.setOptionString("display-fps-override", "0")
         else -> null
       }
-    // FongMi MEMC replaces mpv's ordinary `interpolation` frame mixer. Match the pinned
+    // Pinned MEMC replaces mpv's ordinary `interpolation` frame mixer. Match the pinned
     // motion contract: enable the motion option with display-synced ticks, without also enabling
     // the separate built-in interpolation path.
     val flowVideoSyncRc =
@@ -555,7 +555,7 @@ class MPVView(
     // Mailbox replaces stale queued presentation images without reducing the requested output rate.
     // libplacebo falls back to FIFO on Android surfaces that do not support mailbox presentation.
     val flowSwapMode =
-      if (BuildConfig.MPV_HAS_FONGMI_MEMC && backend.gpuApi == "vulkan") {
+      if (BuildConfig.MPV_HAS_PINNED_MEMC && backend.gpuApi == "vulkan") {
         when {
           MpvConfigOverridePolicy.isOwnedByMpvConf("vulkan-swap-mode") -> null
           mpvFlowFrameInterpolationEnabled -> "mailbox"
@@ -649,7 +649,7 @@ class MPVView(
     if (mpvFlowFrameInterpolationEnabled) {
       // Prefer direct MediaCodec/Vulkan frames when supported. The standard flavor uses
       // mediacodec-copy so hardware decoding remains enabled when direct Vulkan import is absent;
-      // FongMi motion synthesis stays on Vulkan and never reads synthesized output back.
+      // Pinned motion synthesis stays on Vulkan and never reads synthesized output back.
       val hardwareDecodeMode =
         RendererBackendPolicy.gpuFlowHwdecMode(
           hardwareDecodingEnabled = decoderPreferences.tryHWDecoding.get(),
@@ -729,7 +729,7 @@ class MPVView(
         null
       }
     val mpvFlowRendererOptionResult =
-      if (BuildConfig.MPV_HAS_FONGMI_MEMC &&
+      if (BuildConfig.MPV_HAS_PINNED_MEMC &&
         !MpvConfigOverridePolicy.isOwnedByMpvConf("motion-interpolation")) {
         val targetFps = if (mpvFlowFrameInterpolationEnabled) mpvFlowTargetFps else 0
         val result = PlaybackSession.setOptionString("motion-interpolation", targetFps.toString())
@@ -768,7 +768,7 @@ class MPVView(
       val reason =
         when {
           mpvFlowFrameInterpolationEnabled -> "enabled"
-          !BuildConfig.MPV_HAS_FONGMI_MEMC -> "runtime_unavailable"
+          !BuildConfig.MPV_HAS_PINNED_MEMC -> "runtime_unavailable"
           frameInterpolationConfigOwned -> "mpv_config_owns_options"
           anime4kActive -> "anime4k_active"
           !RendererBackendPolicy.canUseDirectGpuFlow(backend.vo, backend.gpuApi) ->
@@ -886,7 +886,7 @@ class MPVView(
     PlaybackSession.setOptionString("hr-seek", if (preciseSeek) "yes" else "no")
     PlaybackSession.setOptionString("hr-seek-framedrop", if (preciseSeek) "no" else "yes")
 
-    // FongMi motion-interpolation replaces mpv's ordinary frame mixer; never enable the separate
+    // Pinned motion-interpolation replaces mpv's ordinary frame mixer; never enable the separate
     // `interpolation` option here.
     if (!MpvConfigOverridePolicy.isOwnedByMpvConf("video-sync")) {
       PlaybackSession.setOptionString(
@@ -1365,7 +1365,7 @@ class MPVView(
         (decoderPreferences.anime4kMode.get() != "OFF")
     val flowRequiresVulkan =
       decoderPreferences.mpvFlowFrameInterpolation.get() &&
-        BuildConfig.MPV_HAS_FONGMI_MEMC &&
+        BuildConfig.MPV_HAS_PINNED_MEMC &&
         BuildConfig.MPV_SUPPORTS_VULKAN &&
         !MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.FRAME_INTERPOLATION) &&
         !anime4kEnabled &&

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Verify the exact FongMi MEMC source pair used by the Mpv-infinity 645 test."""
+"""Verify the exact Pinned MEMC source pair used by the Mpv-infinity 645 test."""
 from __future__ import annotations
 
 import hashlib
 import subprocess
 from pathlib import Path
 
-from patch_fongmi_motion_downsample import has_antialias_filter
-from patch_fongmi_paired_color_mask import (
+from patch_motion_downsample import has_antialias_filter
+from patch_paired_color_mask import (
     MARKER as PAIRED_COLOR_MASK_MARKER,
     PATCHED_SUPPORT as PAIRED_COLOR_MASK_SUPPORT,
     has_paired_color_mask,
@@ -43,7 +43,7 @@ def verify_mpv_source(mpv_dir: Path) -> bool:
     required = (motion_path, header_path, vo_path, android_context_path)
     missing = [str(path) for path in required if not path.is_file()]
     if missing:
-        raise ValueError("Mpv-infinity FongMi source is missing required files: " + ", ".join(missing))
+        raise ValueError("Mpv-infinity Pinned source is missing required files: " + ", ".join(missing))
 
     if (root / ".git").exists():
         result = subprocess.run(
@@ -55,7 +55,7 @@ def verify_mpv_source(mpv_dir: Path) -> bool:
         revision = result.stdout.strip() if result.returncode == 0 else ""
         if revision != MPV_REVISION:
             raise ValueError(
-                f"Unexpected FongMi MPV revision: expected {MPV_REVISION}, got {revision or 'unavailable'}"
+                f"Unexpected Pinned MPV revision: expected {MPV_REVISION}, got {revision or 'unavailable'}"
             )
 
     motion = motion_path.read_text(encoding="utf-8")
@@ -69,11 +69,11 @@ def verify_mpv_source(mpv_dir: Path) -> bool:
     elif motion_hash == MOTION_ANTIALIAS_SHA256 and has_antialias_filter(motion):
         antialias_patched = True
     else:
-        raise ValueError(f"Unexpected Mpv-infinity FongMi motion source hash for {motion_path.name}: {motion_hash}")
+        raise ValueError(f"Unexpected Mpv-infinity Pinned motion source hash for {motion_path.name}: {motion_hash}")
 
     header_hash = _sha256(header_path)
     if header_hash != MOTION_HEADER_SHA256:
-        raise ValueError(f"Unexpected FongMi motion source hash for {header_path.name}: {header_hash}")
+        raise ValueError(f"Unexpected Pinned motion source hash for {header_path.name}: {header_hash}")
 
     header = header_path.read_text(encoding="utf-8")
     vo = vo_path.read_text(encoding="utf-8")
@@ -83,10 +83,10 @@ def verify_mpv_source(mpv_dir: Path) -> bool:
         ("capture/render ownership API", "mp_motion_capture_supported" in motion and "mp_motion_render_owned" in motion),
         ("motion API declaration", "mp_motion_create(pl_gpu gpu, int max_dimension)" in header),
         ("480px analysis cap", "mp_motion_create(p->gpu, 480);" in vo),
-        ("FongMi motion option", '{"motion-interpolation", OPT_INT(motion_fps), M_RANGE(0, 240)}' in vo),
+        ("Pinned motion option", '{"motion-interpolation", OPT_INT(motion_fps), M_RANGE(0, 240)}' in vo),
         ("Android display-time presentation", "info->queue_display_time_only = true;" in android_context),
     )
     failed = [name for name, passed in contracts if not passed]
     if failed:
-        raise ValueError("FongMi motion integration contract is incomplete: " + ", ".join(failed))
+        raise ValueError("Pinned motion integration contract is incomplete: " + ", ".join(failed))
     return antialias_patched
