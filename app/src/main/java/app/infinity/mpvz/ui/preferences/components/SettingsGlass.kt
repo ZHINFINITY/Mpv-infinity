@@ -13,6 +13,7 @@ import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.ui.theme.liquidGlassPane
+import app.infinity.mpvz.ui.theme.paneIsInPopupWindow
 import app.infinity.mpvz.ui.theme.LocalGlassCustomization
 import app.infinity.mpvz.ui.theme.GlassSurfacePolicy
 import org.koin.compose.koinInject
@@ -49,12 +50,16 @@ fun Modifier.settingsGlassSurface(
   val tuning = LocalGlassCustomization.current
   // Independent geometry never bypasses the master or global material tuning.
   // liquidGlassPane owns the override policy for both browser and player scenes.
+  // A pane composed into a dialog/popup window presents itself as a popup pane: Clear panes
+  // never sample the popup scene by policy, so a dialog that stayed Clear had nothing to frost
+  // and fell back to a flat fill — that is why liquid glass was missing from popups.
+  val inPopupWindow = paneIsInPopupWindow()
   return liquidGlassPane(
     enabled = enabled,
     opacity = opacity ?: tuning.opacity,
     highlight = highlight ?: tuning.highlight,
     cornerRadius = cornerRadius,
-    materialRole = if (independent) GlassSurfacePolicy.MaterialRole.Regular
+    materialRole = if (independent || inPopupWindow) GlassSurfacePolicy.MaterialRole.Regular
       else GlassSurfacePolicy.MaterialRole.Clear,
   )
 }

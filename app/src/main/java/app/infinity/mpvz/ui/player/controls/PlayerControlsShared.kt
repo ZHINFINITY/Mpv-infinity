@@ -1335,6 +1335,16 @@ internal data class BatterySnapshot(
   val tempText: String,
 )
 
+/**
+ * Converts BATTERY_PROPERTY_CURRENT_NOW / _AVERAGE into signed milliamps.
+ *
+ * The platform documents microamps, but several OEMs (Samsung, Xiaomi, OnePlus) report
+ * milliamps. No phone charges or drains at 5 A, so a magnitude at or above 5000 can only be
+ * microamps. The sign is preserved: positive is current into the battery, negative is out of it.
+ */
+internal fun batteryCurrentMilliAmps(raw: Long): Float =
+  if (abs(raw) >= 5_000L) raw / 1000f else raw.toFloat()
+
 internal fun readBatterySnapshot(context: Context): BatterySnapshot {
   val batteryIntent = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
   val level = batteryIntent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
@@ -1357,6 +1367,9 @@ internal fun readBatterySnapshot(context: Context): BatterySnapshot {
 
   val voltageMilliVolts = batteryIntent?.getIntExtra(BatteryManager.EXTRA_VOLTAGE, -1)?.takeIf { it > 0 }
 
+  val signedMilliAmps = currentMicroAmps?.let { batteryCurrentMilliAmps(it) }?.takeIf { it != 0f }
+  val currentMilliAmps = signedMilliAmps?.let { abs(it) }
+
   val status =
     batteryIntent?.getIntExtra(BatteryManager.EXTRA_STATUS, BatteryManager.BATTERY_STATUS_UNKNOWN)
       ?: BatteryManager.BATTERY_STATUS_UNKNOWN
@@ -1368,13 +1381,12 @@ internal fun readBatterySnapshot(context: Context): BatterySnapshot {
       BatteryManager.BATTERY_STATUS_NOT_CHARGING -> "Not charging"
       else ->
         when {
-          (currentMicroAmps ?: 0L) > 0L -> "Charging"
-          (currentMicroAmps ?: 0L) < 0L -> "Discharging"
+          (signedMilliAmps ?: 0f) > 0f -> "Charging"
+          (signedMilliAmps ?: 0f) < 0f -> "Discharging"
           else -> "Unknown"
         }
     }
 
-  val currentMilliAmps = currentMicroAmps?.let { abs(it).toFloat() / 1000f }?.takeIf { it > 0f }
   val rateText =
     if (currentMilliAmps != null && statusText != "Full" && statusText != "Unknown") {
       val formattedCurrent =
@@ -1390,8 +1402,9 @@ internal fun readBatterySnapshot(context: Context): BatterySnapshot {
 
   val wattsText =
     if (currentMilliAmps != null && voltageMilliVolts != null && voltageMilliVolts > 0) {
-      val watts = (currentMilliAmps / 1000f) * (voltageMilliVolts / 1000f)
-      String.format("%.2f W", watts)
+      val magnitude = (currentMilliAmps / 1000f) * (voltageMilliVolts / 1000f)
+      val signed = if (statusText == "Discharging") -magnitude else magnitude
+      String.format("%.2f W", signed)
     } else {
       "-- W"
     }

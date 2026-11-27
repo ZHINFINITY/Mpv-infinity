@@ -112,6 +112,7 @@ class MusicPlaybackService : MediaSessionService() {
         .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
         .setEnableDecoderFallback(true)
     player = ExoPlayer.Builder(this).setRenderersFactory(renderersFactory).build()
+    AudioOutputRouter.attach(player)
     player.setAudioAttributes(
       AudioAttributes.Builder()
         .setUsage(C.USAGE_MEDIA)
@@ -152,6 +153,7 @@ class MusicPlaybackService : MediaSessionService() {
     serviceScope.cancel()
     if (::mediaSession.isInitialized) mediaSession.release()
     if (::player.isInitialized) {
+      AudioOutputRouter.detach(player)
       player.removeListener(listener)
       player.release()
     }

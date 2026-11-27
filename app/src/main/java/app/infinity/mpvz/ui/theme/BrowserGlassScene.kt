@@ -88,6 +88,17 @@ private val LocalBrowserScene = compositionLocalOf<BrowserScene?> { null }
  * recorded route tree, so there is no producer -> consumer cycle.
  */
 private val LocalBrowserPopupScene = compositionLocalOf<BrowserScene?> { null }
+
+/**
+ * True when a pane is composed into a dialog/popup window above the route's popup producer.
+ * Such a pane must present itself as a popup pane, because Clear panes never sample the popup
+ * scene and a dialog that stayed Clear had nothing to frost.
+ */
+@Composable
+internal fun paneIsInPopupWindow(): Boolean {
+  val ownerView = LocalBrowserPopupScene.current?.ownerView ?: return false
+  return ownerView !== LocalView.current
+}
 private val LocalBrowserCapabilities = compositionLocalOf { BrowserGlassCapabilities(false, false, false) }
 
 /** App-owned background producer, a sibling of all controls/routes. Its subtree

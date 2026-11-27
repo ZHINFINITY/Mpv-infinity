@@ -43,7 +43,7 @@ class GlassMaterialRolePolicyTest {
 
   @Test fun independentSettingsAndPlayerPopupsRouteToRegularMaterial() {
     val settings = source("ui/preferences/components/SettingsGlass.kt")
-    assertTrue(settings.contains("if (independent) GlassSurfacePolicy.MaterialRole.Regular"))
+    assertTrue(settings.contains("if (independent || inPopupWindow) GlassSurfacePolicy.MaterialRole.Regular"))
     assertTrue(settings.contains("tuning.opacity") && settings.contains("tuning.highlight"))
     assertTrue(source("presentation/components/PlayerSheet.kt").contains("materialRole = GlassSurfacePolicy.MaterialRole.Regular"))
     assertTrue(source("presentation/components/PlayerGlassOverlays.kt").contains("materialRole = GlassSurfacePolicy.MaterialRole.Regular"))

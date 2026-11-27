@@ -39,43 +39,45 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.infinity.mpvz.presentation.components.PlayerSheet
+import app.infinity.mpvz.ui.browser.music.AudioOutputRouter
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
 import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
 import app.infinity.mpvz.ui.player.controls.components.GlassSlider
 
+/** The device's own product name when the platform reports one, so two pairs of earbuds differ. */
+private fun AudioDeviceInfo.defaultLabel(fallback: String): String =
+  productName?.toString()?.trim()?.takeIf { it.isNotEmpty() && !it.equals("null", true) } ?: fallback
+
+/** Every output type gets its own icon and label instead of one shared "Audio output" row. */
 private fun AudioDeviceInfo.labelAndIcon(): Pair<String, app.infinity.mpvz.ui.icons.AppIcon>? =
   when (type) {
     AudioDeviceInfo.TYPE_BUILTIN_EARPIECE -> null // never a media output; routing here sends audio to the earpiece
     AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
     AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
-    -> "Bluetooth" to Icons.RoundedFilled.Bluetooth
+    AudioDeviceInfo.TYPE_BLE_HEADSET,
+    -> defaultLabel("Bluetooth") to Icons.RoundedFilled.Bluetooth
     AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
     AudioDeviceInfo.TYPE_WIRED_HEADSET,
+    -> defaultLabel("Wired headphones") to Icons.RoundedFilled.Headset
     AudioDeviceInfo.TYPE_USB_HEADSET,
     AudioDeviceInfo.TYPE_USB_DEVICE,
     AudioDeviceInfo.TYPE_USB_ACCESSORY,
-    -> "Headphones" to Icons.RoundedFilled.Headset
+    -> defaultLabel("USB audio") to Icons.RoundedFilled.Usb
     AudioDeviceInfo.TYPE_BUILTIN_SPEAKER,
     AudioDeviceInfo.TYPE_TELEPHONY,
     -> "Speaker" to Icons.RoundedFilled.Speaker
-    AudioDeviceInfo.TYPE_HDMI -> "HDMI" to Icons.RoundedFilled.VolumeUp
-    else -> "Audio output" to Icons.RoundedFilled.VolumeUp
+    AudioDeviceInfo.TYPE_HDMI,
+    AudioDeviceInfo.TYPE_HDMI_ARC,
+    AudioDeviceInfo.TYPE_HDMI_EARC,
+    -> "HDMI" to Icons.RoundedFilled.Tv
+    AudioDeviceInfo.TYPE_DOCK -> "Dock" to Icons.RoundedFilled.Cast
+    AudioDeviceInfo.TYPE_LINE_ANALOG,
+    AudioDeviceInfo.TYPE_LINE_DIGITAL,
+    -> "Line out" to Icons.RoundedFilled.VolumeUp
+    else -> defaultLabel("Audio output") to Icons.RoundedFilled.VolumeUp
   }
-
-/** True for outputs a user would pick to hear media: plugged-in or wireless devices first. */
-private fun AudioDeviceInfo.isPreferredMediaSink(): Boolean =
-  type in
-    setOf(
-      AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
-      AudioDeviceInfo.TYPE_WIRED_HEADSET,
-      AudioDeviceInfo.TYPE_USB_HEADSET,
-      AudioDeviceInfo.TYPE_USB_DEVICE,
-      AudioDeviceInfo.TYPE_USB_ACCESSORY,
-      AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
-      AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
-    )
 
 @Composable
 fun AudioOutputSheet(
@@ -89,14 +91,8 @@ fun AudioOutputSheet(
   }
   val maxVolume = remember { audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC) }
   var selectedDeviceId by remember {
-    mutableStateOf(
-      // The communication list starts at the built-in speaker, so earbuds that media is really
-      // playing through were shown as "Speaker". Prefer a plugged-in or wireless media output.
-      audioManager
-        .getDevices(AudioManager.GET_DEVICES_OUTPUTS)
-        .let { outputs -> outputs.firstOrNull { it.isPreferredMediaSink() } ?: outputs.firstOrNull() }
-        ?.id,
-    )
+    // A pick made earlier in the session wins over guessing from the platform's active list.
+    mutableStateOf((AudioOutputRouter.selectedDevice() ?: AudioOutputRouter.activeMediaDevice(context))?.id)
   }
   val devices =
     remember {
@@ -153,16 +149,10 @@ fun AudioOutputSheet(
                 )
                 .clickable {
                   selectedDeviceId = device.id
-                  if (device.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER ||
-                    device.type == AudioDeviceInfo.TYPE_TELEPHONY
-                  ) {
-                    // Speaker: drop any communication routing so media plays on the speaker.
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                      audioManager.clearCommunicationDevice()
-                    }
-                  } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    audioManager.setCommunicationDevice(device)
-                  }
+                  // Media routing, not communication routing: setCommunicationDevice rejects
+                  // HDMI/line/dock outputs with IllegalArgumentException and never moved the
+                  // music stream, which is why Bluetooth -> speaker did nothing.
+                  AudioOutputRouter.select(device)
                 }
                 .padding(horizontal = 16.dp, vertical = 12.dp),
           ) {
