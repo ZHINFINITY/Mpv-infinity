@@ -6,6 +6,7 @@
 
 package app.infinity.mpvz.network
 
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.Call
 import okhttp3.Callback
@@ -78,3 +79,29 @@ internal suspend fun <T> Call.awaitUse(block: (Response) -> T): T =
 
 /** [awaitUse] that reads the whole body as text. */
 internal suspend fun Call.awaitText(): HttpTextResponse = awaitUse { response -> HttpTextResponse(response.code, response.body.string()) }
+
+/** Transient server or network failures worth retrying: timeouts, throttling and 5xx. */
+private fun isTransientStatus(code: Int): Boolean = code == 408 || code == 429 || code in 500..599
+
+/**
+ * [awaitResponse] with bounded retries and a short linear backoff. A Jellyfin server on a
+ * flaky link (or restarting) answers 5xx/429 for a moment; retrying beats showing the user
+ * an error page for a hiccup. Only GET-style idempotent work should use this.
+ */
+internal suspend fun Call.awaitResponseRetrying(
+  maxAttempts: Int = 3,
+  baseDelayMs: Long = 250,
+): Response {
+  var attempt = 0
+  while (true) {
+    attempt++
+    try {
+      val response = awaitResponse()
+      if (!isTransientStatus(response.code) || attempt >= maxAttempts) return response
+      response.close()
+    } catch (error: IOException) {
+      if (attempt >= maxAttempts) throw error
+    }
+    delay(baseDelayMs * attempt)
+  }
+}

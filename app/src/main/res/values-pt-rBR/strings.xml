@@ -1205,6 +1205,9 @@ Reinicie o aplicativo para que todas as alterações entrem em vigor.</string>
   <string name="ui_view_options">Opções de visualização</string>
   <string name="ambient_glow">Brilho</string>
   <string name="ambient_style_youtube">YouTube</string>
+  <string name="ambient_style_cinema">Cinema</string>
+  <string name="ambient_style_echo">Eco</string>
+  <string name="ambient_style_mirror">Espelho</string>
   <string name="ambient_color">Cor</string>
   <string name="ambient_compositing">Composição</string>
   <string name="ambient_visual_style">Estilo visual</string>

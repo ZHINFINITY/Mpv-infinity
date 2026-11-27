@@ -34,6 +34,7 @@ data class AmbientGlowShaderSpec(
   val satBoost: Float,
   val warmth: Float,
   val fadeCurve: Float,
+  val style: AmbientStyle = AmbientStyle.Glow,
 )
 
 data class AmbientGlowPreset(
@@ -206,11 +207,25 @@ object AmbientShaderBuilder {
   fun build(
     @Suppress("UNUSED_PARAMETER") context: Context,
     spec: AmbientGlowShaderSpec,
-  ): String =
-    """
+  ): String {
+    val body =
+      when (spec.style) {
+        AmbientStyle.Cinema -> CINEMA_BODY
+        AmbientStyle.Echo -> ECHO_BODY
+        AmbientStyle.Mirror -> MIRROR_BODY
+        else -> GLOW_BODY
+      }
+    val desc =
+      when (spec.style) {
+        AmbientStyle.Cinema -> "True Ambient Mode (Cinema)"
+        AmbientStyle.Echo -> "True Ambient Mode (Echo)"
+        AmbientStyle.Mirror -> "True Ambient Mode (Mirror)"
+        else -> "True Ambient Mode (Glow)"
+      }
+    return """
 //!HOOK OUTPUT
 //!BIND HOOKED
-//!DESC True Ambient Mode (Glow)
+//!DESC $desc
 
 #define BLUR_SAMPLES     ${spec.blurSamples}
 #define MAX_RADIUS       ${spec.maxRadius}
@@ -231,7 +246,15 @@ $GLSL_COMMON_HELPERS
 
 vec4 hook() {
 $GLSL_VIDEO_PROLOGUE
+$body
 
+$GLSL_AMBIENT_EPILOGUE
+}
+    """.trimIndent()
+  }
+
+  private val GLOW_BODY =
+    """
     float edge_fade = exp(-edge_dist * (3.0 / max(MAX_RADIUS, 0.001)));
 
     vec3 acc_color = vec3(0.0);
@@ -257,8 +280,101 @@ $GLSL_VIDEO_PROLOGUE
     ambient_rgb = adjust_saturation(ambient_rgb, SAT_BOOST);
     ambient_rgb = apply_warmth(ambient_rgb, WARMTH);
     ambient_rgb *= edge_fade;
+    """.trimIndent().prependIndent("    ")
 
-$GLSL_AMBIENT_EPILOGUE
-}
-    """.trimIndent()
+  /** Wide, zoomed-out projection of the whole picture — a diffuse cinema backdrop. */
+  private val CINEMA_BODY =
+    """
+    vec3 acc_color = vec3(0.0);
+    float acc_weight = 0.0;
+
+    // Zoom out from the same edge point so the backdrop reads as the enlarged
+    // picture rather than a smear of the border pixels.
+    vec2 zoom_uv = (edge_origin - 0.5) / 1.18 + 0.5;
+    float wide_radius = max(MAX_RADIUS, 0.001) * 2.4;
+
+    for (int i = 0; i < BLUR_SAMPLES; i++) {
+        vec3 tap = GLOW_TAPS[i];
+        vec2 base_offset = tap.xy * wide_radius;
+
+        vec2 offset = vec2(
+            base_offset.x * jitter_c - base_offset.y * jitter_s,
+            base_offset.x * jitter_s + base_offset.y * jitter_c
+        ) * aspect_fix;
+        vec3 sample_rgb = HOOKED_tex(clamp(zoom_uv + offset, safe_min, safe_max)).rgb;
+
+        float weight = tap.z + 0.05;
+        acc_color += sample_rgb * weight;
+        acc_weight += weight;
+    }
+
+    vec3 ambient_rgb = (acc_color / max(acc_weight, 1e-5)) * GLOW_INTENSITY;
+    ambient_rgb = adjust_saturation(ambient_rgb, SAT_BOOST * 0.9);
+    ambient_rgb = apply_warmth(ambient_rgb, WARMTH);
+    // Long, soft falloff into the bar depth.
+    ambient_rgb *= mix(1.0, 0.45, smoothstep(0.0, max(MAX_RADIUS * 4.0, 0.001), edge_dist));
+    """.trimIndent().prependIndent("    ")
+
+  /** Concentric ripples of light pushed out from the video edge. */
+  private val ECHO_BODY =
+    """
+    vec2 away = uv - clamp(uv, 0.0, 1.0);
+    vec2 away_dir = normalize(away + vec2(1e-5)) * aspect_fix;
+    float ripple_speed = 10.0 + 28.0 * clamp(edge_dist / max(MAX_RADIUS, 0.001), 0.0, 1.0);
+
+    vec3 acc_color = vec3(0.0);
+    float acc_weight = 0.0;
+
+    for (int i = 0; i < BLUR_SAMPLES; i++) {
+        float t = float(i) / float(max(BLUR_SAMPLES - 1, 1));
+        float reach = MAX_RADIUS * (0.25 + 0.75 * t);
+        float decay = exp(-t * 2.4);
+        float ring = 0.5 + 0.5 * sin(t * 12.566371 - edge_dist * ripple_speed);
+        float weight = decay * (0.35 + 0.65 * ring);
+
+        vec2 sample_uv = clamp(edge_origin + away_dir * reach, safe_min, safe_max);
+        acc_color += HOOKED_tex(sample_uv).rgb * weight;
+        acc_weight += weight;
+    }
+
+    vec3 ambient_rgb = (acc_color / max(acc_weight, 1e-5)) * GLOW_INTENSITY;
+    ambient_rgb = adjust_saturation(ambient_rgb, SAT_BOOST * 1.1);
+    ambient_rgb = apply_warmth(ambient_rgb, WARMTH);
+    ambient_rgb *= smoothstep(0.0, max(MAX_RADIUS * 2.2, 0.001), edge_dist);
+    """.trimIndent().prependIndent("    ")
+
+  /** Mirror reflection of the frame across the nearest video border. */
+  private val MIRROR_BODY =
+    """
+    vec2 mirrored = video_uv;
+    if (video_uv.x < 0.0) mirrored.x = -video_uv.x;
+    if (video_uv.x > 1.0) mirrored.x = 2.0 - video_uv.x;
+    if (video_uv.y < 0.0) mirrored.y = -video_uv.y;
+    if (video_uv.y > 1.0) mirrored.y = 2.0 - video_uv.y;
+    mirrored = clamp(mirrored, safe_min, safe_max);
+
+    vec3 acc_color = vec3(0.0);
+    float acc_weight = 0.0;
+
+    for (int i = 0; i < BLUR_SAMPLES; i++) {
+        vec3 tap = GLOW_TAPS[i];
+        vec2 base_offset = tap.xy * MAX_RADIUS * 0.9;
+
+        vec2 offset = vec2(
+            base_offset.x * jitter_c - base_offset.y * jitter_s,
+            base_offset.x * jitter_s + base_offset.y * jitter_c
+        ) * aspect_fix;
+        vec3 sample_rgb = HOOKED_tex(clamp(mirrored + offset, safe_min, safe_max)).rgb;
+
+        float weight = tap.z + 0.05;
+        acc_color += sample_rgb * weight;
+        acc_weight += weight;
+    }
+
+    vec3 ambient_rgb = (acc_color / max(acc_weight, 1e-5)) * GLOW_INTENSITY * 0.9;
+    ambient_rgb = adjust_saturation(ambient_rgb, SAT_BOOST * 0.85);
+    ambient_rgb = apply_warmth(ambient_rgb, WARMTH);
+    // Glass-table fade: reflection weakens quickly away from the border.
+    ambient_rgb *= exp(-edge_dist * (5.0 / max(MAX_RADIUS, 0.001)));
+    """.trimIndent().prependIndent("    ")
 }

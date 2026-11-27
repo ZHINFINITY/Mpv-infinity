@@ -1193,6 +1193,9 @@
   <string name="ui_view_options">Xem tùy chọn</string>
   <string name="ambient_glow">Ánh sáng</string>
   <string name="ambient_style_youtube">YouTube</string>
+  <string name="ambient_style_cinema">Điện ảnh</string>
+  <string name="ambient_style_echo">Vọng âm</string>
+  <string name="ambient_style_mirror">Gương</string>
   <string name="ambient_color">Màu sắc</string>
   <string name="ambient_compositing">Soạn</string>
   <string name="ambient_visual_style">Phong cách trực quan</string>

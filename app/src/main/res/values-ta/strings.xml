@@ -1193,6 +1193,9 @@
   <string name="ui_view_options">View விருப்பங்கள்</string>
   <string name="ambient_glow">ஒளிர்வு</string>
   <string name="ambient_style_youtube">விருப்பம்: YouTube</string>
+  <string name="ambient_style_cinema">சினிமா</string>
+  <string name="ambient_style_echo">எதிரொலி</string>
+  <string name="ambient_style_mirror">கண்ணாடி</string>
   <string name="ambient_color">வண்ணம்</string>
   <string name="ambient_compositing">கலப்பு</string>
   <string name="ambient_visual_style">காட்சி பாணி</string>

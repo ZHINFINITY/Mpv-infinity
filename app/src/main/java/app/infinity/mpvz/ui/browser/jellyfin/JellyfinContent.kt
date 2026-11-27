@@ -643,6 +643,21 @@ fun JellyfinContent(
                       }
                     }
 
+                    // 3b. Next Up Section — the next unwatched episode of each series.
+                    if (uiState.nextUpItems.isNotEmpty()) {
+                      item {
+                        JellyfinHorizontalSection(
+                          title = "Next Up",
+                          subtitle = "New episodes in your series",
+                          items = uiState.nextUpItems,
+                          server = server,
+                          isContinueWatching = true,
+                          onItemClick = { item -> viewModel.playItem(context, item) },
+                          onItemLongClick = { item -> viewModel.openDetail(item) },
+                        )
+                      }
+                    }
+
                     // 4. Per-Library Latest Sections (e.g. Latest Movies, Latest Shows, etc.)
                     if (uiState.librarySections.isNotEmpty()) {
                       items(uiState.librarySections, key = { "lib_section_${it.library.id}" }) { section ->

@@ -1193,6 +1193,9 @@
   <string name="ui_view_options">व्यू विकल्प</string>
   <string name="ambient_glow">ग्लो</string>
   <string name="ambient_style_youtube">YouTube</string>
+  <string name="ambient_style_cinema">सिनेमा</string>
+  <string name="ambient_style_echo">प्रतिध्वनि</string>
+  <string name="ambient_style_mirror">दर्पण</string>
   <string name="ambient_color">रंग</string>
   <string name="ambient_compositing">कंपोज़िटिंग</string>
   <string name="ambient_visual_style">विज़ुअल स्टाइल</string>

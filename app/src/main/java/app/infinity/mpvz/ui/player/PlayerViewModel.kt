@@ -7248,7 +7248,7 @@ class PlayerViewModel(
     if (enabled) {
       disableAmbientShader()
     } else if (
-      AmbientRendererPolicy.shouldResumeGlowAfterFrameCaptureFallback(enabled, isAmbientGlowRuntimeActive())
+      AmbientRendererPolicy.shouldResumeGlowAfterFrameCaptureFallback(enabled, isAmbientShaderRuntimeActive())
     ) {
       lastAmbientScaleX = -1.0
       lastAmbientScaleY = -1.0
@@ -7262,15 +7262,15 @@ class PlayerViewModel(
       _isAmbientEnabled.value &&
       !MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.AMBIENT)
 
-  private fun isAmbientGlowRuntimeActive(): Boolean =
-    isAmbientRuntimeActive() && _ambientStyle.value == AmbientStyle.Glow && !frameCapturedAmbientFallback
+  private fun isAmbientShaderRuntimeActive(): Boolean =
+    isAmbientRuntimeActive() && _ambientStyle.value.isShaderBacked && !frameCapturedAmbientFallback
 
   fun toggleAmbientMode() {
     if (MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.AMBIENT)) return
     _isAmbientEnabled.value = !_isAmbientEnabled.value
     playerPreferences.isAmbientEnabled.set(_isAmbientEnabled.value)
     if (_isAmbientEnabled.value) {
-      if (_ambientStyle.value == AmbientStyle.Glow) {
+      if (_ambientStyle.value.isShaderBacked) {
         lastAmbientScaleX = -1.0
         scheduleAmbientUpdate(0)
       }
@@ -7291,7 +7291,7 @@ class PlayerViewModel(
       PlayerUpdates.ShowText(
         appContext.getString(R.string.ambient_style_update, appContext.getString(style.titleRes)),
       )
-    if (style == AmbientStyle.Glow) {
+    if (style.isShaderBacked) {
       lastAmbientScaleX = -1.0
       scheduleAmbientUpdate(0)
     } else {
@@ -7327,7 +7327,7 @@ class PlayerViewModel(
 
   /** Called when the device orientation changes. Refreshes Glow for the new output dimensions. */
   fun onOrientationChanged() {
-    if (!isAmbientGlowRuntimeActive()) return
+    if (!isAmbientShaderRuntimeActive()) return
 
     // The compiled spec is the cache key; scale sentinels alone do not force a rebuild.
     lastCompiledSpec = null
@@ -7349,7 +7349,7 @@ class PlayerViewModel(
    * Called after shader-stack changes so ambient stays as the last OUTPUT pass.
    */
   fun restartAmbientIfActive() {
-    if (!isAmbientGlowRuntimeActive()) return
+    if (!isAmbientShaderRuntimeActive()) return
     disableAmbientShader()
     // Small delay to let Anime4K shaders settle.
     scheduleAmbientUpdate(200)
@@ -7389,7 +7389,7 @@ class PlayerViewModel(
 
   private fun scheduleAmbientUpdate(delayMs: Long = 150L) {
     synchronized(ambientScheduleLock) {
-      if (!isAmbientGlowRuntimeActive()) return
+      if (!isAmbientShaderRuntimeActive()) return
 
       val generation = ambientUpdateGeneration.incrementAndGet()
       ambientDebounceJob?.cancel()
@@ -7496,7 +7496,7 @@ class PlayerViewModel(
   }
 
   private suspend fun updateAmbientStretch(generation: Long) {
-    if (!isAmbientGlowRuntimeActive() || generation != ambientUpdateGeneration.get()) return
+    if (!isAmbientShaderRuntimeActive() || generation != ambientUpdateGeneration.get()) return
 
     runCatching {
       val osdW = PlaybackSession.getPropertyInt("osd-width") ?: 1920
@@ -7579,7 +7579,7 @@ class PlayerViewModel(
       currentCoroutineContext().ensureActive()
 
       synchronized(ambientRenderLock) {
-        if (!isAmbientGlowRuntimeActive() || generation != ambientUpdateGeneration.get()) {
+        if (!isAmbientShaderRuntimeActive() || generation != ambientUpdateGeneration.get()) {
           newFile.delete()
           return@synchronized
         }
@@ -7641,6 +7641,7 @@ class PlayerViewModel(
       satBoost = satBoost,
       warmth = warmth,
       fadeCurve = fadeCurve,
+      style = _ambientStyle.value,
     )
   }
 

@@ -1193,6 +1193,9 @@
   <string name="ui_view_options">گزینه View Options</string>
   <string name="ambient_glow">Glow</string>
   <string name="ambient_style_youtube">YouTube</string>
+  <string name="ambient_style_cinema">سینما</string>
+  <string name="ambient_style_echo">پژواک</string>
+  <string name="ambient_style_mirror">آینه</string>
   <string name="ambient_color">رنگ رنگی</string>
   <string name="ambient_compositing">تکمیل</string>
   <string name="ambient_visual_style">سبک بصری</string>

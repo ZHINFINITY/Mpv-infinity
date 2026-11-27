@@ -1205,6 +1205,9 @@
   <string name="ui_view_options">视图选项</string>
   <string name="ambient_glow">辉光</string>
   <string name="ambient_style_youtube">YouTube</string>
+  <string name="ambient_style_cinema">影院</string>
+  <string name="ambient_style_echo">回声</string>
+  <string name="ambient_style_mirror">镜像</string>
   <string name="ambient_color">颜色</string>
   <string name="ambient_compositing">合成</string>
   <string name="ambient_visual_style">视觉样式</string>

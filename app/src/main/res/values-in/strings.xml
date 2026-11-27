@@ -1193,6 +1193,9 @@
   <string name="ui_view_options">Lihat Opsi</string>
   <string name="ambient_glow">Binar</string>
   <string name="ambient_style_youtube">YouTube</string>
+  <string name="ambient_style_cinema">Sinema</string>
+  <string name="ambient_style_echo">Gema</string>
+  <string name="ambient_style_mirror">Cermin</string>
   <string name="ambient_color">Warna</string>
   <string name="ambient_compositing">Pengomposisian</string>
   <string name="ambient_visual_style">Gaya Visual</string>

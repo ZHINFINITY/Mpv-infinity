@@ -52,6 +52,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import android.os.Build
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearOutSlowInEasing
@@ -362,6 +363,24 @@ fun GlassSwitch(
   val switchInteraction = remember { MutableInteractionSource() }
   val switchPressed by switchInteraction.collectIsPressedAsState()
   val switchDragged by switchInteraction.collectIsDraggedAsState()
+  val haptics = LocalHapticFeedback.current
+  val glassAccent = scheme.primary
+  // Checked glow: a soft coloured halo that fades in with the on state, mpvRx-style.
+  val glowSpec = if (reducedMotion) snap<Float>() else spring<Float>(dampingRatio = 0.72f, stiffness = Spring.StiffnessLow)
+  val glowStrength by animateFloatAsState(
+    if (checked && enabled) 1f else 0f, glowSpec, label = "switchGlow",
+  )
+  // Thumb pop: a quick scale bump on every state change so the toggle feels physical.
+  val popSpec = if (reducedMotion) snap<Float>() else spring<Float>(dampingRatio = 0.42f, stiffness = Spring.StiffnessMedium)
+  val pop by animateFloatAsState(if (checked) 1.06f else 0.96f, popSpec, label = "switchPop")
+  val handleToggle: (Boolean) -> Unit = { next ->
+    if (enabled) {
+      haptics.performHapticFeedback(
+        if (next) HapticFeedbackType.ToggleOn else HapticFeedbackType.ToggleOff,
+      )
+      onCheckedChange?.invoke(next)
+    }
+  }
   val lensMotionSpec = if (reducedMotion) snap<Float>() else spring<Float>(dampingRatio = 0.62f, stiffness = Spring.StiffnessMediumLow)
   val lensProgress by animateFloatAsState(
     if (lensEnabled && !reducedMotion && (switchPressed || switchDragged)) 1f else 0f,
@@ -386,6 +405,13 @@ fun GlassSwitch(
     val thumbShape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
     val base = Modifier
       .size(width = GlassControlGeometryPolicy.switchThumbWidthDp.dp, height = GlassControlGeometryPolicy.switchThumbHeightDp.dp)
+      .graphicsLayer { scaleX = pop; scaleY = pop }
+      .shadow(
+        elevation = (glowStrength * 12f).dp,
+        shape = thumbShape,
+        ambientColor = glassAccent.copy(alpha = 0.55f),
+        spotColor = glassAccent.copy(alpha = 0.75f),
+      )
       .then(depthLayer)
     Box(
       if (lensEnabled) base
@@ -401,13 +427,13 @@ fun GlassSwitch(
     Box(modifier, contentAlignment = Alignment.Center) {
       Box(Modifier.matchParentSize().layerBackdrop(trackBackdrop).then(trackOptics))
       Switch(
-        checked = checked, onCheckedChange = onCheckedChange, enabled = enabled,
+        checked = checked, onCheckedChange = if (enabled) handleToggle else null, enabled = enabled,
         colors = transparent, thumbContent = glassThumb, interactionSource = switchInteraction,
       )
     }
   } else {
     Switch(
-      checked = checked, onCheckedChange = onCheckedChange, enabled = enabled,
+      checked = checked, onCheckedChange = if (enabled) handleToggle else null, enabled = enabled,
       colors = if (glass) transparent else tuned,
       thumbContent = if (!glass) thumbContent else glassThumb,
       interactionSource = switchInteraction,

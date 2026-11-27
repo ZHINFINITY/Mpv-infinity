@@ -94,7 +94,7 @@ class AmbientRendererPolicyTest {
     assertTrue(mpvView.contains("PlaybackSession.observeProperty(\"vo\", MPVLib.MpvFormat.MPV_FORMAT_STRING)"))
     assertTrue(viewModel.contains("&& !frameCapturedAmbientFallback"))
     assertTrue(viewModel.contains("@Volatile private var frameCapturedAmbientFallback = true"))
-    assertTrue(fallbackSetter.contains("AmbientRendererPolicy.shouldResumeGlowAfterFrameCaptureFallback(enabled, isAmbientGlowRuntimeActive())"))
+    assertTrue(fallbackSetter.contains("AmbientRendererPolicy.shouldResumeGlowAfterFrameCaptureFallback(enabled, isAmbientShaderRuntimeActive())"))
     assertTrue(fallbackSetter.contains("scheduleAmbientUpdate(0)"))
     assertTrue(viewModel.contains("if (enabled) {\n      disableAmbientShader()"))
   }

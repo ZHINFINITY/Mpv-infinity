@@ -1284,6 +1284,9 @@
   <string name="ui_view_options">View Options</string>
   <string name="ambient_glow">Glow</string>
   <string name="ambient_style_youtube">YouTube</string>
+  <string name="ambient_style_cinema">Cinema</string>
+  <string name="ambient_style_echo">Echo</string>
+  <string name="ambient_style_mirror">Mirror</string>
   <string name="ambient_color">Color</string>
   <string name="ambient_compositing">Compositing</string>
   <string name="ambient_visual_style">Visual Style</string>

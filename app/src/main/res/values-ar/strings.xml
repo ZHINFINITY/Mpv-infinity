@@ -1205,6 +1205,9 @@
   <string name="ui_view_options">خيارات العرض</string>
   <string name="ambient_glow">توهّج</string>
   <string name="ambient_style_youtube">YouTube</string>
+  <string name="ambient_style_cinema">سينما</string>
+  <string name="ambient_style_echo">صدى</string>
+  <string name="ambient_style_mirror">مرآة</string>
   <string name="ambient_color">اللون</string>
   <string name="ambient_compositing">الدمج</string>
   <string name="ambient_visual_style">النمط المرئي</string>

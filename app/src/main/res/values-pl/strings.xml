@@ -1205,6 +1205,9 @@
   <string name="ui_view_options">View Opcje</string>
   <string name="ambient_glow">Poświata</string>
   <string name="ambient_style_youtube">YouTube</string>
+  <string name="ambient_style_cinema">Kino</string>
+  <string name="ambient_style_echo">Echo</string>
+  <string name="ambient_style_mirror">Lustro</string>
   <string name="ambient_color">Kolor</string>
   <string name="ambient_compositing">Kompozycja</string>
   <string name="ambient_visual_style">Wizualny Styl</string>
