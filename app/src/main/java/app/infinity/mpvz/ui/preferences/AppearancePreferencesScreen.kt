@@ -364,9 +364,15 @@ object AppearancePreferencesScreen : Screen {
                     },
                     title = { Text("Liquid glass surfaces") },
                     summary = {
-                      Text(
-                        app.infinity.mpvz.ui.theme.GlassDeviceSupportText.summary(glassVerdict),
-                      )
+                      val engineText =
+                        if (liquidGlassSurfaces && app.infinity.mpvz.ui.theme.lens.LocalLensGlassEnabled.current) {
+                          "On — lens refraction active (Android 13+)"
+                        } else if (liquidGlassSurfaces) {
+                          "On — frost fallback on this device"
+                        } else {
+                          app.infinity.mpvz.ui.theme.GlassDeviceSupportText.summary(glassVerdict)
+                        }
+                      Text(engineText)
                     },
                     enabled = !glassVerdict.hard,
                   )

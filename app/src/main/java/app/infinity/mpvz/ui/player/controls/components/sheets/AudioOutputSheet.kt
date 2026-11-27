@@ -45,8 +45,9 @@ import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
 import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
 import app.infinity.mpvz.ui.player.controls.components.GlassSlider
 
-private fun AudioDeviceInfo.labelAndIcon(): Pair<String, app.infinity.mpvz.ui.icons.AppIcon> =
+private fun AudioDeviceInfo.labelAndIcon(): Pair<String, app.infinity.mpvz.ui.icons.AppIcon>? =
   when (type) {
+    AudioDeviceInfo.TYPE_BUILTIN_EARPIECE -> null // never a media output; routing here sends audio to the earpiece
     AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
     AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
     -> "Bluetooth" to Icons.RoundedFilled.Bluetooth
@@ -57,7 +58,7 @@ private fun AudioDeviceInfo.labelAndIcon(): Pair<String, app.infinity.mpvz.ui.ic
     AudioDeviceInfo.TYPE_BUILTIN_SPEAKER,
     AudioDeviceInfo.TYPE_TELEPHONY,
     -> "Speaker" to Icons.RoundedFilled.Speaker
-    AudioDeviceInfo.TYPE_BUILTIN_EARPIECE -> "Earpiece" to Icons.RoundedFilled.VolumeUp
+    AudioDeviceInfo.TYPE_BUILTIN_EARPIECE -> null // never a media output; routing here sends audio to the earpiece
     else -> "Audio output" to Icons.RoundedFilled.VolumeUp
   }
 
@@ -73,7 +74,7 @@ fun AudioOutputSheet(
   }
   val maxVolume = remember { audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC) }
   var selectedDeviceId by remember {
-    mutableStateOf(audioManager.getCommunicationDevice()?.id)
+    mutableStateOf(audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).firstOrNull()?.id)
   }
   val devices =
     remember {
@@ -82,7 +83,7 @@ fun AudioOutputSheet(
       } else {
         emptyList()
       }
-    }.filter { it.type != AudioDeviceInfo.TYPE_UNKNOWN }
+    }.filter { it.type != AudioDeviceInfo.TYPE_UNKNOWN && it.labelAndIcon() != null }
 
   PlayerSheet(
     onDismissRequest = onDismissRequest,
@@ -106,7 +107,7 @@ fun AudioOutputSheet(
 
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && devices.isNotEmpty()) {
         devices.forEach { device ->
-          val (label, icon) = device.labelAndIcon()
+          val (label, icon) = device.labelAndIcon() ?: return@forEach
           val isSelected = device.id == selectedDeviceId
           Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -128,7 +129,16 @@ fun AudioOutputSheet(
                 )
                 .clickable {
                   selectedDeviceId = device.id
-                  audioManager.setCommunicationDevice(device)
+                  if (device.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER ||
+                    device.type == AudioDeviceInfo.TYPE_TELEPHONY
+                  ) {
+                    // Speaker: drop any communication routing so media plays on the speaker.
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                      audioManager.clearCommunicationDevice()
+                    }
+                  } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    audioManager.setCommunicationDevice(device)
+                  }
                 }
                 .padding(horizontal = 16.dp, vertical = 12.dp),
           ) {
@@ -149,7 +159,7 @@ fun AudioOutputSheet(
       } else {
         val activeDevice = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).firstOrNull()
         if (activeDevice != null) {
-          val (label, icon) = activeDevice.labelAndIcon()
+          val (label, icon) = activeDevice.labelAndIcon() ?: ("Audio output" to Icons.RoundedFilled.VolumeUp)
           Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),

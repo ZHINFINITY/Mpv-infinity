@@ -6418,6 +6418,7 @@ class PlayerViewModel(
             context = context,
             settings = ScreenshotSettings.fromPreferences(playerPreferences),
             includeSubtitles = includeSubtitles,
+            useNativeCapture = isNativeEngineActive(),
           ).getOrThrow()
         withContext(Dispatchers.Main) {
           Toast

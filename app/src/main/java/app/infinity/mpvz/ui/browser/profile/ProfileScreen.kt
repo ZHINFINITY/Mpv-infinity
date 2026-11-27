@@ -322,31 +322,19 @@ object ProfileScreen : Screen {
           title = "",
           showTitle = false,
           additionalActions = {
-            Row(
-              verticalAlignment = Alignment.CenterVertically,
-              horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ProfileAvatar(
+              size = 36.dp,
+              tint = MaterialTheme.colorScheme.onPrimaryContainer,
+              containerColor = MaterialTheme.colorScheme.primaryContainer,
+              contentDescription = profileName.ifBlank { stringResource(R.string.ui_profile) },
               modifier =
                 Modifier
                   .clip(CircleShape)
                   .clickable {
                     scope.launch { listState.animateScrollToItem(0) }
                   }
-                  .padding(vertical = 4.dp, horizontal = 4.dp),
-            ) {
-              ProfileAvatar(
-                size = 36.dp,
-                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                contentDescription = profileName,
-              )
-              Text(
-                text = profileName.ifBlank { stringResource(R.string.ui_profile) },
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.onSurface.onWallpaper(),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-              )
-            }
+                  .padding(4.dp),
+            )
           },
         )
       },

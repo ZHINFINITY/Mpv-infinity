@@ -71,10 +71,15 @@ data class ScreenshotSaveResult(
 object ScreenshotSaver {
   private const val SNAPSHOT_FOLDER = "mpvSnaps"
 
+  /** Set by PlayerActivity so native (Media3) snapshots can PixelCopy the visible surface. */
+  @Volatile
+  var nativeSurfaceProvider: (() -> android.view.SurfaceView?)? = null
+
   suspend fun save(
     context: Context,
     settings: ScreenshotSettings,
     includeSubtitles: Boolean,
+    useNativeCapture: Boolean = false,
   ): Result<ScreenshotSaveResult> =
     withContext(Dispatchers.IO) {
       runCatching {
@@ -90,7 +95,8 @@ object ScreenshotSaver {
             positionSeconds = PlaybackSession.getPropertyDouble("time-pos") ?: 0.0,
           )
         val tempFile =
-          captureNative(context, settings, includeSubtitles)
+          (if (useNativeCapture) captureFromSurface(context, settings) else null)
+            ?: captureNative(context, settings, includeSubtitles)
             ?: captureWithAndroidFallback(context, settings, includeSubtitles)
             ?: error("mpv does not support ${settings.format.title} format on this device")
 
@@ -107,6 +113,47 @@ object ScreenshotSaver {
     PlaybackSession.setOptionString("screenshot-webp-quality", settings.quality.coerceIn(0, 100).toString())
     PlaybackSession.setOptionString("screenshot-png-compression", settings.pngCompression.coerceIn(0, 9).toString())
     PlaybackSession.setOptionString("screenshot-webp-lossless", if (settings.webpLossless) "yes" else "no")
+  }
+
+  private suspend fun captureFromSurface(context: Context, settings: ScreenshotSettings): File? {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return null
+    val surfaceView =
+      kotlinx.coroutines.withContext(Dispatchers.Main) { nativeSurfaceProvider?.invoke() }
+        ?: return null
+    if (surfaceView.width == 0 || surfaceView.height == 0) return null
+    val bitmap =
+      kotlinx.coroutines.withContext(Dispatchers.Main) {
+        kotlinx.coroutines.suspendCancellableCoroutine<android.graphics.Bitmap?> { continuation ->
+          val captured =
+            android.graphics.Bitmap.createBitmap(
+              surfaceView.width,
+              surfaceView.height,
+              Bitmap.Config.ARGB_8888,
+            )
+          android.view.PixelCopy.request(
+            surfaceView,
+            captured,
+            { copyResult ->
+              if (copyResult == android.view.PixelCopy.SUCCESS) {
+                continuation.resume(captured, null)
+              } else {
+                captured.recycle()
+                continuation.resume(null, null)
+              }
+            },
+            android.os.Handler(android.os.Looper.getMainLooper()),
+          )
+        }
+      } ?: return null
+    val output = File(context.cacheDir, "Mpv∞_snapshot_native_engine.${settings.format.extension}")
+    output.delete()
+    output.outputStream().use { stream ->
+      if (!bitmap.compress(settings.compressFormat(), settings.compressQuality(), stream)) {
+        error("Native engine snapshot encoder failed for ${settings.format.title}")
+      }
+    }
+    bitmap.recycle()
+    return output.takeIf { it.length() > 0L }
   }
 
   private suspend fun captureNative(

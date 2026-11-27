@@ -19,6 +19,7 @@ import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import app.infinity.mpvz.repository.WatchStatsRepository
 import app.infinity.mpvz.utils.history.RecentlyPlayedOps
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -26,6 +27,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /** Owns the Music library's audio-only player and media session independently of video playback. */
@@ -39,6 +41,45 @@ class MusicPlaybackService : MediaSessionService() {
   @Volatile private var pendingResumeSnapshot: MusicPlaybackSnapshot? = null
   @Volatile private var resumePersistenceJob: Job? = null
   private var lastResumePersistenceElapsedMs = 0L
+  private var watchStatsJob: Job? = null
+  private var watchStatsRepository: WatchStatsRepository? = null
+  private var watchStatsLastRecordAtMs = 0L
+
+  private val watchStatsTicker =
+    object : Runnable {
+      override fun run() {
+        if (!::player.isInitialized) return
+        recordWatchStatsSegment()
+        handler.postDelayed(this, WATCH_STATS_TICK_MS)
+      }
+    }
+
+  private fun recordWatchStatsSegment() {
+    val repository = watchStatsRepository ?: return
+    if (!player.isPlaying) return
+    val metadata = player.currentMediaItem?.mediaMetadata ?: return
+    val title =
+      metadata.title?.toString()?.takeIf { it.isNotBlank() }
+        ?: player.currentMediaItem?.localConfiguration?.uri?.lastPathSegment
+          ?.substringAfterLast('/')
+          ?.takeIf { it.isNotBlank() }
+        ?: return
+    val nowMs = System.currentTimeMillis()
+    // A new session starts only after a 2-minute gap, not on every tick.
+    val countsAsSession = nowMs - watchStatsLastRecordAtMs > 120_000L
+    watchStatsLastRecordAtMs = nowMs
+    serviceScope.launch {
+      runCatching {
+        repository.record(
+          title = title,
+          isAudio = true,
+          seconds = WATCH_STATS_TICK_MS / 1000L,
+          artworkUri = metadata.artworkUri?.toString(),
+          countsAsSession = countsAsSession,
+        )
+      }
+    }
+  }
 
   private val positionPublisher =
     object : Runnable {
@@ -96,12 +137,18 @@ class MusicPlaybackService : MediaSessionService() {
 
     publishSnapshot(refreshQueue = true)
     handler.post(positionPublisher)
+    watchStatsRepository =
+      runCatching {
+        org.koin.core.context.GlobalContext.get().get<WatchStatsRepository>()
+      }.getOrNull()
+    handler.postDelayed(watchStatsTicker, WATCH_STATS_TICK_MS)
   }
 
   override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession = mediaSession
 
   override fun onDestroy() {
     handler.removeCallbacks(positionPublisher)
+    handler.removeCallbacks(watchStatsTicker)
     serviceScope.cancel()
     if (::mediaSession.isInitialized) mediaSession.release()
     if (::player.isInitialized) {
@@ -249,6 +296,7 @@ class MusicPlaybackService : MediaSessionService() {
   private companion object {
     const val TAG = "MusicPlaybackService"
     const val POSITION_UPDATE_MS = 250L
+    const val WATCH_STATS_TICK_MS = 15_000L
     const val MIN_RESUME_PERSISTENCE_INTERVAL_MS = 1_000L
     const val SESSION_ACTIVITY_REQUEST_CODE = 4_192
   }

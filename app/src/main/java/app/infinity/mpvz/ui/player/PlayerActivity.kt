@@ -1790,6 +1790,9 @@ class PlayerActivity :
     playerInitializationStarted = true
     applyInitialVideoOrientation(intent)
     setContentView(binding.root)
+    app.infinity.mpvz.ui.player.screenshot.ScreenshotSaver.nativeSurfaceProvider = {
+      binding.media3Player.videoSurfaceView as? android.view.SurfaceView
+    }
     startMpvAssetPreparation()
     configureNativeEngineIfNeeded()
     releaseDetachedBackgroundPlaybackBeforeFreshLaunch()
@@ -7636,7 +7639,12 @@ class PlayerActivity :
     val countsAsSession = nowMs - watchStatsLastRecordAtMs > 120_000L
     watchStatsRepository.record(
       title = title,
-      isAudio = item.declaredMediaKind() == DeclaredPlaybackMediaKind.AUDIO,
+      isAudio =
+        item.declaredMediaKind() == DeclaredPlaybackMediaKind.AUDIO ||
+          item.isDefinitelyAudioOnly() ||
+          (item.declaredMediaKind() == DeclaredPlaybackMediaKind.UNKNOWN &&
+            PlaybackSession.getPropertyString("video-codec").isNullOrBlank() &&
+            activeEngineMode != PlaybackEngineMode.NATIVE),
       seconds = seconds,
       artworkUri = item.artworkUri,
       sourceUri = item.originalUri,
