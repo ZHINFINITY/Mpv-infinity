@@ -81,8 +81,11 @@ class DecoderPreferences(
    * the copy-mode default and the player never reported "HW+" again.
    */
   val requestedDecoder = preferenceStore.getString("requested_decoder", "")
-  val gpuNext = preferenceStore.getBoolean("gpu_next")
-  val useVulkan = preferenceStore.getBoolean("use_vulkan", false)
+  // Defaults match mpvRx: gpu-next + Vulkan is the only output with a MediaCodec import path,
+  // so HW+ (zero-copy) can only engage here. A build without Vulkan support resets these to
+  // OpenGL on first launch (App.kt's first-run migration).
+  val gpuNext = preferenceStore.getBoolean("gpu_next", true)
+  val useVulkan = preferenceStore.getBoolean("use_vulkan", true)
   val hdrScreenOutput = preferenceStore.getBoolean("hdr_screen_output", false)
   val hdrScreenMode = preferenceStore.getEnum("hdr_screen_mode", HdrScreenMode.OFF)
   val lastHdrMode = preferenceStore.getEnum("hdr_last_selected_mode", HdrScreenMode.BT_2020)

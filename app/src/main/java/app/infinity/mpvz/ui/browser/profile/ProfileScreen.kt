@@ -888,60 +888,45 @@ private fun ProfileShortcutTile(
     color = MaterialTheme.colorScheme.surfaceContainerLow,
     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)),
   ) {
-    Row(
+    Column(
       modifier =
         Modifier
           .fillMaxWidth()
-          .height(84.dp)
-          .padding(horizontal = 10.dp, vertical = 8.dp),
-      verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(8.dp),
+          .padding(horizontal = 8.dp, vertical = 12.dp),
+      horizontalAlignment = Alignment.CenterHorizontally,
+      verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-      Box(
-        modifier =
-          Modifier
-            .size(34.dp)
-            .clip(CircleShape)
-            .background(tint.copy(alpha = 0.14f)),
-        contentAlignment = Alignment.Center,
-      ) {
-        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(18.dp))
-      }
-      Column(
-        modifier = Modifier.weight(1f),
-        verticalArrangement = Arrangement.spacedBy(1.dp),
-      ) {
-        if (count != null) {
+      Box {
+        Box(
+          modifier =
+            Modifier
+              .size(44.dp)
+              .clip(CircleShape)
+              .background(tint.copy(alpha = 0.14f)),
+          contentAlignment = Alignment.Center,
+        ) {
+          Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
+        }
+        if (count != null && count > 0) {
           Text(
-            text = count.toString(),
-            style = MaterialTheme.typography.titleMediumEmphasized,
-            color =
-              if (count > 0) {
-                MaterialTheme.colorScheme.onSurface
-              } else {
-                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
-              },
-            maxLines = 1,
+            text = if (count > 99) "99+" else count.toString(),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onPrimary,
+            modifier =
+              Modifier
+                .align(Alignment.TopEnd)
+                .clip(CircleShape)
+                .background(tint)
+                .padding(horizontal = 5.dp, vertical = 1.dp),
           )
         }
-        Text(
-          text = label,
-          style =
-            if (count == null) {
-              MaterialTheme.typography.titleSmallEmphasized
-            } else {
-              MaterialTheme.typography.labelMedium
-            },
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
-          maxLines = 2,
-          overflow = TextOverflow.Ellipsis,
-        )
       }
-      Icon(
-        Icons.RoundedFilled.ChevronRight,
-        contentDescription = null,
-        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-        modifier = Modifier.size(16.dp),
+      Text(
+        text = label,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
       )
     }
   }

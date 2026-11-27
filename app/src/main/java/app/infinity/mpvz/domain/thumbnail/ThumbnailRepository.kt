@@ -112,11 +112,10 @@ class ThumbnailRepository(
   private val maxConcurrentFolders = 3
   private val localGenerationParallelism = resolveLocalGenerationParallelism()
   private val localGenerationSemaphore = Semaphore(localGenerationParallelism)
-  // Network thumbnails are independent range reads. Keep a small cap so a series folder can
-  // fill promptly without opening one WebDAV decoder per visible card.
-  // A decoder can issue several authenticated range requests for one MKV. Keep remote work
-  // serialized so a series folder cannot burst dozens of TorBox/WebDAV requests at once.
-  private val networkGenerationSemaphore = Semaphore(1)
+  // Network thumbnails are independent range reads. Two at a time fills a series folder about
+  // twice as fast while still never opening more than two remote decoders, so a folder cannot
+  // burst dozens of TorBox/WebDAV requests at once.
+  private val networkGenerationSemaphore = Semaphore(2)
   private val maxFolderBatchSize = 48
 
   private data class FolderState(
