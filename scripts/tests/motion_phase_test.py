@@ -74,7 +74,7 @@ def main() -> None:
     temp_parent = os.environ.get("TMPDIR")
     with tempfile.TemporaryDirectory(prefix="pinned-motion-phase-", dir=temp_parent) as tmp:
         binary = Path(tmp) / "pinned_motion_phase_test"
-        test_source = ROOT / "scripts/tests/pinned_motion_phase_test.c"
+        test_source = ROOT / "scripts/tests/motion_phase_test.c"
         subprocess.run(
             ["cc", "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror",
              "-I", str(mpv_dir), str(test_source), "-lm", "-o", str(binary)],
