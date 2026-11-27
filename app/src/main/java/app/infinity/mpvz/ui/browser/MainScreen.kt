@@ -209,9 +209,7 @@ object MainScreen : Screen {
         buildList {
           if (showHomeTab) add(MainTab.HOME)
           if (showMusicTab) add(MainTab.MUSIC)
-          if (showRecentsTab) add(MainTab.RECENTS)
           if (showPlaylistsTab) add(MainTab.PLAYLISTS)
-          if (showNetworkTab) add(MainTab.NETWORK)
           if (showJellyfinTab) add(MainTab.JELLYFIN)
           if (showNavidromeTab) add(MainTab.NAVIDROME)
           if (showAudiobooksTab) add(MainTab.AUDIOBOOKS)
