@@ -313,6 +313,15 @@ private object GlassWaterRippleEffects {
     }
 }
 
+/** Pure switch-thumb 3D depth geometry used by rendering and unit tests (mpvRx-style). */
+object GlassSwitchDepthPolicy {
+  /** Thumb tilts toward the pressed edge like a physical rocker. */
+  fun rotationX(pressProgress: Float): Float = pressProgress.coerceIn(0f, 1f) * 8f
+
+  /** Pressed thumb squashes slightly into the track. */
+  fun scaleY(pressProgress: Float): Float = 1f - pressProgress.coerceIn(0f, 1f) * .08f
+}
+
 @Composable
 fun GlassSwitch(
   checked: Boolean,
@@ -358,12 +367,26 @@ fun GlassSwitch(
     if (lensEnabled && !reducedMotion && (switchPressed || switchDragged)) 1f else 0f,
     lensMotionSpec, label = "switchLens",
   )
+  // 3D depth: the thumb rocks on its pressed edge and settles with a spring, mpvRx-style.
+  val depthSpec = if (reducedMotion) snap<Float>() else spring<Float>(dampingRatio = 0.55f, stiffness = Spring.StiffnessMedium)
+  val depthPress by animateFloatAsState(
+    if (!reducedMotion && (switchPressed || switchDragged)) 1f else 0f, depthSpec, label = "switchDepth",
+  )
+  val depthDensity = androidx.compose.ui.platform.LocalDensity.current
+  val depthCamera = with(depthDensity) { 24.dp.toPx() }
+  val depthLayer = Modifier.graphicsLayer {
+    cameraDistance = depthCamera
+    rotationX = GlassSwitchDepthPolicy.rotationX(depthPress)
+    scaleY = GlassSwitchDepthPolicy.scaleY(depthPress)
+  }
   val trackBackdrop = rememberLayerBackdrop()
   val trackOptics = Modifier.glassTrackOptics(opacity, highlight, 16.dp, height = GlassControlGeometryPolicy.switchTrackHeightDp.dp,
     checked = checked, overhang = GlassControlGeometryPolicy.switchTrackOverhangDp().dp)
   val glassThumb: @Composable () -> Unit = {
     val thumbShape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
-    val base = Modifier.size(width = GlassControlGeometryPolicy.switchThumbWidthDp.dp, height = GlassControlGeometryPolicy.switchThumbHeightDp.dp)
+    val base = Modifier
+      .size(width = GlassControlGeometryPolicy.switchThumbWidthDp.dp, height = GlassControlGeometryPolicy.switchThumbHeightDp.dp)
+      .then(depthLayer)
     Box(
       if (lensEnabled) base
         .lensControlThumb(trackBackdrop, thumbShape, if (checked) contrast.checkedThumb else contrast.uncheckedThumb) { lensProgress }

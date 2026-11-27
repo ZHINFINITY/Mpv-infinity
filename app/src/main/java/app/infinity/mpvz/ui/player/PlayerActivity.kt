@@ -1790,8 +1790,12 @@ class PlayerActivity :
     playerInitializationStarted = true
     applyInitialVideoOrientation(intent)
     setContentView(binding.root)
-    app.infinity.mpvz.ui.player.screenshot.ScreenshotSaver.nativeSurfaceProvider = {
-      binding.media3Player.videoSurfaceView as? android.view.SurfaceView
+    val snapshotSurfaceView = binding.media3Player.videoSurfaceView as? android.view.SurfaceView
+    if (snapshotSurfaceView != null) {
+      // WeakReference so the static holder can never pin a destroyed PlayerActivity (LeakCanary: the
+      // lambda captured `this` activity through the binding).
+      val surfaceRef = java.lang.ref.WeakReference(snapshotSurfaceView)
+      app.infinity.mpvz.ui.player.screenshot.ScreenshotSaver.nativeSurfaceProvider = { surfaceRef.get() }
     }
     startMpvAssetPreparation()
     configureNativeEngineIfNeeded()
@@ -3325,6 +3329,7 @@ class PlayerActivity :
 
   override fun onDestroy() {
     Log.d(TAG, "PlayerActivity onDestroy")
+    app.infinity.mpvz.ui.player.screenshot.ScreenshotSaver.nativeSurfaceProvider = null
     nativeVideoSurfaceCallback?.let { callback ->
       nativeVideoSurfaceCallbackView?.holder?.removeCallback(callback)
     }
@@ -7630,6 +7635,7 @@ class PlayerActivity :
         PlaybackSession.getPropertyBoolean("pause") == false
       }
     if (!playing) return
+    val nativeSnapshot = if (activeEngineMode == PlaybackEngineMode.NATIVE) nativeEngineOrNull()?.snapshot?.value else null
     val title = item.title?.takeIf { it.isNotBlank() }
       ?: item.originalUri.substringAfterLast('/').takeIf { it.isNotBlank() }
       ?: return
@@ -7637,14 +7643,20 @@ class PlayerActivity :
     // A new "session" starts after a 2-minute gap (new item or a long pause), not on
     // every 15-second tick, so the session count stays meaningful.
     val countsAsSession = nowMs - watchStatsLastRecordAtMs > 120_000L
+    // Native engine: trust what the decoder actually reports. Streaming audio often has no
+    // declared kind and no mpv properties, so it was counted as video before this check.
+    val nativeReportsNoVideo = nativeSnapshot != null && nativeSnapshot.videoWidth == 0
+    val mpvReportsNoVideo =
+      PlaybackSession.getPropertyString("video-codec").isNullOrBlank() &&
+        PlaybackSession.getPropertyString("video-format").isNullOrBlank()
+    val isAudio =
+      item.declaredMediaKind() == DeclaredPlaybackMediaKind.AUDIO ||
+        item.isDefinitelyAudioOnly() ||
+        (item.declaredMediaKind() == DeclaredPlaybackMediaKind.UNKNOWN &&
+          (nativeReportsNoVideo || (activeEngineMode != PlaybackEngineMode.NATIVE && mpvReportsNoVideo)))
     watchStatsRepository.record(
       title = title,
-      isAudio =
-        item.declaredMediaKind() == DeclaredPlaybackMediaKind.AUDIO ||
-          item.isDefinitelyAudioOnly() ||
-          (item.declaredMediaKind() == DeclaredPlaybackMediaKind.UNKNOWN &&
-            PlaybackSession.getPropertyString("video-codec").isNullOrBlank() &&
-            activeEngineMode != PlaybackEngineMode.NATIVE),
+      isAudio = isAudio,
       seconds = seconds,
       artworkUri = item.artworkUri,
       sourceUri = item.originalUri,
