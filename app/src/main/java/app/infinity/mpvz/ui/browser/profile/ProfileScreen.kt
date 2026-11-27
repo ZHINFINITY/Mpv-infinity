@@ -142,6 +142,7 @@ import app.infinity.mpvz.ui.browser.components.BrowserTopBar
 import app.infinity.mpvz.ui.browser.components.rememberSwipePlaybackInfo
 import app.infinity.mpvz.ui.browser.dialogs.DeleteConfirmationDialog
 import app.infinity.mpvz.ui.browser.medialibrary.MediaLibraryViewModel
+import app.infinity.mpvz.ui.browser.networkstreaming.NetworkStreamingScreen
 import app.infinity.mpvz.ui.browser.playlist.PlaylistDetailScreen
 import app.infinity.mpvz.ui.browser.playlist.PlaylistScreen
 import app.infinity.mpvz.ui.browser.playlist.PlaylistViewModel
@@ -613,6 +614,23 @@ object ProfileScreen : Screen {
                   ProfileWatchStatistics()
                 }
               }
+
+              ProfileSection.NETWORK -> {
+                item(key = "network_header") {
+                  SectionHeader(
+                    title = stringResource(R.string.ui_network),
+                    onViewAll = { backStack.navigateTo(NetworkStreamingScreen) },
+                  )
+                }
+                item(key = "network_entry") {
+                  ShelfEmptyCard(
+                    icon = Icons.RoundedFilled.BringYourOwnIp,
+                    title = stringResource(R.string.ui_network),
+                    message = stringResource(R.string.ui_network_paste_url_hint),
+                    onClick = { backStack.navigateTo(NetworkStreamingScreen) },
+                  )
+                }
+              }
             }
           }
         }
@@ -880,6 +898,7 @@ private fun ShelfEmptyCard(
   icon: AppIcon,
   title: String,
   message: String,
+  onClick: (() -> Unit)? = null,
 ) {
   val configuration = LocalConfiguration.current
   val isTablet = configuration.smallestScreenWidthDp >= 600
@@ -887,6 +906,7 @@ private fun ShelfEmptyCard(
     shape = AppShapeScale.large,
     color = MaterialTheme.colorScheme.surfaceContainerLow,
     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f)),
+    onClick = onClick?.let { action -> ({ action() }) } ?: ({ }),
     modifier = Modifier.fillMaxWidth().padding(horizontal = if (isTablet) 24.dp else 16.dp, vertical = 2.dp),
   ) {
     Row(

@@ -12,6 +12,7 @@ internal enum class ProfileSection(@StringRes val titleRes: Int) {
   PLAYLISTS(R.string.ui_playlists),
   SNAPSHOTS(R.string.ui_snapshots),
   STATISTICS(R.string.watch_stats_title),
+  NETWORK(R.string.ui_network),
 }
 
 internal fun PreferenceStore.profileLayoutOrder(key: String, defaults: List<String>): Preference<List<String>> =
@@ -29,5 +30,10 @@ internal fun <T : Enum<T>> visibleProfileItems(
   entries: List<T>,
   order: List<String>,
   hidden: Set<String>,
-): List<T> =
-  order.filterNot { it in hidden }.mapNotNull { name -> entries.firstOrNull { it.name == name } }
+): List<T> {
+  // Sections added after the persisted order was written (e.g. Network) would be
+  // dropped by a plain mapNotNull; append any entries the stored order doesn't know.
+  val known = order.mapNotNull { name -> entries.firstOrNull { it.name == name } }
+  val missing = entries.filterNot { entry -> known.any { it == entry } }
+  return (known + missing).filterNot { it.name in hidden }
+}
