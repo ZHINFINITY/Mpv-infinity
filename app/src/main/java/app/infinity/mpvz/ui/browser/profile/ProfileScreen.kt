@@ -43,7 +43,6 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -90,6 +89,8 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -271,9 +272,9 @@ object ProfileScreen : Screen {
       onPauseOrDispose { }
     }
 
-    val recentItems by recentsViewModel.recentItems.collectAsState()
-    val playlists by playlistViewModel.playlistsWithCount.collectAsState()
-    val snapshotLibrary by snapshotViewModel.library.collectAsState()
+    val recentItems by recentsViewModel.recentItems.collectAsStateWithLifecycle()
+    val playlists by playlistViewModel.playlistsWithCount.collectAsStateWithLifecycle()
+    val snapshotLibrary by snapshotViewModel.library.collectAsStateWithLifecycle()
     val snapshotThumbnails by snapshotViewModel.thumbnailCache.collectAsState()
 
     val recentShelf = remember(recentItems) { recentItems.take(SHELF_LIMIT) }
@@ -360,10 +361,29 @@ object ProfileScreen : Screen {
           item(key = "profile_overview") {
             ProfileOverviewCard(
               name = profileName,
-              collapseProgress = heroCollapseProgress,
+              collapseProgress = { heroCollapseProgress },
               onEditProfile = {
                 haptics.tick()
                 showProfileDialog = true
+              },
+            )
+          }
+
+          item(key = "profile_shortcuts") {
+            ProfileShortcutGrid(
+              sections = visibleSections.filter { it != ProfileSection.RECENTS || enableRecentlyPlayed },
+              counts =
+                mapOf(
+                  ProfileSection.RECENTS to recentItems.size,
+                  ProfileSection.RECENTLY_ADDED to recentlyAdded.size,
+                  ProfileSection.PLAYLISTS to playlists.size,
+                  ProfileSection.SNAPSHOTS to snapshots.size,
+                ),
+              onOpenSection = { section ->
+                haptics.tick()
+                scope.launch {
+                  listState.animateScrollToItem(profileSectionStartIndex(visibleSections, section))
+                }
               },
             )
           }
@@ -705,18 +725,195 @@ private fun rememberProfileAvatar(path: String): ImageBitmap? {
   return avatar
 }
 
+/** Number of LazyColumn items a section emits: a header plus its content shelf. */
+private fun profileSectionItemCount(section: ProfileSection): Int =
+  when (section) {
+    ProfileSection.STATISTICS -> 1
+    else -> 2
+  }
+
+/** LazyColumn index of a section's header (0 = overview card, 1 = shortcut grid). */
+private fun profileSectionStartIndex(sections: List<ProfileSection>, section: ProfileSection): Int {
+  var index = 2
+  sections.forEach { candidate ->
+    if (candidate == section) return index
+    index += profileSectionItemCount(candidate)
+  }
+  return index
+}
+
+private fun profileShortcutIcon(section: ProfileSection): AppIcon =
+  when (section) {
+    ProfileSection.RECENTS -> Icons.RoundedFilled.History
+    ProfileSection.RECENTLY_ADDED -> Icons.RoundedFilled.NewReleases
+    ProfileSection.PLAYLISTS -> Icons.RoundedFilled.Subscriptions
+    ProfileSection.SNAPSHOTS -> Icons.RoundedFilled.Screenshot
+    ProfileSection.STATISTICS -> Icons.RoundedFilled.Equalizer
+    ProfileSection.NETWORK -> Icons.RoundedFilled.BringYourOwnIp
+  }
+
+private fun profileShortcutLabel(section: ProfileSection): Int =
+  when (section) {
+    ProfileSection.RECENTS -> R.string.ui_recents
+    ProfileSection.RECENTLY_ADDED -> R.string.profile_recently_added
+    ProfileSection.PLAYLISTS -> R.string.ui_playlists
+    ProfileSection.SNAPSHOTS -> R.string.ui_snapshots
+    ProfileSection.STATISTICS -> R.string.profile_shortcut_stats
+    ProfileSection.NETWORK -> R.string.ui_network
+  }
+
+@Composable
+private fun profileShortcutTint(section: ProfileSection): Color =
+  when (section) {
+    ProfileSection.RECENTS -> MaterialTheme.colorScheme.primary
+    ProfileSection.RECENTLY_ADDED -> MaterialTheme.colorScheme.tertiary
+    ProfileSection.PLAYLISTS -> MaterialTheme.colorScheme.secondary
+    ProfileSection.SNAPSHOTS -> MaterialTheme.colorScheme.primary
+    ProfileSection.STATISTICS -> MaterialTheme.colorScheme.secondary
+    ProfileSection.NETWORK -> MaterialTheme.colorScheme.tertiary
+  }
+
+/**
+ * Bento grid of quick jumps into the hub sections: every visible section gets a tile that scrolls
+ * to it, so the tab reads as one dashboard instead of a stack of unrelated shelves.
+ */
+@Composable
+private fun ProfileShortcutGrid(
+  sections: List<ProfileSection>,
+  counts: Map<ProfileSection, Int?>,
+  onOpenSection: (ProfileSection) -> Unit,
+) {
+  if (sections.isEmpty()) return
+  val configuration = LocalConfiguration.current
+  val isTablet = configuration.smallestScreenWidthDp >= 600
+  val columns = if (isTablet) 3 else 2
+  val horizontalPadding = if (isTablet) 24.dp else 16.dp
+  Column(
+    modifier =
+      Modifier
+        .fillMaxWidth()
+        .padding(horizontal = horizontalPadding, vertical = 6.dp),
+    verticalArrangement = Arrangement.spacedBy(10.dp),
+  ) {
+    sections.chunked(columns).forEachIndexed { rowIndex, rowSections ->
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+      ) {
+        rowSections.forEachIndexed { columnIndex, section ->
+          ProfileShortcutTile(
+            icon = profileShortcutIcon(section),
+            label = stringResource(profileShortcutLabel(section)),
+            count = counts[section],
+            tint = profileShortcutTint(section),
+            index = rowIndex * columns + columnIndex,
+            onClick = { onOpenSection(section) },
+            modifier = Modifier.weight(1f),
+          )
+        }
+        repeat(columns - rowSections.size) { Spacer(Modifier.weight(1f)) }
+      }
+    }
+  }
+}
+
+@Composable
+private fun ProfileShortcutTile(
+  icon: AppIcon,
+  label: String,
+  count: Int?,
+  tint: Color,
+  index: Int,
+  onClick: () -> Unit,
+  modifier: Modifier = Modifier,
+) {
+  val reduceMotion = AppMotion.shouldReduceMotion()
+  val appeared = remember { Animatable(if (reduceMotion) 1f else 0f) }
+  LaunchedEffect(Unit) {
+    if (!reduceMotion) {
+      appeared.animateTo(
+        targetValue = 1f,
+        animationSpec =
+          tween(
+            durationMillis = 220,
+            delayMillis = (index * 35).coerceAtMost(210),
+            easing = AppMotion.EnterEasing,
+          ),
+      )
+    }
+  }
+  Surface(
+    onClick = onClick,
+    modifier =
+      modifier.graphicsLayer {
+        alpha = appeared.value
+        translationY = (1f - appeared.value) * 12.dp.toPx()
+      },
+    shape = AppShapeScale.largeIncreased,
+    color = MaterialTheme.colorScheme.surfaceContainerLow,
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
+  ) {
+    Row(
+      modifier =
+        Modifier
+          .fillMaxWidth()
+          .height(88.dp)
+          .padding(horizontal = 12.dp, vertical = 12.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+      Box(
+        modifier =
+          Modifier
+            .size(38.dp)
+            .clip(AppShapeScale.medium)
+            .background(tint.copy(alpha = 0.16f)),
+        contentAlignment = Alignment.Center,
+      ) {
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
+      }
+      Text(
+        text = label,
+        modifier = Modifier.weight(1f),
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.onSurface,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+      )
+      if (count != null) {
+        Text(
+          text = count.toString(),
+          style = MaterialTheme.typography.titleSmall,
+          color =
+            if (count > 0) {
+              MaterialTheme.colorScheme.onSurfaceVariant
+            } else {
+              MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+            },
+          maxLines = 1,
+        )
+      } else {
+        Icon(
+          Icons.RoundedFilled.ChevronRight,
+          contentDescription = null,
+          tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+          modifier = Modifier.size(18.dp),
+        )
+      }
+    }
+  }
+}
+
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun ProfileOverviewCard(
   name: String,
-  collapseProgress: Float,
+  collapseProgress: () -> Float,
   onEditProfile: () -> Unit,
 ) {
   val configuration = LocalConfiguration.current
   val isTablet = configuration.smallestScreenWidthDp >= 600
   val editLabel = stringResource(R.string.profile_edit)
-  val avatarScale = 1f - 0.25f * collapseProgress
-  val avatarAlpha = (1f - collapseProgress * 1.5f).coerceIn(0f, 1f)
 
   val horizontalPadding = if (isTablet) 24.dp else 16.dp
 
@@ -732,10 +929,15 @@ private fun ProfileOverviewCard(
       Box(
         contentAlignment = Alignment.BottomEnd,
         modifier =
+          // Read the scroll progress inside the layer block, not during composition:
+          // this keeps the hero collapsing on the render thread without recomposing
+          // the whole Shelf list on every scrolled pixel.
           Modifier.graphicsLayer {
+            val progress = collapseProgress()
+            val avatarScale = 1f - 0.25f * progress
             scaleX = avatarScale
             scaleY = avatarScale
-            alpha = avatarAlpha
+            alpha = (1f - progress * 1.5f).coerceIn(0f, 1f)
           },
       ) {
         ProfileAvatar(
@@ -821,7 +1023,7 @@ private fun SectionHeader(
         ) {
           Text(
             text = count.toString(),
-            style = MaterialTheme.typography.labelSmall,
+            style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"),
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),

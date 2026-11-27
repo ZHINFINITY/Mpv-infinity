@@ -2342,6 +2342,7 @@
   <string name="profile_layout_title">Układ profilu</string>
   <string name="profile_playlists_empty_message">Tu pojawią się utworzone playlisty</string>
   <string name="profile_recently_added">Ostatnio dodane</string>
+  <string name="profile_shortcut_stats">Statystyki</string>
   <string name="profile_recently_added_empty">Tu pojawią się filmy dodane do biblioteki.</string>
   <string name="profile_recents_empty_message">Tu pojawią się odtwarzane elementy</string>
   <string name="profile_remove_from_history">Usuń z historii</string>

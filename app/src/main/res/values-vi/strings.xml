@@ -2330,6 +2330,7 @@
   <string name="profile_layout_title">Bố cục hồ sơ</string>
   <string name="profile_playlists_empty_message">Danh sách phát bạn tạo sẽ xuất hiện ở đây</string>
   <string name="profile_recently_added">Mới thêm</string>
+  <string name="profile_shortcut_stats">Thống kê</string>
   <string name="profile_recently_added_empty">Video thêm vào thư viện sẽ xuất hiện ở đây.</string>
   <string name="profile_recents_empty_message">Mục bạn phát sẽ xuất hiện ở đây</string>
   <string name="profile_remove_from_history">Xóa khỏi lịch sử</string>

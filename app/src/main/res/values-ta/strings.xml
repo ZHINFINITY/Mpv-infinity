@@ -2330,6 +2330,7 @@
   <string name="profile_layout_title">சுயவிவரத் தளவமைப்பு</string>
   <string name="profile_playlists_empty_message">நீங்கள் உருவாக்கும் பிளேலிஸ்ட்கள் இங்கே தோன்றும்</string>
   <string name="profile_recently_added">சமீபத்தில் சேர்த்தவை</string>
+  <string name="profile_shortcut_stats">புள்ளிவிவரம்</string>
   <string name="profile_recently_added_empty">நூலகத்தில் சேர்த்த வீடியோக்கள் இங்கே தோன்றும்.</string>
   <string name="profile_recents_empty_message">நீங்கள் இயக்குபவை இங்கே தோன்றும்</string>
   <string name="profile_remove_from_history">வரலாற்றிலிருந்து நீக்கு</string>

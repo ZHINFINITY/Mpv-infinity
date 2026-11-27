@@ -2330,6 +2330,7 @@
   <string name="profile_layout_title">Tata letak profil</string>
   <string name="profile_playlists_empty_message">Daftar putar yang Anda buat akan muncul di sini</string>
   <string name="profile_recently_added">Baru ditambahkan</string>
+  <string name="profile_shortcut_stats">Statistik</string>
   <string name="profile_recently_added_empty">Video yang ditambahkan ke pustaka muncul di sini.</string>
   <string name="profile_recents_empty_message">Item yang Anda putar akan muncul di sini</string>
   <string name="profile_remove_from_history">Hapus dari riwayat</string>
