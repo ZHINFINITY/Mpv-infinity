@@ -757,6 +757,17 @@ fun RenderPlayerButton(
       )
     }
 
+    // Quick one-tap entry to the picture effects (sharpen/clarity/deband/grain) that the
+    // Effects shader pack models; opens the same tuning panel the More button opens on long-press.
+    PlayerButton.FX -> {
+      ControlsButton(
+        Icons.RoundedFilled.AutoFixHigh,
+        onClick = { onOpenPanel(Panels.VideoFilters) },
+        color = if (hideBackground) controlColor else MaterialTheme.colorScheme.onSurface,
+        modifier = Modifier.size(buttonSize),
+      )
+    }
+
     PlayerButton.CLIP -> {
       val clipOverlay = remember(activity) { ClipOverlayView.ensureAttached(activity) }
       ControlsButton(

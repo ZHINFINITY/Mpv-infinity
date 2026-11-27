@@ -1081,6 +1081,8 @@ fun AudioPlayerControls(
   val rawAlbumArtist by PlaybackSession.propString["metadata/by-key/album_artist"].collectAsState()
   val rawPerformer by PlaybackSession.propString["metadata/by-key/PERFORMER"].collectAsState()
   val retrievedArtist = currentAudioPresentation?.artist
+  // Tapping the artist line opens this artist's songs right here, over the player.
+  var showArtistSongs by remember { mutableStateOf(false) }
 
   val displayArtist =
     remember(isRadio, radioPresentation, stationHeaders, rawIcyName, audiobook?.book?.author, currentItem?.title, currentItem?.artist, rawArtist, rawArtistUpper, rawArtistLower, rawArtistAlt, rawAlbumArtist, rawPerformer, retrievedArtist) {
@@ -1286,8 +1288,18 @@ fun AudioPlayerControls(
     }
   }
 
-  val isCurrentTrackFavoriteLocal by remember(activeTrackPath, mediaPath) {
-    playlistRepository.observeIsFavorite((mediaPath?.takeIf { it.isNotBlank() } ?: activeTrackPath).orEmpty(), isAudio = true)
+  // Favourites must be keyed the same way everywhere: the notification heart stores the queue
+  // item's stable library path (favoritePath), while mpv's "path" for music is the content://
+  // playback URI. Using favoritePath here keeps both hearts on one liked-songs entry.
+  val favoriteTrackPath =
+    remember(activeTrackPath, mediaPath) {
+      PlaybackSession.queue.value.currentItem?.favoritePath?.takeIf { it.isNotBlank() }
+        ?: mediaPath?.takeIf { it.isNotBlank() }
+        ?: activeTrackPath.orEmpty()
+    }
+
+  val isCurrentTrackFavoriteLocal by remember(favoriteTrackPath) {
+    playlistRepository.observeIsFavorite(favoriteTrackPath, isAudio = true)
   }.collectAsState(initial = false)
 
   val isCurrentTrackFavorite = jellyfinFavoriteOverride ?: isCurrentTrackFavoriteLocal
@@ -2244,10 +2256,14 @@ fun AudioPlayerControls(
               .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
-              ) {
-                app.infinity.mpvz.utils.media.MediaLibraryEvents.requestOpenArtist(displayArtist)
-              },
+              ) { showArtistSongs = true },
         )
+        if (showArtistSongs) {
+          app.infinity.mpvz.ui.player.controls.components.sheets.ArtistSongsSheet(
+            artist = displayArtist,
+            onDismissRequest = { showArtistSongs = false },
+          )
+        }
         Spacer(modifier = Modifier.height(2.dp))
 
         // 3. Track Info | A-B Loop Control
@@ -2439,7 +2455,7 @@ fun AudioPlayerControls(
             // Favorite Button (right before Add to Playlist)
             ReactiveIconButton(
               onClick = {
-                val path = mediaPath?.takeIf { it.isNotBlank() } ?: activeTrackPath ?: return@ReactiveIconButton
+                val path = favoriteTrackPath.takeIf { it.isNotBlank() } ?: return@ReactiveIconButton
                 val server = activeJellyfinServer
                 val itemId = jellyfinInfo?.second
                 val newFavState = !isCurrentTrackFavorite
