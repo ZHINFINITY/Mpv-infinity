@@ -41,7 +41,7 @@ class ReferenceUiRollbackContractTest {
       // Accessibility follow-up: shared press, slider, and lens feedback respects reduced motion.
       // UI follow-up: density-aware tick-dot spacing keeps dense slider marks distinct.
       // Device-support follow-up: shared player glass is disabled when the device cannot support it.
-      "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/GlassControls.kt" to "6d6acdf479ce5340fdbca4f4315c31bab23b6847a98b7ec6afcd5d7341357a4b" /* mpvRx-style 3D switch thumb: GlassSwitchDepthPolicy rocks the thumb on its pressed edge (rotationX/scaleY spring). Toggle feedback: haptic on/off, checked-state accent glow, spring scale pop. */,
+      "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/GlassControls.kt" to "24581cb5247105d82cddf94059cac36a4a249f803f3eb895120d4928c89c52db" /* mpvRx-style 3D switch thumb: GlassSwitchDepthPolicy rocks the thumb on its pressed edge (rotationX/scaleY spring). Toggle feedback: haptic on/off, checked-state accent glow, spring scale pop. Accent tint: the on state carries a translucent accent fill under the glass track so it no longer reads as off. */,
       // Build 1910: player sheets opt into the centralized inner thickness bands.
       // Build 1910 integration: edge-attached landscape sheets draw one rim on the asymmetric shape.
       // mpvRx mini-player port: extracted PlayerSheetDragHandle (slim centered bar) for the remodeled mini player.

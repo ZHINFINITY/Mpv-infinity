@@ -57,4 +57,24 @@ class RendererBackendPolicyTest {
       ),
     )
   }
+
+  @Test
+  fun explicitDecoderPickOverridesTheSafeDefault() {
+    // "HW+" is what the user picked; it must survive a new file instead of snapping back to the
+    // copy-mode default that showed up as "HW".
+    assertEquals(
+      "mediacodec,mediacodec-copy,no",
+      RendererBackendPolicy.hwdecForRequestedDecoder(true, "mediacodec"),
+    )
+    assertEquals(
+      "mediacodec-copy,no",
+      RendererBackendPolicy.hwdecForRequestedDecoder(true, "mediacodec-copy"),
+    )
+    assertEquals("no", RendererBackendPolicy.hwdecForRequestedDecoder(true, "no"))
+    // Auto picks keep the renderer policy, and hardware off always wins.
+    assertEquals(null, RendererBackendPolicy.hwdecForRequestedDecoder(true, "auto"))
+    assertEquals(null, RendererBackendPolicy.hwdecForRequestedDecoder(true, "auto-copy"))
+    assertEquals(null, RendererBackendPolicy.hwdecForRequestedDecoder(true, ""))
+    assertEquals("no", RendererBackendPolicy.hwdecForRequestedDecoder(false, "mediacodec"))
+  }
 }

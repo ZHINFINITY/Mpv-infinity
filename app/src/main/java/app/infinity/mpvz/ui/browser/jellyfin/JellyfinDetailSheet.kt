@@ -503,9 +503,13 @@ fun JellyfinDetailSheet(
           )
         }
 
-        // Metadata Badges Row
+        // Metadata Badges Row — scrolls instead of running off the right edge when a title has
+        // several badges (rating, year, duration, HDR, audio tags).
         Row(
-          modifier = Modifier.fillMaxWidth(),
+          modifier =
+            Modifier
+              .fillMaxWidth()
+              .horizontalScroll(rememberScrollState()),
           verticalAlignment = Alignment.CenterVertically,
           horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {

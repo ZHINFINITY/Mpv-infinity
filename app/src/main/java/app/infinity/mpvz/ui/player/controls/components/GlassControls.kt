@@ -26,6 +26,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -401,6 +402,21 @@ fun GlassSwitch(
   val trackBackdrop = rememberLayerBackdrop()
   val trackOptics = Modifier.glassTrackOptics(opacity, highlight, 16.dp, height = GlassControlGeometryPolicy.switchTrackHeightDp.dp,
     checked = checked, overhang = GlassControlGeometryPolicy.switchTrackOverhangDp().dp)
+  // Soft accent fill under the glass. The optics alone stayed grey, so an "on" toggle looked
+  // off; this also gives the lens thumb a coloured layer to refract.
+  val trackTint = Modifier.drawWithCache {
+    val corner = CornerRadius(size.height / 2f, size.height / 2f)
+    onDrawBehind {
+      if (glowStrength <= 0.01f) return@onDrawBehind
+      drawRoundRect(
+        brush = Brush.horizontalGradient(
+          colors = listOf(glassAccent.copy(alpha = 0.42f * glowStrength), glassAccent.copy(alpha = 0.16f * glowStrength)),
+          endX = size.width,
+        ),
+        cornerRadius = corner,
+      )
+    }
+  }
   val glassThumb: @Composable () -> Unit = {
     val thumbShape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
     val base = Modifier
@@ -425,7 +441,7 @@ fun GlassSwitch(
   }
   if (lensEnabled) {
     Box(modifier, contentAlignment = Alignment.Center) {
-      Box(Modifier.matchParentSize().layerBackdrop(trackBackdrop).then(trackOptics))
+      Box(Modifier.matchParentSize().layerBackdrop(trackBackdrop).then(trackTint).then(trackOptics))
       Switch(
         checked = checked, onCheckedChange = if (enabled) handleToggle else null, enabled = enabled,
         colors = transparent, thumbContent = glassThumb, interactionSource = switchInteraction,
@@ -438,7 +454,7 @@ fun GlassSwitch(
       thumbContent = if (!glass) thumbContent else glassThumb,
       interactionSource = switchInteraction,
       // Material keeps its minimum interaction box while the custom capsule is drawn inside it.
-      modifier = modifier.then(if (glass) trackOptics else Modifier),
+      modifier = modifier.then(if (glass) trackTint.then(trackOptics) else Modifier),
     )
   }
 }

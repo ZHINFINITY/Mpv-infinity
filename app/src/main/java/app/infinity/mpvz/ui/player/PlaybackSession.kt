@@ -18,6 +18,7 @@ import app.infinity.mpvz.data.network.proxy.HlsStreamingProxy
 import app.infinity.mpvz.data.network.proxy.DirectLinkProxy
 import app.infinity.mpvz.data.network.proxy.NetworkStreamingProxy
 import app.infinity.mpvz.domain.network.NetworkPlaybackUri
+import app.infinity.mpvz.preferences.DecoderPreferences
 import app.infinity.mpvz.preferences.MpvConfigOverridePolicy
 import app.infinity.mpvz.utils.media.BoundedProviderIo
 import app.infinity.mpvz.utils.media.RadioStreamProbe
@@ -32,6 +33,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import org.koin.core.context.GlobalContext
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -1086,6 +1088,9 @@ object PlaybackSession : MPVLib.EventObserver {
       AudiobookPlayback.capture()
       loadedPlaybackItem = null
       val resolvedItem = item ?: PlaybackItem.fromUri(playableUri)
+      // The core is reused across video and music, so a music item used to inherit the previous
+      // video's stats page until the music UI hid it a second later. Hide it as the item loads.
+      if (resolvedItem.isDefinitelyAudioOnly()) StatsLuaOverlay.hide()
       if (resolvedItem.audiobook != null) AudiobookPlayback.ensureStarted()
       if (resolvedItem.audiobook == null && speedBeforeAudiobook != null) {
         if (!MpvConfigOverridePolicy.isOwnedByMpvConf("speed")) {
@@ -1617,6 +1622,9 @@ object PlaybackSession : MPVLib.EventObserver {
   /** Retry the last selected stream after a decoder policy change if MPV deselected its failed chain. */
   fun setDecoderAndRecover(value: String) {
     if (MpvConfigOverridePolicy.isOwnedByMpvConf("hwdec")) return
+    // Remember the pick so the next file starts with it. The sheet used to change only the
+    // running core, which is why every new video dropped back to the "HW" copy mode.
+    runCatching { GlobalContext.get().get<DecoderPreferences>().requestedDecoder.set(value) }
     withReadyCore(Unit) {
       // Keep decoder selection and video-track recovery in the same core transaction. A media
       // replacement between these operations could otherwise restore an outgoing file's track.

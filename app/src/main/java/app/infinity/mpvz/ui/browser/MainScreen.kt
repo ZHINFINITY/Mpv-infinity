@@ -287,14 +287,21 @@ object MainScreen : Screen {
               // The lens is independent of destination composition. Give it one
               // frame before a distant page can initialise heavy view-model/list UI.
               withFrameNanos { }
-              pagerState.animateScrollToPage(
-                page = targetIndex,
-                animationSpec =
-                  spring(
-                    dampingRatio = Spring.DampingRatioNoBouncy,
-                    stiffness = Spring.StiffnessMedium,
-                  ),
-              )
+              if (kotlin.math.abs(targetIndex - pagerState.settledPage) > 1) {
+                // Animating across three or more pages composes every page in between
+                // (Jellyfin, Navidrome, library lists), which made distant tab switches
+                // crawl. Far tabs switch instantly; neighbours still glide.
+                pagerState.scrollToPage(targetIndex)
+              } else {
+                pagerState.animateScrollToPage(
+                  page = targetIndex,
+                  animationSpec =
+                    spring(
+                      dampingRatio = Spring.DampingRatioNoBouncy,
+                      stiffness = Spring.StiffnessMedium,
+                    ),
+                )
+              }
             }
         }
       }

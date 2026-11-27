@@ -448,7 +448,11 @@ class MPVView(
     PlaybackSession.setOptionString("profile", profile)
     val backend = selectRenderBackend()
     val useVulkan = backend.gpuApi == "vulkan"
-    val hwdecMode = preferredHwdecMode(useVulkan)
+    val hwdecMode =
+      RendererBackendPolicy.hwdecForRequestedDecoder(
+        hardwareDecodingEnabled = decoderPreferences.tryHWDecoding.get(),
+        requested = decoderPreferences.requestedDecoder.get(),
+      ) ?: preferredHwdecMode(useVulkan)
     val mpvFlowFrameInterpolationPreference = decoderPreferences.mpvFlowFrameInterpolation.get()
     val displayRefreshRate =
       if (Looper.myLooper() == Looper.getMainLooper()) snapshotDisplayRefreshRateOnMain()

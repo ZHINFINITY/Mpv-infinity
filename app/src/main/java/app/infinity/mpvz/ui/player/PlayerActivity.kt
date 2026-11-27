@@ -2903,7 +2903,10 @@ class PlayerActivity :
       }
 
       MpvInfinityTheme {
-        if (presentationActive) {
+        // showAmbientBackdrop also covers the margin that pinching out reveals: the layer was
+        // made visible for it but composed nothing unless a full presentation was active, so the
+        // revealed area stayed black.
+        if (showAmbientBackdrop) {
           VideoAmbientBackground(
             frame = ambientFrame.frame,
             baseColor = ambientFrame.base,

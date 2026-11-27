@@ -74,6 +74,13 @@ class DecoderPreferences(
   val playbackEngine = preferenceStore.getEnum("playback_engine", PlaybackEngineMode.AUTO)
   val profile = preferenceStore.getString("mpv_profile", "fast")
   val tryHWDecoding = preferenceStore.getBoolean("try_hw_dec", true)
+
+  /**
+   * Decoder picked in the decoder sheet (`""` = let the renderer policy decide). It has to be
+   * persisted: the sheet only changed `hwdec` on the running core, so every new file fell back to
+   * the copy-mode default and the player never reported "HW+" again.
+   */
+  val requestedDecoder = preferenceStore.getString("requested_decoder", "")
   val gpuNext = preferenceStore.getBoolean("gpu_next")
   val useVulkan = preferenceStore.getBoolean("use_vulkan", false)
   val hdrScreenOutput = preferenceStore.getBoolean("hdr_screen_output", false)

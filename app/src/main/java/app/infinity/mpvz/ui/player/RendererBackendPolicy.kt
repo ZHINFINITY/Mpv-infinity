@@ -38,6 +38,25 @@ internal object RendererBackendPolicy {
     buildSupportsMediaCodecVulkan = buildSupportsMediaCodecVulkan,
   )
 
+  /**
+   * An explicit pick from the decoder sheet wins over the safe default. "HW+" (direct MediaCodec
+   * import) is honoured on OpenGL too, where the reported mode would otherwise always be
+   * `mediacodec-copy`; the user accepts the known seek caveat by choosing it. Auto picks return
+   * null so [preferredHwdecMode] still picks the safe mode for the active renderer.
+   */
+  fun hwdecForRequestedDecoder(
+    hardwareDecodingEnabled: Boolean,
+    requested: String,
+  ): String? {
+    if (!hardwareDecodingEnabled) return "no"
+    return when (val value = requested.trim()) {
+      "", "auto", "auto-copy" -> null
+      "mediacodec" -> "mediacodec,mediacodec-copy,no"
+      "mediacodec-copy" -> "mediacodec-copy,no"
+      else -> value
+    }
+  }
+
   fun preferredHwdecMode(
     hardwareDecodingEnabled: Boolean,
     usesVulkan: Boolean,

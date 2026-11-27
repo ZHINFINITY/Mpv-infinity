@@ -246,7 +246,11 @@ class InAppMusicSheetState internal constructor(
   internal fun endDrag(velocityY: Float) {
     if (!isDragging) return
     val velocity = -velocityY / travel
-    isOpen = dragExpansion + velocity * PROJECTION_SECONDS >= 0.5f
+    // Collapse once the sheet is past ~40% of the travel, or on a deliberate downward fling.
+    // The old "0.5 + projection" rule needed a drag over half the screen before it would
+    // dismiss, which felt like the minimise gesture did not work.
+    val flungDown = velocity <= FLING_COLLAPSE_VELOCITY
+    isOpen = !flungDown && dragExpansion + velocity * PROJECTION_SECONDS >= COLLAPSE_FRACTION
     animateTo(if (isOpen) 1f else 0f, velocity)
   }
 
@@ -311,6 +315,8 @@ class InAppMusicSheetState internal constructor(
     const val KEEP_WARM_MS = 4_000L
     const val CONTENT_TIMEOUT_MS = 1_200L
     const val PROJECTION_SECONDS = 0.18f
+    const val COLLAPSE_FRACTION = 0.6f
+    const val FLING_COLLAPSE_VELOCITY = 1.4f
     const val BACK_PREVIEW_FRACTION = 0.22f
   }
 }
