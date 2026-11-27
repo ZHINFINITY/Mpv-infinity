@@ -141,7 +141,6 @@ import app.infinity.mpvz.ui.browser.cards.WatchedThumbnailFilter
 import app.infinity.mpvz.ui.browser.components.BrowserTopBar
 import app.infinity.mpvz.ui.browser.components.rememberSwipePlaybackInfo
 import app.infinity.mpvz.ui.browser.dialogs.DeleteConfirmationDialog
-import app.infinity.mpvz.ui.browser.networkstreaming.NetworkStreamingScreen
 import app.infinity.mpvz.ui.browser.medialibrary.MediaLibraryViewModel
 import app.infinity.mpvz.ui.browser.playlist.PlaylistDetailScreen
 import app.infinity.mpvz.ui.browser.playlist.PlaylistScreen
@@ -406,18 +405,11 @@ object ProfileScreen : Screen {
           item(key = "profile_overview") {
             ProfileOverviewCard(
               name = profileName,
-              recentCount = recentItems.size,
-              playlistCount = playlists.size,
-              snapshotCount = snapshots.size,
               collapseProgress = heroCollapseProgress,
               onEditProfile = {
                 haptics.tick()
                 showProfileDialog = true
               },
-              onRecents = { backStack.navigateTo(RecentlyPlayedScreen) },
-              onPlaylists = { backStack.navigateTo(PlaylistScreen) },
-              onSnapshots = { backStack.navigateTo(SnapshotScreen) },
-              onNetwork = { backStack.navigateTo(NetworkStreamingScreen) },
             )
           }
 
@@ -442,7 +434,7 @@ object ProfileScreen : Screen {
 
                     recentShelf.isEmpty() ->
                       ShelfEmptyCard(
-                        icon = Icons.RoundedFilled.History,
+                        icon = Icons.RoundedFilled.AccessTime,
                         title = stringResource(R.string.ui_no_recently_played_videos),
                         message = stringResource(R.string.profile_recents_empty_message),
                       )
@@ -745,21 +737,12 @@ private fun rememberProfileAvatar(path: String): ImageBitmap? {
 @Composable
 private fun ProfileOverviewCard(
   name: String,
-  recentCount: Int,
-  playlistCount: Int,
-  snapshotCount: Int,
   collapseProgress: Float,
   onEditProfile: () -> Unit,
-  onRecents: () -> Unit,
-  onPlaylists: () -> Unit,
-  onSnapshots: () -> Unit,
-  onNetwork: () -> Unit,
 ) {
   val configuration = LocalConfiguration.current
   val isTablet = configuration.smallestScreenWidthDp >= 600
-  val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
   val editLabel = stringResource(R.string.profile_edit)
-  val totalItems = recentCount + playlistCount + snapshotCount
   val avatarScale = 1f - 0.25f * collapseProgress
   val avatarAlpha = (1f - collapseProgress * 1.5f).coerceIn(0f, 1f)
 
@@ -829,153 +812,7 @@ private fun ProfileOverviewCard(
           maxLines = 2,
           overflow = TextOverflow.Ellipsis,
         )
-        Surface(
-          shape = CircleShape,
-          color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        ) {
-          Text(
-            text = if (totalItems > 0) "$totalItems items in hub" else stringResource(R.string.ui_profile),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
-          )
-        }
       }
-    }
-
-    // Intentional Material 3 Expressive connected bento group; no large tinted backdrop.
-    // The logical corner radii adapt automatically to 1, 2 or 4 columns and RTL direction.
-    val shortcuts = listOf(
-      ProfileShortcutDestination(
-        Icons.RoundedFilled.History, stringResource(R.string.ui_recents), recentCount,
-        MaterialTheme.colorScheme.primary, onRecents,
-      ),
-      ProfileShortcutDestination(
-        Icons.RoundedFilled.Subscriptions, stringResource(R.string.ui_playlists), playlistCount,
-        MaterialTheme.colorScheme.secondary, onPlaylists,
-      ),
-      ProfileShortcutDestination(
-        Icons.RoundedFilled.Image, stringResource(R.string.ui_snapshots), snapshotCount,
-        MaterialTheme.colorScheme.tertiary, onSnapshots,
-      ),
-      ProfileShortcutDestination(
-        Icons.RoundedFilled.BringYourOwnIp, stringResource(R.string.ui_network), null,
-        MaterialTheme.colorScheme.primary, onNetwork,
-      ),
-    )
-    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-      val columns = when {
-        maxWidth < 300.dp -> 1
-        maxWidth >= 680.dp -> 4
-        else -> 2
-      }
-      Column(verticalArrangement = Arrangement.spacedBy(AppConnectedShapeTokens.spacing)) {
-        shortcuts.chunked(columns).forEachIndexed { rowIndex, rowShortcuts ->
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(AppConnectedShapeTokens.spacing),
-          ) {
-            rowShortcuts.forEachIndexed { columnIndex, shortcut ->
-              val index = rowIndex * columns + columnIndex
-              val shape = rememberConnectedShape(
-                index = index,
-                itemCount = shortcuts.size,
-                layout = ConnectedLayout.Grid,
-                columns = columns,
-              )
-              ProfileShortcutTile(
-                icon = shortcut.icon,
-                label = shortcut.label,
-                count = shortcut.count,
-                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                contentColor = shortcut.accent,
-                onClick = shortcut.onClick,
-                shape = shape,
-                modifier = Modifier.weight(1f),
-              )
-            }
-            repeat(columns - rowShortcuts.size) {
-              Spacer(modifier = Modifier.weight(1f))
-            }
-          }
-        }
-      }
-    }
-  }
-}
-
-/** Existing destinations and counts, with geometry kept separate from navigation behavior. */
-private data class ProfileShortcutDestination(
-  val icon: AppIcon,
-  val label: String,
-  val count: Int?,
-  val accent: Color,
-  val onClick: () -> Unit,
-)
-
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
-@Composable
-private fun ProfileShortcutTile(
-  icon: AppIcon,
-  label: String,
-  count: Int?,
-  containerColor: Color,
-  contentColor: Color,
-  onClick: () -> Unit,
-  shape: Shape,
-  modifier: Modifier = Modifier,
-) {
-  Surface(
-    onClick = onClick,
-    shape = shape,
-    color = containerColor,
-    contentColor = contentColor,
-    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)),
-    modifier =
-      modifier
-        .heightIn(min = 64.dp)
-        .tvFocusHighlight(shape),
-  ) {
-    Row(
-      modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-      verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-      Surface(
-        shape = CircleShape,
-        color = contentColor.copy(alpha = 0.14f),
-        contentColor = contentColor,
-        modifier = Modifier.size(32.dp),
-      ) {
-        Box(contentAlignment = Alignment.Center) {
-          Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
-        }
-      }
-      Column(
-        modifier = Modifier.weight(1f),
-        verticalArrangement = Arrangement.spacedBy(1.dp),
-      ) {
-        if (count != null) {
-          Text(
-            text = count.toString(),
-            style = MaterialTheme.typography.titleMediumEmphasized,
-            color = MaterialTheme.colorScheme.onSurface,
-          )
-        }
-        Text(
-          text = label,
-          style = if (count == null) MaterialTheme.typography.titleSmallEmphasized else MaterialTheme.typography.labelMedium,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
-          maxLines = 2,
-          overflow = TextOverflow.Ellipsis,
-        )
-      }
-      Icon(
-        Icons.RoundedFilled.ChevronRight,
-        contentDescription = null,
-        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.size(16.dp),
-      )
     }
   }
 }
