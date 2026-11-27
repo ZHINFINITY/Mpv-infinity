@@ -167,6 +167,9 @@ class JellyfinViewModel(
   private val downloadManager: AppDownloadManager by inject()
 
   private var loadDashboardJob: Job? = null
+  // Which server/mode the current state was built for. Re-entering a tab recomposes the pager
+  // page, and without this guard every return reset the dashboard and refetched everything.
+  private var enteredMode: Pair<Long, Boolean>? = null
   private val listRequestOwner = JellyfinListRequestOwner()
   private var loadItemsJob: Job? = null
   private var searchJob: Job? = null
@@ -205,6 +208,7 @@ class JellyfinViewModel(
   }
 
   fun selectServer(server: JellyfinServer) {
+    enteredMode = null
     invalidateListRequests()
     val selected = server.copy(lastConnected = System.currentTimeMillis())
     _uiState.update {
@@ -260,7 +264,12 @@ class JellyfinViewModel(
     loadHomeDashboard(server)
   }
 
+  /** True when the state already reflects this server and mode, so re-entry must not reload. */
+  fun hasEnteredMode(serverId: Long, musicOnly: Boolean): Boolean =
+    enteredMode == (serverId to musicOnly)
+
   fun enterMusicOnlyMode(server: JellyfinServer) {
+    enteredMode = server.id to true
     invalidateListRequests()
     loadDashboardJob?.cancel()
     loadItemsJob?.cancel()
@@ -314,6 +323,7 @@ class JellyfinViewModel(
   }
 
   fun enterFullLibraryMode(server: JellyfinServer) {
+    enteredMode = server.id to false
     loadDashboardJob?.cancel()
     loadItemsJob?.cancel()
     musicLoadJob?.cancel()

@@ -295,7 +295,9 @@ fun JellyfinContent(
 
   LaunchedEffect(isMusicOnlyMode, uiState.activeServer?.id) {
     val server = uiState.activeServer
-    server?.let {
+    // Leaving and re-entering the tab re-runs this effect; only a real server/mode change may
+    // rebuild the dashboard, otherwise the whole library flashed and refetched on every return.
+    server?.takeIf { !viewModel.hasEnteredMode(it.id, isMusicOnlyMode) }?.let {
       if (isMusicOnlyMode) viewModel.enterMusicOnlyMode(it)
       else viewModel.enterFullLibraryMode(it)
     }

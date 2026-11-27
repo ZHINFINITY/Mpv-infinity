@@ -2807,6 +2807,11 @@ class PlayerActivity :
       // Native, gpu-next, and not-yet-resolved MPV outputs use frame capture; keep the selection
       // stored so switching back to the compatible MPV renderer restores the user's preference.
       val effectiveAmbientStyle = AmbientRendererPolicy.effectiveStyle(style, usesFrameCapturedAmbient)
+      // Pinching out scales the video view down and exposes whatever sits behind it. That needs
+      // the same captured frame the YouTube presentation uses, even when the ambient style is a
+      // shader: a shader only paints inside the video rect, so the revealed margin would
+      // otherwise stay black.
+      val videoZoom by viewModel.videoZoom.collectAsState()
       val active =
         enabled &&
           lifecycleActive &&
@@ -2815,6 +2820,15 @@ class PlayerActivity :
           !isAmbientPipMode &&
           playbackReady &&
           (if (nativeActive) nativeFrameAvailable else playbackState.surfaceAttached)
+      val revealsAmbientBackdrop =
+        enabled &&
+          lifecycleActive &&
+          !isAudioOnly &&
+          !isAmbientPipMode &&
+          playbackReady &&
+          !active &&
+          videoZoom < 0f
+      val captureActive = active || revealsAmbientBackdrop
       val ambientSurface = if (nativeActive) {
         binding.media3Player.videoSurfaceView as? android.view.SurfaceView
       } else {
@@ -2823,7 +2837,7 @@ class PlayerActivity :
       val ambientFrame =
         ambientSurface?.let { surface -> rememberVideoAmbientFrame(
           surfaceView = surface,
-          active = active,
+          active = captureActive,
           playbackGeneration = ambientPlaybackKey,
           hdrScreenMode = hdrScreenMode,
           orientation = orientation,
@@ -2853,17 +2867,19 @@ class PlayerActivity :
 
       // Auto-crop changes after playback becomes ready. Refreshing on the property itself keeps
       // YouTube Ambient's SurfaceView aligned with the newly cropped content rectangle.
-      LaunchedEffect(active, presentationActive, videoCrop) {
+      val showAmbientBackdrop = presentationActive ||
+        (revealsAmbientBackdrop && ambientFrame.supported && ambientFrame.frame != null)
+      LaunchedEffect(active, presentationActive, showAmbientBackdrop, videoCrop) {
         // Do not resize the video until a real ambient frame exists. Otherwise MPV briefly
         // renders fullscreen and is then compressed into the ambient aspect window.
         composedVideoAmbientPresentationActive = presentationActive
-        setVideoAmbientPresentationActive(presentationActive, showBackground = presentationActive)
+        setVideoAmbientPresentationActive(presentationActive, showBackground = showAmbientBackdrop)
       }
 
       // Player glass cannot sample this ComposeView, so share its colour with the controls.
-      LaunchedEffect(presentationActive, ambientFrame.base) {
+      LaunchedEffect(presentationActive, showAmbientBackdrop, ambientFrame.base) {
         app.infinity.mpvz.ui.theme.PlayerAmbientTint.publish(
-          if (presentationActive) ambientFrame.base else null,
+          if (showAmbientBackdrop) ambientFrame.base else null,
         )
       }
       androidx.compose.runtime.DisposableEffect(Unit) {

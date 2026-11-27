@@ -49,7 +49,9 @@ class PlayerAmbientTintTest {
 
   @Test fun ambientCompositionPublishesOnlyWhilePresentedAndClearsOnDispose() {
     val activity = read("app/src/main/java/app/infinity/mpvz/ui/player/PlayerActivity.kt")
-    assertTrue(activity.contains("if (presentationActive) ambientFrame.base else null"))
+    // The tint follows the ambient backdrop: the YouTube presentation, or the backdrop revealed
+    // when the video is pinched out over it.
+    assertTrue(activity.contains("if (showAmbientBackdrop) ambientFrame.base else null"))
     assertTrue(activity.contains("onDispose { app.infinity.mpvz.ui.theme.PlayerAmbientTint.clear() }"))
   }
 

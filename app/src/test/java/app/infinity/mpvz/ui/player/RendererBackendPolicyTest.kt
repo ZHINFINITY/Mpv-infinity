@@ -28,4 +28,33 @@ class RendererBackendPolicyTest {
     )
     assertEquals("no", RendererBackendPolicy.gpuFlowHwdecMode(false, buildSupportsMediaCodecVulkan = false))
   }
+
+  @Test
+  fun openGlPathCopiesFramesBecauseDirectSurfacesCannotBeRepainted() {
+    // A seek on the OpenGL path leaves a flushed hardware decoder painting a stale blue surface.
+    assertEquals(
+      "mediacodec-copy,no",
+      RendererBackendPolicy.preferredHwdecMode(
+        hardwareDecodingEnabled = true,
+        usesVulkan = false,
+        buildSupportsMediaCodecVulkan = true,
+      ),
+    )
+    assertEquals(
+      "mediacodec-copy,no",
+      RendererBackendPolicy.preferredHwdecMode(
+        hardwareDecodingEnabled = true,
+        usesVulkan = true,
+        buildSupportsMediaCodecVulkan = false,
+      ),
+    )
+    assertEquals(
+      "mediacodec,mediacodec-copy,no",
+      RendererBackendPolicy.preferredHwdecMode(
+        hardwareDecodingEnabled = true,
+        usesVulkan = true,
+        buildSupportsMediaCodecVulkan = true,
+      ),
+    )
+  }
 }

@@ -381,8 +381,13 @@ object ProfileScreen : Screen {
                 ),
               onOpenSection = { section ->
                 haptics.tick()
-                scope.launch {
-                  listState.animateScrollToItem(profileSectionStartIndex(visibleSections, section))
+                val destination = profileSectionDestination(section)
+                if (destination != null) {
+                  backStack.navigateTo(destination)
+                } else {
+                  scope.launch {
+                    listState.animateScrollToItem(profileSectionStartIndex(visibleSections, section))
+                  }
                 }
               },
             )
@@ -733,6 +738,16 @@ private fun profileSectionItemCount(section: ProfileSection): Int =
   }
 
 /** LazyColumn index of a section's header (0 = overview card, 1 = shortcut grid). */
+/** Full screen a shortcut tile opens; null sections have no screen and stay inline. */
+private fun profileSectionDestination(section: ProfileSection): Screen? =
+  when (section) {
+    ProfileSection.RECENTS -> RecentlyPlayedScreen
+    ProfileSection.PLAYLISTS -> PlaylistScreen
+    ProfileSection.SNAPSHOTS -> SnapshotScreen
+    ProfileSection.NETWORK -> NetworkStreamingScreen
+    ProfileSection.RECENTLY_ADDED, ProfileSection.STATISTICS -> null
+  }
+
 private fun profileSectionStartIndex(sections: List<ProfileSection>, section: ProfileSection): Int {
   var index = 2
   sections.forEach { candidate ->

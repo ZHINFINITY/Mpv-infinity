@@ -72,6 +72,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
@@ -237,6 +238,7 @@ object MainScreen : Screen {
         initialPage = initialPageIndex,
         pageCount = { visibleTabs.size },
       )
+    val pageStateHolder = rememberSaveableStateHolder()
     var tabNavigationJob by remember { mutableStateOf<Job?>(null) }
 
     LaunchedEffect(pagerState, visibleTabs) {
@@ -384,6 +386,10 @@ object MainScreen : Screen {
               userScrollEnabled = !isPermissionDenied,
             ) { page ->
               val tab = visibleTabs.getOrNull(page) ?: return@HorizontalPager
+              // Pages past the viewport window are disposed, which threw away scroll position,
+              // the selected music tab and search text, so returning to a tab looked like a
+              // refresh. Saveable state keeps them alive for as long as the browser lives.
+              pageStateHolder.SaveableStateProvider(tab.name) {
               when (tab) {
                 MainTab.HOME -> FolderListScreen.Content()
                 MainTab.MUSIC -> when (musicSourceProvider) {
@@ -406,6 +412,7 @@ object MainScreen : Screen {
                 MainTab.NAVIDROME -> app.infinity.mpvz.ui.browser.navidrome.NavidromeContent(viewModel = navidromeViewModel)
                 MainTab.AUDIOBOOKS -> app.infinity.mpvz.ui.browser.audiobooks.AudiobookLibraryScreen.Content()
                 MainTab.PROFILE -> app.infinity.mpvz.ui.browser.profile.ProfileScreen.Content()
+              }
               }
             }
           }

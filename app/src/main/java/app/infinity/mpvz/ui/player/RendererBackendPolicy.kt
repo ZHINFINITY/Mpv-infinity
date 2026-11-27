@@ -45,7 +45,11 @@ internal object RendererBackendPolicy {
   ): String {
     if (!hardwareDecodingEnabled) return "no"
 
-    return if (canUseDirectMediaCodec(usesVulkan, buildSupportsMediaCodecVulkan)) {
+    // Only the Vulkan-import path can hand the decoder's surface through mpv's renderer. The
+    // OpenGL path decodes straight into the screen surface, which mpv cannot repaint after a
+    // seek, so Qualcomm HEVC shows a blue/garbage frame until the decoder restarts. Copy mode
+    // keeps frames inside the renderer and makes seeks safe.
+    return if (canUseDirectMediaCodec(usesVulkan, buildSupportsMediaCodecVulkan) && usesVulkan) {
       "mediacodec,mediacodec-copy,no"
     } else {
       "mediacodec-copy,no"

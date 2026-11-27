@@ -19,8 +19,7 @@ import java.security.SecureRandom
 import java.util.Base64
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.LinkedBlockingQueue
-import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -37,8 +36,12 @@ class DirectLinkProxy private constructor() : NanoHTTPD("127.0.0.1", 0) {
     private const val TAG = "DirectLinkProxy"
     private const val TOKEN_BYTES = 24
     private const val CHUNK_BYTES = 4L * 1024L * 1024L
+    // The reader streams the head of the window on its own socket so the first frame arrives
+    // without waiting for a full chunk; prefetch workers fill the rest ahead of it.
+    private const val HEAD_CHUNK_BYTES = 512L * 1024L
     private const val PARALLEL_CONNECTIONS = 4
     private const val PREFETCH_CHUNKS = 12
+    private const val FETCH_ATTEMPTS = 3
     private const val CONNECT_TIMEOUT_MS = 10_000
     private const val READ_TIMEOUT_MS = 20_000
 
@@ -137,6 +140,9 @@ class DirectLinkProxy private constructor() : NanoHTTPD("127.0.0.1", 0) {
     if (session.method == Method.HEAD) {
       return HeadResponse(Response.Status.OK, stream.mimeType, stream.fileSize).apply {
         addHeader("Accept-Ranges", "bytes")
+        // ffmpeg otherwise reuses this keep-alive socket after NanoHTTPD times it out, and the
+        // stale connection reports EOF at byte 0 ("Stream ends prematurely at 0").
+        addHeader("Connection", "close")
       }
     }
     if (session.method != Method.GET) {
@@ -157,6 +163,7 @@ class DirectLinkProxy private constructor() : NanoHTTPD("127.0.0.1", 0) {
     ).apply {
       addHeader("Content-Range", "bytes $start-$end/${stream.fileSize}")
       addHeader("Accept-Ranges", "bytes")
+      addHeader("Connection", "close")
     }
   }
 
@@ -197,102 +204,165 @@ class DirectLinkProxy private constructor() : NanoHTTPD("127.0.0.1", 0) {
       }
     }
 
-    private val queue = LinkedBlockingQueue<Pair<Long, ByteArray>>(PREFETCH_CHUNKS)
-    private val nextToFetch = AtomicLong(start / CHUNK_BYTES)
-    private val lastChunk = end / CHUNK_BYTES
+    private val cache = ConcurrentHashMap<Long, ByteArray>()
+    private val prefetchNext = AtomicLong(chunkOf(start) + 1L)
+    private val closed = AtomicBoolean(false)
+
+    @Volatile private var position = start
     private var currentData: ByteArray? = null
-    private var currentChunk = -1L
-    private var offsetInChunk = 0
-    private var position = start
-    @Volatile private var closed = false
+    private var offsetInChunk = (start - chunkStart(chunkOf(start))).toInt()
+    private var connection: HttpURLConnection? = null
+    private var input: InputStream? = null
 
     init {
-      // Dedicated fetch workers give real parallel range requests: each claims the next chunk
-      // index, downloads it out of order, and hands it to the in-order queue the reader drains.
+      // Workers fill the out-of-order cache ahead of the reader. The reader never depends on
+      // them: it streams its own bytes, so a slow or failing prefetch can cost throughput but
+      // can no longer truncate playback.
       repeat(PARALLEL_CONNECTIONS) {
-        Thread({
-          while (!closed && !fetchNextIfAny()) { /* stop when stream is exhausted or closed */ }
-        }, "direct-link-prefetch").apply {
+        Thread({ prefetch() }, "direct-link-prefetch").apply {
           isDaemon = true
           start()
         }
       }
     }
 
-    /** Returns true when the window is fully fetched (or the stream closed). */
-    private fun fetchNextIfAny(): Boolean {
-      if (closed) return true
-      val chunk = nextToFetch.getAndUpdate { if (it < lastChunk) it + 1 else it }
-      if (chunk > lastChunk) return true
-      val chunkStart = chunk * CHUNK_BYTES
-      val chunkEnd = minOf(chunkStart + CHUNK_BYTES - 1L, end)
-      return try {
-        val bytes = fetchRange(url, chunkStart, chunkEnd)
-        if (queue.offer(chunk to bytes, 30L, TimeUnit.SECONDS)) {
-          false
-        } else {
-          closed = true
-          true
+    private fun chunkOf(offset: Long): Long =
+      if (offset < HEAD_CHUNK_BYTES) 0L else 1L + (offset - HEAD_CHUNK_BYTES) / CHUNK_BYTES
+
+    private fun chunkStart(index: Long): Long =
+      if (index == 0L) 0L else HEAD_CHUNK_BYTES + (index - 1L) * CHUNK_BYTES
+
+    private fun chunkEnd(index: Long): Long =
+      minOf(chunkStart(index) + if (index == 0L) HEAD_CHUNK_BYTES else CHUNK_BYTES, end + 1L) - 1L
+
+    private fun prefetch() {
+      while (!closed.get()) {
+        try {
+          val readerChunk = chunkOf(position)
+          if (cache.size >= PREFETCH_CHUNKS) {
+            Thread.sleep(40L)
+            continue
+          }
+          cache.keys.removeAll { it < readerChunk }
+          val index = prefetchNext.get()
+          if (index > chunkOf(end)) return
+          if (index <= readerChunk || cache.containsKey(index)) {
+            prefetchNext.compareAndSet(index, index + 1L)
+            continue
+          }
+          if (!prefetchNext.compareAndSet(index, index + 1L)) continue
+          val bytes = fetchChunk(index) ?: continue
+          if (!closed.get() && chunkOf(position) <= index) cache[index] = bytes
+        } catch (interrupted: InterruptedException) {
+          return
         }
-      } catch (error: IOException) {
-        closed = true
-        true
       }
     }
 
-    private fun advanceChunk(): Boolean {
-      val entry = try {
-        queue.poll(READ_TIMEOUT_MS.toLong(), TimeUnit.MILLISECONDS)
-      } catch (interrupted: InterruptedException) {
-        Thread.currentThread().interrupt()
-        return false
-      } ?: return false
-      val (chunk, bytes) = entry
-      if (chunk != currentChunk + 1 && position != chunk * CHUNK_BYTES && chunk != position / CHUNK_BYTES) {
-        // Out-of-order delivery cannot be served without skipping; fail the stream.
-        closed = true
-        return false
+    private fun fetchChunk(index: Long): ByteArray? {
+      repeat(FETCH_ATTEMPTS) { attempt ->
+        if (closed.get()) return null
+        try {
+          return fetchRange(url, chunkStart(index), chunkEnd(index))
+        } catch (error: IOException) {
+          if (attempt == FETCH_ATTEMPTS - 1) {
+            Log.w(TAG, "Chunk $index fetch failed (${error.message})")
+          } else {
+            Thread.sleep(150L * (attempt + 1))
+          }
+        }
       }
-      currentChunk = chunk
-      currentData = bytes
-      offsetInChunk = (position - chunk * CHUNK_BYTES).toInt().coerceIn(0, bytes.size)
-      return offsetInChunk < bytes.size
+      return null
     }
 
-    private fun fillBuffer(): Boolean {
-      if (closed || position > end) return false
-      while (currentData == null || offsetInChunk >= currentData!!.size) {
-        if (!advanceChunk()) return false
+    /** Opens (or re-opens) the sequential socket at the current position; resumes after a drop. */
+    private fun openOwnStream(): Boolean {
+      closeOwnStream()
+      repeat(FETCH_ATTEMPTS) { attempt ->
+        if (closed.get()) return false
+        try {
+          val target = position
+          val opened = URL(url).openConnection() as HttpURLConnection
+          opened.requestMethod = "GET"
+          opened.connectTimeout = CONNECT_TIMEOUT_MS
+          opened.readTimeout = READ_TIMEOUT_MS
+          headers.forEach { (name, value) -> opened.setRequestProperty(name, value) }
+          opened.setRequestProperty("Range", "bytes=$target-$end")
+          val code = opened.responseCode
+          if (code != HttpURLConnection.HTTP_PARTIAL && !(code == HttpURLConnection.HTTP_OK && target == 0L)) {
+            opened.disconnect()
+            throw IOException("Unexpected range response $code")
+          }
+          connection = opened
+          input = opened.inputStream
+          return true
+        } catch (error: IOException) {
+          if (attempt == FETCH_ATTEMPTS - 1) {
+            Log.w(TAG, "Stream resume at $position failed (${error.message})")
+          } else {
+            Thread.sleep(150L * (attempt + 1))
+          }
+        }
       }
-      return true
+      return false
+    }
+
+    private fun closeOwnStream() {
+      runCatching { input?.close() }
+      runCatching { connection?.disconnect() }
+      input = null
+      connection = null
     }
 
     override fun read(): Int {
-      if (!fillBuffer()) return -1
-      val value = currentData!!.get(offsetInChunk).toInt() and 0xFF
-      offsetInChunk++
-      position++
-      return value
+      val single = ByteArray(1)
+      val read = read(single, 0, 1)
+      return if (read <= 0) -1 else single[0].toInt() and 0xFF
     }
 
     override fun read(b: ByteArray, off: Int, len: Int): Int {
       if (len == 0) return 0
-      if (!fillBuffer()) return -1
       var count = 0
-      while (count < len && position <= end) {
-        if (!fillBuffer()) break
-        val toCopy = minOf(currentData!!.size - offsetInChunk, len - count, (end - position + 1L).toInt())
-        System.arraycopy(currentData!!, offsetInChunk, b, off + count, toCopy)
-        offsetInChunk += toCopy
-        position += toCopy
-        count += toCopy
+      while (count < len && position <= end && !closed.get()) {
+        val index = chunkOf(position)
+        val cached = currentData ?: cache.remove(index)
+        if (cached != null) {
+          val within = (position - chunkStart(index)).toInt().coerceIn(0, cached.size)
+          if (within >= cached.size) {
+            currentData = null
+            continue
+          }
+          currentData = cached
+          offsetInChunk = within
+          val toCopy = minOf(cached.size - within, len - count)
+          System.arraycopy(cached, within, b, off + count, toCopy)
+          offsetInChunk += toCopy
+          position += toCopy
+          count += toCopy
+          if (offsetInChunk >= cached.size) currentData = null
+          continue
+        }
+        if (input == null && !openOwnStream()) break
+        // Stop at the chunk boundary so a prefetched chunk is served from the cache instead of
+        // being downloaded a second time on the sequential socket.
+        val untilChunkEnd = (chunkEnd(index) - position + 1L).toInt()
+        val read = input!!.read(b, off + count, minOf(len - count, untilChunkEnd))
+        if (read < 0) {
+          closeOwnStream()
+          if (!openOwnStream()) break
+          continue
+        }
+        position += read
+        count += read
+        if (position > chunkEnd(index)) closeOwnStream()
       }
-      return count
+      return if (count == 0 && (position > end || closed.get())) -1 else count
     }
 
     override fun close() {
-      closed = true
-      queue.clear()
+      closed.set(true)
+      closeOwnStream()
+      cache.clear()
     }
   }
 
