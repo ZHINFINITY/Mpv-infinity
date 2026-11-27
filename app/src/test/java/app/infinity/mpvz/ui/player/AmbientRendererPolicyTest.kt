@@ -19,12 +19,13 @@ class AmbientRendererPolicyTest {
   private fun source(path: String) = File(root, "app/src/main/java/app/infinity/mpvz/$path").readText()
 
   @Test
-  fun onlyAnExplicitLegacyGpuOutputUsesGlowShaderPath() {
+  fun bothMpvGpuRenderersUseTheGlowShaderPath() {
     assertTrue(AmbientRendererPolicy.usesFrameCapturedAmbient(nativeEngineActive = false, videoOutput = null))
-    assertTrue(AmbientRendererPolicy.usesFrameCapturedAmbient(nativeEngineActive = false, videoOutput = "gpu-next"))
-    assertTrue(AmbientRendererPolicy.usesFrameCapturedAmbient(nativeEngineActive = false, videoOutput = "GPU-NEXT"))
+    assertFalse(AmbientRendererPolicy.usesFrameCapturedAmbient(nativeEngineActive = false, videoOutput = "gpu-next"))
+    assertFalse(AmbientRendererPolicy.usesFrameCapturedAmbient(nativeEngineActive = false, videoOutput = "GPU-NEXT"))
     assertFalse(AmbientRendererPolicy.usesFrameCapturedAmbient(nativeEngineActive = false, videoOutput = "gpu"))
     assertTrue(AmbientRendererPolicy.usesFrameCapturedAmbient(nativeEngineActive = true, videoOutput = "gpu"))
+    assertTrue(AmbientRendererPolicy.usesFrameCapturedAmbient(nativeEngineActive = false, videoOutput = "mediacodec_embed"))
   }
 
   @Test
@@ -107,7 +108,7 @@ class AmbientRendererPolicyTest {
       AmbientRendererPolicy.usesFrameCapturedAmbient(nativeEngineActive = false, videoOutput = output)
     }
 
-    assertEquals(listOf(true, false), fallbackStates)
+    assertEquals(listOf(false, false), fallbackStates)
     assertTrue(activity.contains("PlaybackSession.propString[\"vo\"].collectAsState()"))
     assertTrue(activity.contains("LaunchedEffect(usesFrameCapturedAmbient)"))
     assertTrue(activity.contains("viewModel.setFrameCapturedAmbientFallback(usesFrameCapturedAmbient)"))

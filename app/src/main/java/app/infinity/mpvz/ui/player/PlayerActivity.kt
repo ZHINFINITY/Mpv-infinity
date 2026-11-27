@@ -2804,8 +2804,8 @@ class PlayerActivity :
       LaunchedEffect(usesFrameCapturedAmbient) {
         viewModel.setFrameCapturedAmbientFallback(usesFrameCapturedAmbient)
       }
-      // Native, gpu-next, and not-yet-resolved MPV outputs use frame capture; keep the selection
-      // stored so switching back to the compatible MPV renderer restores the user's preference.
+      // Native and not-yet-resolved MPV outputs use frame capture; both mpv GPU renderers run
+      // the styled ambient shaders. Keep the selection stored either way.
       val effectiveAmbientStyle = AmbientRendererPolicy.effectiveStyle(style, usesFrameCapturedAmbient)
       // Pinching out scales the video view down and exposes whatever sits behind it. That needs
       // the same captured frame the YouTube presentation uses, even when the ambient style is a

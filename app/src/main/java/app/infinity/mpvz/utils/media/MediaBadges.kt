@@ -19,7 +19,19 @@ data class MediaBadge(
   val pattern: Regex,
   /** Remote image for pack badges whose PNG is not cached locally yet. */
   val remoteUrl: String? = null,
-)
+  /** Name-derived matcher for packs whose regexes only match invisible marker runs. */
+  val keywords: List<List<String>> = emptyList(),
+) {
+  fun matches(source: String?): Boolean {
+    if (source.isNullOrBlank()) return false
+    if (BadgeNameKeywords.matches(source, keywords)) return true
+    return try {
+      pattern.containsMatchIn(source)
+    } catch (_: Exception) {
+      false
+    }
+  }
+}
 
 /**
  * Elite-Badges (https://github.com/leonevz/Elite-Badges) bundled under assets/badges/.

@@ -102,13 +102,22 @@ object RemoteBadgePacks {
           val enabled = entry["isEnabled"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: true
           if (!enabled) return@mapNotNull null
           val file = File(dir, imageUrl.substringAfterLast('/'))
+          val name = entry["name"]?.jsonPrimitive?.content ?: id
+          val rawPattern = entry["pattern"]?.jsonPrimitive?.content ?: return@mapNotNull null
+          // A marker-encoded pattern can never match plain text; fall back to the readable name.
+          val keywords =
+            if (BadgeNameKeywords.isMarkerEncoded(rawPattern)) BadgeNameKeywords.keywordsFor(name)
+            else emptyList()
+          val regex = runCatching { Regex(rawPattern) }.getOrNull()
+          if (regex == null && keywords.isEmpty()) return@mapNotNull null
           MediaBadge(
             id = id,
-            name = entry["name"]?.jsonPrimitive?.content ?: id,
+            name = name,
             groupId = entry["groupId"]?.jsonPrimitive?.content ?: "",
             assetPath = file.absolutePath,
-            pattern = Regex(entry["pattern"]?.jsonPrimitive?.content ?: return@mapNotNull null),
+            pattern = regex ?: NEVER_MATCH,
             remoteUrl = if (file.isFile) null else imageUrl,
+            keywords = keywords,
           )
         }
       } catch (_: Exception) {
@@ -136,6 +145,8 @@ object RemoteBadgePacks {
       badges
     }
   }
+
+  private val NEVER_MATCH = Regex("(?!)")
 
   private val backgroundWarm = CoroutineScope(Dispatchers.IO + SupervisorJob())
 }

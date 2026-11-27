@@ -12,7 +12,7 @@ internal object AmbientRendererPolicy {
   fun usesFrameCapturedAmbient(
     nativeEngineActive: Boolean,
     videoOutput: String?,
-  ): Boolean = nativeEngineActive || !videoOutput.isLegacyGpuOutput()
+  ): Boolean = nativeEngineActive || !videoOutput.isShaderAmbientOutput()
 
   fun effectiveStyle(
     selectedStyle: AmbientStyle,
@@ -25,6 +25,14 @@ internal object AmbientRendererPolicy {
     glowRuntimeActive: Boolean,
   ): Boolean = !fallbackEnabled && glowRuntimeActive
 
-  private fun String?.isLegacyGpuOutput(): Boolean =
-    this?.trim()?.equals("gpu", ignoreCase = true) == true
+  /**
+   * Both mpv renderers accept `//!HOOK OUTPUT` user shaders, so the styled
+   * ambient shaders run on gpu-next too. Restricting this to `gpu` made every
+   * ambience style collapse into the frame-captured YouTube backdrop, because
+   * gpu-next is the default output.
+   */
+  private fun String?.isShaderAmbientOutput(): Boolean {
+    val output = this?.trim()?.lowercase() ?: return false
+    return output == "gpu" || output == "gpu-next"
+  }
 }
