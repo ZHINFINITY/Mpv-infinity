@@ -63,19 +63,28 @@ private fun AudioDeviceInfo.outputGroupKey(): String =
       "bt:" +
         (productName?.toString()?.trim()?.lowercase()?.takeIf { it.isNotEmpty() && it != "null" }
           ?: "")
+    // Phones report the same speaker twice (BUILTIN_SPEAKER and, since Android 12,
+    // BUILTIN_SPEAKER_SAFE carrying the model name as product name). Both are one speaker.
+    AudioDeviceInfo.TYPE_BUILTIN_SPEAKER,
+    AudioDeviceInfo.TYPE_BUILTIN_SPEAKER_SAFE,
+    -> "builtin:speaker"
     else -> "id:$id"
   }
 
 /** Keeps one row per physical output, preferring the A2DP entry that carries the media route. */
 private fun List<AudioDeviceInfo>.collapseOutputs(): List<AudioDeviceInfo> =
   groupBy { it.outputGroupKey() }.values.map { group ->
-    group.firstOrNull { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP } ?: group.first()
+    group.firstOrNull { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP }
+      ?: group.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+      ?: group.first()
   }
 
 /** Every output type gets its own icon and label instead of one shared "Audio output" row. */
 private fun AudioDeviceInfo.labelAndIcon(): Pair<String, app.infinity.mpvz.ui.icons.AppIcon>? =
   when (type) {
-    AudioDeviceInfo.TYPE_BUILTIN_EARPIECE -> null // never a media output; routing here sends audio to the earpiece
+    AudioDeviceInfo.TYPE_BUILTIN_EARPIECE,
+    AudioDeviceInfo.TYPE_TELEPHONY,
+    -> null // never a media output; routing here sends audio to the earpiece
     AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
     AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
     AudioDeviceInfo.TYPE_BLE_HEADSET,
@@ -88,7 +97,7 @@ private fun AudioDeviceInfo.labelAndIcon(): Pair<String, app.infinity.mpvz.ui.ic
     AudioDeviceInfo.TYPE_USB_ACCESSORY,
     -> defaultLabel("USB audio") to Icons.RoundedFilled.Usb
     AudioDeviceInfo.TYPE_BUILTIN_SPEAKER,
-    AudioDeviceInfo.TYPE_TELEPHONY,
+    AudioDeviceInfo.TYPE_BUILTIN_SPEAKER_SAFE,
     -> "Speaker" to Icons.RoundedFilled.Speaker
     AudioDeviceInfo.TYPE_HDMI,
     AudioDeviceInfo.TYPE_HDMI_ARC,

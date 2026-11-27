@@ -8,6 +8,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.preferences.AppearancePreferences
@@ -69,12 +70,9 @@ fun Modifier.settingsGlassSurface(
 fun settingsGlassContainerColor(fallback: androidx.compose.ui.graphics.Color): androidx.compose.ui.graphics.Color {
   val appearance = koinInject<AppearancePreferences>()
   val enabled by appearance.liquidGlassSurfaces.collectAsState()
-  return if (enabled) {
-    // Glass optics sample the backdrop behind the pane and paint their own adaptive film, which
-    // already guarantees text contrast (see GlassSurfacePolicy.regularAdaptiveFilmAlpha). Only a
-    // light scrim is added on top: a heavier one (0.42) double-filmed every popup into a grey slab.
-    fallback.copy(alpha = fallback.alpha.coerceAtLeast(GlassSurfacePolicy.GlassContainerScrimAlpha))
-  } else {
-    fallback
-  }
+  // Glass optics sample the backdrop behind the pane and paint their own adaptive film, which
+  // already guarantees text contrast (see GlassSurfacePolicy.regularAdaptiveFilmAlpha). Any extra
+  // fill here is a second film over that glass: the 0.42 and 0.12 versions both turned every
+  // popup into a flat slab, so the container is transparent while glass is on.
+  return if (enabled) Color.Transparent else fallback
 }

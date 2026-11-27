@@ -576,9 +576,13 @@ internal fun Modifier.browserGlassPane(
           if (size.width < 1f || size.height < 1f) return@onDrawBehind
           // Observed state: the popup window redraws once the route window records its first frame.
           val popupSceneReady = !popupWindow || scene?.popupReady == true
-          val bounds = scene?.stripBounds
-          val hasScene = popupSceneReady && scene != null && bounds != null && bounds.width > 0f && bounds.height > 0f &&
-            GlassScenePolicy.canDrawRecordedScene(scene.isRecording, scene.hasValidDisplayList)
+          // Until the popup producer records its first frame (or when it cannot), a popup pane
+          // frosts the route content instead of painting the flat no-scene film. The popup window
+          // is never inside the recorded route tree, so this cannot sample itself.
+          val frostScene = if (!popupSceneReady && popupWindow && routeScene != null) routeScene else scene
+          val bounds = frostScene?.stripBounds
+          val hasScene = frostScene != null && bounds != null && bounds.width > 0f && bounds.height > 0f &&
+            GlassScenePolicy.canDrawRecordedScene(frostScene.isRecording, frostScene.hasValidDisplayList)
           if (!hasScene && popupWindow && app.infinity.mpvz.BuildConfig.DEBUG && !sceneMissLogged[0]) {
             sceneMissLogged[0] = true
             android.util.Log.d(
@@ -605,7 +609,7 @@ internal fun Modifier.browserGlassPane(
             if (lens.renderEffect !== effect) lens.renderEffect = effect
             lens.record {
               clipRect {
-                translate(left = bounds!!.left - paneOrigin.x, top = bounds.top - paneOrigin.y) { drawLayer(scene!!.layer) }
+                translate(left = bounds!!.left - paneOrigin.x, top = bounds.top - paneOrigin.y) { drawLayer(frostScene!!.layer) }
               }
             }
             drawLayer(lens)

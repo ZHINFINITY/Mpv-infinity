@@ -67,6 +67,8 @@ import app.infinity.mpvz.repository.WatchStatsRepository
 import app.infinity.mpvz.repository.WatchStatsSnapshot
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.preferences.components.settingsGlassContainerColor
+import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
 import app.infinity.mpvz.ui.theme.AppConnectedShapeTokens
 import app.infinity.mpvz.ui.theme.AppConnectedControlShapeTokens
 import app.infinity.mpvz.ui.theme.AppShapeScale
@@ -153,6 +155,8 @@ internal fun ProfileWatchStatistics() {
   if (confirmReset) {
     AlertDialog(
       onDismissRequest = { confirmReset = false },
+      modifier = Modifier.settingsGlassSurface(cornerRadius = 28.dp),
+      containerColor = settingsGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerHigh),
       title = { Text(stringResource(R.string.watch_stats_reset)) },
       text = { Text(stringResource(R.string.watch_stats_reset_confirm)) },
       confirmButton = {

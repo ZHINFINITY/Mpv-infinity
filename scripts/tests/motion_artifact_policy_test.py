@@ -17,7 +17,7 @@ PATCHER = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(PATCHER)
 parser = argparse.ArgumentParser()
 parser.add_argument("--source", type=Path, help="active pinned Pinned motion.c built by the runtime workflow")
-args = parser.parse_args()
+args = parser.parse_args() if __name__ == "__main__" else argparse.Namespace(source=None)
 
 BASE_PIXEL_HEADER = """    vec4 synthesize_pixel(sampler2D source0, sampler2D source1, sampler2D warp0,
                           sampler2D warp1, sampler2D scene_map, ivec2 pixel,
