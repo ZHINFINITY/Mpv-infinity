@@ -49,6 +49,7 @@ import androidx.media3.extractor.ExtractorsFactory
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import app.infinity.mpvz.ui.browser.music.AudioOutputRouter
 import app.infinity.mpvz.ui.player.LibassSubtitleSurfaceView
 import app.infinity.mpvz.utils.media.FontFamilyName
 import app.infinity.mpvz.preferences.MpvFlowComputeApi
@@ -395,6 +396,12 @@ class NativeMedia3Engine internal constructor(
     .setMediaSourceFactory(mediaSourceFactory)
     .setRenderersFactory(createRenderersFactory())
     .build()
+
+  init {
+    // Output picks route through setPreferredAudioDevice, so this player must be registered or a
+    // pick does nothing while the Media3 engine is the one playing.
+    AudioOutputRouter.attach(player)
+  }
   private var attachedView: PlayerView? = null
   private var videoZoom = 0f
   private var horizontalFlip = false
@@ -2047,6 +2054,7 @@ class NativeMedia3Engine internal constructor(
     subtitleOverlay = null
     attachedView = null
     assHandler.release()
+    AudioOutputRouter.detach(player)
     player.release()
     media3FlowSink?.release()
   }

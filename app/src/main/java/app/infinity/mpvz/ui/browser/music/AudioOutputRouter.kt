@@ -17,7 +17,11 @@ import java.util.concurrent.CopyOnWriteArrayList
 /**
  * Sends the music player's media stream to the output the user picked in the audio output sheet.
  *
- * Routing goes through [ExoPlayer.setPreferredAudioDevice], which accepts any audio *media*
+ * Two engines can be running the music: the mpv player (library/search playback, [MpvAudioRoute])
+ * and the Media3 players this object tracks. Both are routed, because a pick has to hold whichever
+ * one is playing.
+ *
+ * Media3 routing goes through [ExoPlayer.setPreferredAudioDevice], which accepts any audio *media*
  * output. The previous implementation used AudioManager's *communication* API
  * (`setCommunicationDevice`), which only accepts earpiece/speaker/Bluetooth-SCO/hearing-aid
  * devices and throws `IllegalArgumentException: invalid device type` for everything else
@@ -45,6 +49,7 @@ object AudioOutputRouter {
   fun select(device: AudioDeviceInfo) {
     preferredDevice = device
     players.forEach { player -> runCatching { player.setPreferredAudioDevice(device) } }
+    MpvAudioRoute.select(device)
   }
 
   /**

@@ -29,6 +29,11 @@ set_target_properties(ytdl_wrapper PROPERTIES OUTPUT_NAME "ytdl")
 set_target_properties(ytdl_wrapper PROPERTIES PREFIX "lib" SUFFIX ".so")
 mpvinfinity_optimize_native_target(ytdl_wrapper)
 
+# Forwards the audio output picked in the player to mpv's patched AudioTrack driver.
+add_library(mpvaudio SHARED mpv_audio_route_jni.cpp)
+target_link_libraries(mpvaudio dl)
+mpvinfinity_optimize_native_target(mpvaudio)
+
 # QuickJS-NG CLI used by current yt-dlp releases for YouTube n/sig challenges.
 # Package it as an executable .so beside libytdl.so so Android permits subprocess execution.
 set(QUICKJS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/quickjs")

@@ -12,6 +12,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 from mpvrx_motion_source import verify_mpv_source
+from patch_audiotrack_device import apply_patch as apply_audiotrack_device_patch
 from patch_fongmi_motion_downsample import apply_patch as apply_motion_downsample_patch
 from patch_fongmi_paired_color_mask import (
     apply_patch as apply_motion_paired_color_mask_patch,
@@ -470,6 +471,18 @@ def main() -> None:
         "Applied selective paired-color mismatch mask"
         if paired_color_mask_applied
         else "Selective paired-color mismatch mask already present"
+    )
+
+    try:
+        audiotrack_device_applied = apply_audiotrack_device_patch(
+            mpv_dir / "audio/out/ao_audiotrack.c"
+        )
+    except (OSError, ValueError) as exc:
+        raise SystemExit(f"Mpv-infinity AudioTrack device routing failed: {exc}") from exc
+    print(
+        "Applied AudioTrack preferred-device routing"
+        if audiotrack_device_applied
+        else "AudioTrack preferred-device routing already present"
     )
 
     native_fongmi_markers = (

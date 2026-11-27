@@ -50,6 +50,28 @@ import app.infinity.mpvz.ui.player.controls.components.GlassSlider
 private fun AudioDeviceInfo.defaultLabel(fallback: String): String =
   productName?.toString()?.trim()?.takeIf { it.isNotEmpty() && !it.equals("null", true) } ?: fallback
 
+/**
+ * One physical Bluetooth headset is reported as separate A2DP, SCO and BLE outputs, so the sheet
+ * listed the same pair twice with the same icon. Entries that share a product name share a key.
+ */
+private fun AudioDeviceInfo.outputGroupKey(): String =
+  when (type) {
+    AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
+    AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+    AudioDeviceInfo.TYPE_BLE_HEADSET,
+    ->
+      "bt:" +
+        (productName?.toString()?.trim()?.lowercase()?.takeIf { it.isNotEmpty() && it != "null" }
+          ?: "")
+    else -> "id:$id"
+  }
+
+/** Keeps one row per physical output, preferring the A2DP entry that carries the media route. */
+private fun List<AudioDeviceInfo>.collapseOutputs(): List<AudioDeviceInfo> =
+  groupBy { it.outputGroupKey() }.values.map { group ->
+    group.firstOrNull { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP } ?: group.first()
+  }
+
 /** Every output type gets its own icon and label instead of one shared "Audio output" row. */
 private fun AudioDeviceInfo.labelAndIcon(): Pair<String, app.infinity.mpvz.ui.icons.AppIcon>? =
   when (type) {
@@ -90,10 +112,13 @@ fun AudioOutputSheet(
     mutableIntStateOf(audioManager.getStreamVolume(AudioManager.STREAM_MUSIC))
   }
   val maxVolume = remember { audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC) }
-  var selectedDeviceId by remember {
-    // A pick made earlier in the session wins over guessing from the platform's active list.
-    mutableStateOf((AudioOutputRouter.selectedDevice() ?: AudioOutputRouter.activeMediaDevice(context))?.id)
-  }
+  val initialSelection =
+    remember {
+      // A pick made earlier in the session wins over guessing from the platform's active list.
+      AudioOutputRouter.selectedDevice() ?: AudioOutputRouter.activeMediaDevice(context)
+    }
+  var selectedDeviceId by remember { mutableStateOf(initialSelection?.id) }
+  var selectedGroupKey by remember { mutableStateOf(initialSelection?.outputGroupKey()) }
   val devices =
     remember {
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -104,6 +129,7 @@ fun AudioOutputSheet(
         emptyList()
       }
     }.filter { it.type != AudioDeviceInfo.TYPE_UNKNOWN && it.labelAndIcon() != null }
+      .collapseOutputs()
 
   PlayerSheet(
     onDismissRequest = onDismissRequest,
@@ -128,7 +154,7 @@ fun AudioOutputSheet(
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && devices.isNotEmpty()) {
         devices.forEach { device ->
           val (label, icon) = device.labelAndIcon() ?: return@forEach
-          val isSelected = device.id == selectedDeviceId
+          val isSelected = device.id == selectedDeviceId || device.outputGroupKey() == selectedGroupKey
           Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -149,6 +175,7 @@ fun AudioOutputSheet(
                 )
                 .clickable {
                   selectedDeviceId = device.id
+                  selectedGroupKey = device.outputGroupKey()
                   // Media routing, not communication routing: setCommunicationDevice rejects
                   // HDMI/line/dock outputs with IllegalArgumentException and never moved the
                   // music stream, which is why Bluetooth -> speaker did nothing.
