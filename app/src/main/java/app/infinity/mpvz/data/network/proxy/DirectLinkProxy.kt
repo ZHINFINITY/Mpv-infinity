@@ -44,6 +44,7 @@ class DirectLinkProxy private constructor() : NanoHTTPD("127.0.0.1", 0) {
     private const val FETCH_ATTEMPTS = 3
     private const val CONNECT_TIMEOUT_MS = 10_000
     private const val READ_TIMEOUT_MS = 20_000
+    private const val IN_FLIGHT_WAIT_MS = 8_000L
 
     @Volatile
     private var instance: DirectLinkProxy? = null
@@ -171,7 +172,7 @@ class DirectLinkProxy private constructor() : NanoHTTPD("127.0.0.1", 0) {
    * Serves the requested byte window as an ordered stream while fetching its chunks with
    * [PARALLEL_CONNECTIONS] concurrent range requests kept [PREFETCH_CHUNKS] chunks ahead.
    */
-  private class ParallelRangeInputStream(
+  internal class ParallelRangeInputStream(
     private val url: String,
     private val headers: Map<String, String>,
     private val start: Long,
@@ -205,6 +206,7 @@ class DirectLinkProxy private constructor() : NanoHTTPD("127.0.0.1", 0) {
     }
 
     private val cache = ConcurrentHashMap<Long, ByteArray>()
+    private val inFlight = ConcurrentHashMap.newKeySet<Long>()
     private val prefetchNext = AtomicLong(chunkOf(start) + 1L)
     private val closed = AtomicBoolean(false)
 
@@ -251,8 +253,13 @@ class DirectLinkProxy private constructor() : NanoHTTPD("127.0.0.1", 0) {
             continue
           }
           if (!prefetchNext.compareAndSet(index, index + 1L)) continue
-          val bytes = fetchChunk(index) ?: continue
-          if (!closed.get() && chunkOf(position) <= index) cache[index] = bytes
+          inFlight.add(index)
+          try {
+            val bytes = fetchChunk(index) ?: continue
+            if (!closed.get() && chunkOf(position) <= index) cache[index] = bytes
+          } finally {
+            inFlight.remove(index)
+          }
         } catch (interrupted: InterruptedException) {
           return
         }
@@ -273,6 +280,21 @@ class DirectLinkProxy private constructor() : NanoHTTPD("127.0.0.1", 0) {
         }
       }
       return null
+    }
+
+    /** Waits for a worker that is already downloading [index]; true once it is cached. */
+    private fun awaitInFlight(index: Long): Boolean {
+      val deadline = System.nanoTime() + IN_FLIGHT_WAIT_MS * 1_000_000L
+      while (inFlight.contains(index) && !closed.get()) {
+        if (cache.containsKey(index)) return true
+        if (System.nanoTime() >= deadline) return false
+        try {
+          Thread.sleep(15L)
+        } catch (_: InterruptedException) {
+          return false
+        }
+      }
+      return cache.containsKey(index)
     }
 
     /** Opens (or re-opens) the sequential socket at the current position; resumes after a drop. */
@@ -327,6 +349,8 @@ class DirectLinkProxy private constructor() : NanoHTTPD("127.0.0.1", 0) {
         val index = chunkOf(position)
         val cached = currentData ?: cache.remove(index)
         if (cached != null) {
+          // The socket's offset no longer matches once bytes come from the cache.
+          if (input != null) closeOwnStream()
           val within = (position - chunkStart(index)).toInt().coerceIn(0, cached.size)
           if (within >= cached.size) {
             currentData = null
@@ -342,7 +366,13 @@ class DirectLinkProxy private constructor() : NanoHTTPD("127.0.0.1", 0) {
           if (offsetInChunk >= cached.size) currentData = null
           continue
         }
-        if (input == null && !openOwnStream()) break
+        if (input == null) {
+          // A worker already downloading this chunk will hand it over shortly; opening a second
+          // socket for the same bytes would split the link's bandwidth and stall both.
+          if (count == 0 && awaitInFlight(index)) continue
+          if (count > 0 && inFlight.contains(index)) break
+          if (!openOwnStream()) break
+        }
         // Stop at the chunk boundary so a prefetched chunk is served from the cache instead of
         // being downloaded a second time on the sequential socket.
         val untilChunkEnd = (chunkEnd(index) - position + 1L).toInt()
@@ -354,7 +384,16 @@ class DirectLinkProxy private constructor() : NanoHTTPD("127.0.0.1", 0) {
         }
         position += read
         count += read
-        if (position > chunkEnd(index)) closeOwnStream()
+        if (position > chunkEnd(index)) {
+          val next = index + 1L
+          // Keep the open socket when no worker owns the next chunk: a reconnect per chunk
+          // costs a full TLS handshake and a fresh TCP ramp-up every 4 MiB.
+          if (cache.containsKey(next) || inFlight.contains(next)) {
+            closeOwnStream()
+          } else {
+            prefetchNext.updateAndGet { maxOf(it, next + 1L) }
+          }
+        }
       }
       return if (count == 0 && (position > end || closed.get())) -1 else count
     }

@@ -823,9 +823,11 @@ class MPVView(
     PlaybackSession.setOptionString("vd-lavc-film-grain", "auto")
 
     // Streaming improvements
-    // Use adaptive HLS bitrate selection to avoid forcing the heaviest stream profile.
-    // This reduces thermal load and helps prevent jitter/rebuffering on long sessions.
-    PlaybackSession.setOptionString("hls-bitrate", "no")
+    // Cap HLS so the player decodes the rendition it needs, not the heaviest one available:
+    // "no" makes mpv pick the first stream it finds (typically the top bitrate), which both
+    // wastes battery and re-buffers on weak links. 4 Mbit/s is comfortably above a crisp 1080p
+    // mobile rendition; the demuxer cache below smooths the segments that remain.
+    PlaybackSession.setOptionString("hls-bitrate", "4000000")
     PlaybackSession.setOptionString("http-allow-redirect", "yes")
     PlaybackSession.setOptionString("cookies", "yes")
     PlaybackSession.setOptionString("cookies-file", AndroidCookieJar.playbackCookieFile(context).absolutePath)

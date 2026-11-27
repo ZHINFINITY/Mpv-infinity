@@ -57,12 +57,12 @@ private const val DISPLAY_WIDTH = 192
 private const val DISPLAY_HEIGHT = 108
 private const val DECIMATION = 2
 
-private const val CAPTURE_INTERVAL_MS = 350L
+private const val CAPTURE_INTERVAL_MS = 200L
 private const val IDLE_INTERVAL_MS = 1000L
-private const val PALETTE_REFRESH_INTERVAL_MS = 1200L
+private const val PALETTE_REFRESH_INTERVAL_MS = 800L
 private const val SMOOTH_INTERVAL_MS = 60L
 private const val SMOOTH_IDLE_INTERVAL_MS = 200L
-private const val SMOOTH_TIME_CONSTANT_MS = 450f
+private const val SMOOTH_TIME_CONSTANT_MS = 180f
 private const val CONVERGENCE_EPSILON = 0.0015f
 private const val FRAME_CHANGE_THRESHOLD = 2
 private const val CHANGE_SAMPLE_STEP = 7
