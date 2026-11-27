@@ -351,6 +351,19 @@ fun MusicLibraryContent(
     musicViewModel.scanLibrary(context)
   }
 
+  // The player's artist name requests this artist's song list app-wide (player -> library).
+  LaunchedEffect(Unit) {
+    app.infinity.mpvz.utils.media.MediaLibraryEvents.openArtist.collect { name ->
+      val artist = musicViewModel.filteredArtists.value.firstOrNull {
+        it.name.equals(name, ignoreCase = true) || name.contains(it.name, ignoreCase = true)
+      }
+      if (artist != null) {
+        musicViewModel.setTab(app.infinity.mpvz.ui.browser.music.MusicTab.ARTISTS)
+        musicViewModel.selectArtist(artist)
+      }
+    }
+  }
+
   LaunchedEffect(selectedTab) {
     if (songs.isEmpty() && !isLoading) {
       musicViewModel.scanLibrary(context)

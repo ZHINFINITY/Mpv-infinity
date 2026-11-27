@@ -23,4 +23,13 @@ object MediaLibraryEvents {
   fun notifyChanged() {
     _changes.tryEmit(Unit)
   }
+
+  /** App-wide request to show an artist's song list in the music library. */
+  private val _openArtist =
+    MutableSharedFlow<String>(replay = 0, extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+  val openArtist: SharedFlow<String> = _openArtist
+
+  fun requestOpenArtist(name: String) {
+    if (name.isNotBlank()) _openArtist.tryEmit(name)
+  }
 }

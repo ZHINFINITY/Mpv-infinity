@@ -114,6 +114,9 @@ internal object MusicPlaybackLauncher {
             mimeType = "audio/*",
             artworkUri = song.albumArtUri?.toString(),
             durationSeconds = song.durationMs.takeIf { it > 0L }?.div(1_000L)?.toInt(),
+            // Key favourites on the library path, not the content:// playback URI, so the
+            // notification heart and the player heart write the same liked-songs entry.
+            favoritePath = song.path,
           )
         },
         currentIndex = selectedIndex,

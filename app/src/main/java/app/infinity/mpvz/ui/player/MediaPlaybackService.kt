@@ -1587,7 +1587,8 @@ class MediaPlaybackService :
   private fun toggleCurrentItemFavorite() {
     if (favoriteActionJob?.isActive == true) return
     val item = PlaybackSession.queue.value.currentItem ?: return
-    val favoritePath = item.originalUri.ifBlank { item.playableUri }
+    val favoritePath = item.favoritePath?.takeIf { it.isNotBlank() }
+      ?: item.originalUri.ifBlank { item.playableUri }
     val favoriteName = item.title?.takeIf { it.isNotBlank() } ?: mediaTitle
     val isAudio = resolveNotificationIsAudio(item, notificationIsAudio)
     favoriteActionJob =
@@ -1605,7 +1606,8 @@ class MediaPlaybackService :
   /** Media notification favorite path: serialize taps and publish the resulting state immediately. */
   private fun toggleCurrentMediaNotificationFavorite() {
     val item = PlaybackSession.queue.value.currentItem ?: return
-    val favoritePath = item.originalUri.ifBlank { item.playableUri }
+    val favoritePath = item.favoritePath?.takeIf { it.isNotBlank() }
+      ?: item.originalUri.ifBlank { item.playableUri }
     if (favoritePath.isBlank()) return
     val favoriteName = item.title?.takeIf { it.isNotBlank() } ?: mediaTitle
     val isAudio = resolveNotificationIsAudio(item, notificationIsAudio)

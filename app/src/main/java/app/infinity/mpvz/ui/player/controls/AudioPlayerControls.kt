@@ -2229,7 +2229,7 @@ fun AudioPlayerControls(
         )
         Spacer(modifier = Modifier.height(2.dp))
 
-        // 2. Singer / Artist Name
+        // 2. Singer / Artist Name — tapping it opens the artist's song list in the library.
         Text(
           text = displayArtist,
           style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Medium),
@@ -2237,7 +2237,16 @@ fun AudioPlayerControls(
           color = if (showImmersiveArtwork) immersiveHeaderContentColor.copy(alpha = 0.92f) else MaterialTheme.colorScheme.onSurfaceVariant,
           maxLines = 1,
           overflow = TextOverflow.Ellipsis,
-          modifier = Modifier.audioMarqueeFade().basicMarquee(iterations = Int.MAX_VALUE),
+          modifier =
+            Modifier
+              .audioMarqueeFade()
+              .basicMarquee(iterations = Int.MAX_VALUE)
+              .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+              ) {
+                app.infinity.mpvz.utils.media.MediaLibraryEvents.requestOpenArtist(displayArtist)
+              },
         )
         Spacer(modifier = Modifier.height(2.dp))
 
