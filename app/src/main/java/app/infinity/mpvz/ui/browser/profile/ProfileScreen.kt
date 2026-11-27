@@ -845,10 +845,12 @@ private fun ProfileShortcutTile(
   Surface(
     onClick = onClick,
     modifier =
-      modifier.graphicsLayer {
-        alpha = appeared.value
-        translationY = (1f - appeared.value) * 12.dp.toPx()
-      },
+      modifier
+        .tvFocusHighlight(AppShapeScale.largeIncreased, focusedScale = 1.03f)
+        .graphicsLayer {
+          alpha = appeared.value
+          translationY = (1f - appeared.value) * 12.dp.toPx()
+        },
     shape = AppShapeScale.largeIncreased,
     color = MaterialTheme.colorScheme.surfaceContainerLow,
     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
