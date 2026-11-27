@@ -789,8 +789,10 @@ private fun profileShortcutTint(section: ProfileSection): Color =
   }
 
 /**
- * Bento grid of quick jumps into the hub sections: every visible section gets a tile that scrolls
- * to it, so the tab reads as one dashboard instead of a stack of unrelated shelves.
+ * Connected bento group of quick jumps into the hub sections: every visible section gets a tile
+ * that opens or scrolls to it, so the tab reads as one dashboard instead of a stack of unrelated
+ * shelves. Seams stay at [AppConnectedShapeTokens.spacing] so the group reads as one sheet, with
+ * outer corners rounded and inner corners tightened only where tiles touch.
  */
 @Composable
 private fun ProfileShortcutGrid(
@@ -801,32 +803,47 @@ private fun ProfileShortcutGrid(
   if (sections.isEmpty()) return
   val configuration = LocalConfiguration.current
   val isTablet = configuration.smallestScreenWidthDp >= 600
-  val columns = if (isTablet) 3 else 2
   val horizontalPadding = if (isTablet) 24.dp else 16.dp
-  Column(
+  val spacing = AppConnectedShapeTokens.spacing
+  BoxWithConstraints(
     modifier =
       Modifier
         .fillMaxWidth()
         .padding(horizontal = horizontalPadding, vertical = 6.dp),
-    verticalArrangement = Arrangement.spacedBy(10.dp),
   ) {
-    sections.chunked(columns).forEachIndexed { rowIndex, rowSections ->
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-      ) {
-        rowSections.forEachIndexed { columnIndex, section ->
-          ProfileShortcutTile(
-            icon = profileShortcutIcon(section),
-            label = stringResource(profileShortcutLabel(section)),
-            count = counts[section],
-            tint = profileShortcutTint(section),
-            index = rowIndex * columns + columnIndex,
-            onClick = { onOpenSection(section) },
-            modifier = Modifier.weight(1f),
-          )
+    val columns =
+      when {
+        maxWidth < 300.dp -> 1
+        maxWidth >= 560.dp -> 3
+        else -> 2
+      }
+    Column(verticalArrangement = Arrangement.spacedBy(spacing)) {
+      sections.chunked(columns).forEachIndexed { rowIndex, rowSections ->
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(spacing),
+        ) {
+          rowSections.forEachIndexed { columnIndex, section ->
+            val index = rowIndex * columns + columnIndex
+            ProfileShortcutTile(
+              icon = profileShortcutIcon(section),
+              label = stringResource(profileShortcutLabel(section)),
+              count = counts[section],
+              tint = profileShortcutTint(section),
+              index = index,
+              shape =
+                rememberConnectedShape(
+                  index = index,
+                  itemCount = sections.size,
+                  layout = ConnectedLayout.Grid,
+                  columns = columns,
+                ),
+              onClick = { onOpenSection(section) },
+              modifier = Modifier.weight(1f),
+            )
+          }
+          repeat(columns - rowSections.size) { Spacer(Modifier.weight(1f)) }
         }
-        repeat(columns - rowSections.size) { Spacer(Modifier.weight(1f)) }
       }
     }
   }
@@ -839,6 +856,7 @@ private fun ProfileShortcutTile(
   count: Int?,
   tint: Color,
   index: Int,
+  shape: Shape,
   onClick: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
@@ -861,62 +879,70 @@ private fun ProfileShortcutTile(
     onClick = onClick,
     modifier =
       modifier
-        .tvFocusHighlight(AppShapeScale.largeIncreased, focusedScale = 1.03f)
+        .tvFocusHighlight(shape, focusedScale = 1.02f)
         .graphicsLayer {
           alpha = appeared.value
           translationY = (1f - appeared.value) * 12.dp.toPx()
         },
-    shape = AppShapeScale.largeIncreased,
+    shape = shape,
     color = MaterialTheme.colorScheme.surfaceContainerLow,
-    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)),
   ) {
     Row(
       modifier =
         Modifier
           .fillMaxWidth()
-          .height(88.dp)
-          .padding(horizontal = 12.dp, vertical = 12.dp),
+          .height(84.dp)
+          .padding(horizontal = 10.dp, vertical = 8.dp),
       verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(10.dp),
+      horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
       Box(
         modifier =
           Modifier
-            .size(38.dp)
-            .clip(AppShapeScale.medium)
-            .background(tint.copy(alpha = 0.16f)),
+            .size(34.dp)
+            .clip(CircleShape)
+            .background(tint.copy(alpha = 0.14f)),
         contentAlignment = Alignment.Center,
       ) {
-        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(18.dp))
       }
-      Text(
-        text = label,
+      Column(
         modifier = Modifier.weight(1f),
-        style = MaterialTheme.typography.titleSmall,
-        color = MaterialTheme.colorScheme.onSurface,
-        maxLines = 2,
-        overflow = TextOverflow.Ellipsis,
-      )
-      if (count != null) {
+        verticalArrangement = Arrangement.spacedBy(1.dp),
+      ) {
+        if (count != null) {
+          Text(
+            text = count.toString(),
+            style = MaterialTheme.typography.titleMediumEmphasized,
+            color =
+              if (count > 0) {
+                MaterialTheme.colorScheme.onSurface
+              } else {
+                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
+              },
+            maxLines = 1,
+          )
+        }
         Text(
-          text = count.toString(),
-          style = MaterialTheme.typography.titleSmall,
-          color =
-            if (count > 0) {
-              MaterialTheme.colorScheme.onSurfaceVariant
+          text = label,
+          style =
+            if (count == null) {
+              MaterialTheme.typography.titleSmallEmphasized
             } else {
-              MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+              MaterialTheme.typography.labelMedium
             },
-          maxLines = 1,
-        )
-      } else {
-        Icon(
-          Icons.RoundedFilled.ChevronRight,
-          contentDescription = null,
-          tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-          modifier = Modifier.size(18.dp),
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          maxLines = 2,
+          overflow = TextOverflow.Ellipsis,
         )
       }
+      Icon(
+        Icons.RoundedFilled.ChevronRight,
+        contentDescription = null,
+        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+        modifier = Modifier.size(16.dp),
+      )
     }
   }
 }
