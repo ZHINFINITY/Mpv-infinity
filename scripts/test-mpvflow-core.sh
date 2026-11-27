@@ -36,7 +36,7 @@ if [[ -n "${MPVFLOW_MPV_SOURCE_DIR:-}" && -d "$MPVFLOW_MPV_SOURCE_DIR" ]]; then
 else
   echo "Skipping Mpv-infinity Pinned source verification: no pinned MPV source checkout is available"
 fi
-python3 "$ROOT/scripts/tests/pinned_paired_color_mask_test.py"
+python3 "$ROOT/scripts/tests/paired_color_mask_test.py"
 python3 "$ROOT/scripts/tests/mpvflow_android_subprocess_test.py"
 python3 "$ROOT/scripts/tests/mpvflow_vulkan_headers_prepare_test.py"
 python3 "$ROOT/scripts/tests/mpvflow_placebo_api_headers_test.py"

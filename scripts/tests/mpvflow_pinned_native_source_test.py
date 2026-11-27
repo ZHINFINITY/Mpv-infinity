@@ -14,7 +14,7 @@ SOURCE_TEST = (ROOT / "scripts/tests/mpvrx_motion_source_test.py").read_text(enc
 DOWNSAMPLE_PATCH = (ROOT / "scripts/patch_motion_downsample.py").read_text(encoding="utf-8")
 DOWNSAMPLE_TEST = (ROOT / "scripts/tests/mpvrx_motion_downsample_test.py").read_text(encoding="utf-8")
 PAIRED_COLOR_PATCH = (ROOT / "scripts/patch_paired_color_mask.py").read_text(encoding="utf-8")
-PAIRED_COLOR_TEST = (ROOT / "scripts/tests/pinned_paired_color_mask_test.py").read_text(encoding="utf-8")
+PAIRED_COLOR_TEST = (ROOT / "scripts/tests/paired_color_mask_test.py").read_text(encoding="utf-8")
 CORE_TEST = (ROOT / "scripts/test-mpvflow-core.sh").read_text(encoding="utf-8")
 VULKAN_HEADERS = (ROOT / "scripts/prepare-mpvflow-vulkan-headers.py").read_text(encoding="utf-8")
 WORKFLOWS = [
@@ -148,8 +148,8 @@ for workflow in (WORKFLOWS[0], WORKFLOWS[2]):
     assert "--require-analysis-downsample-aa" not in workflow
 assert "scripts/tests/mpvrx_motion_source_test.py" in WORKFLOWS[0]
 assert "scripts/tests/mpvrx_motion_source_test.py" in WORKFLOWS[1]
-assert "scripts/tests/pinned_paired_color_mask_test.py" in WORKFLOWS[0]
-assert "pinned_paired_color_mask_test.py --source" in WORKFLOWS[0]
+assert "scripts/tests/paired_color_mask_test.py" in WORKFLOWS[0]
+assert "paired_color_mask_test.py --source" in WORKFLOWS[0]
 assert "--require-paired-color-mask" in WORKFLOWS[0]
 assert "--require-paired-color-mask" in WORKFLOWS[1]
 assert "--require-paired-color-mask" in WORKFLOWS[2]
@@ -174,7 +174,7 @@ assert "patch_motion_artifact.py" not in MANIFEST
 assert "patch_motion_artifact.py" not in LICENSES
 assert "does **not** expose Pinned one-shot capture" in DIAGNOSTICS_GUIDE
 assert "unavailable in the current build" in DIAGNOSTICS_GUIDE
-assert "FongMi/FFmpeg" in LICENSES and "release-9.1-pinned" in LICENSES
+assert "FongMi/FFmpeg" in LICENSES and "release-9.1-fongmi" in LICENSES
 assert f"https://github.com/FongMi/FFmpeg/commit/{FFMPEG_SHA}" in (ROOT / "app/src/main/java/app/infinity/mpvz/ui/preferences/AboutScreen.kt").read_text(encoding="utf-8")
 assert "LICENSE.GPL" in LICENSES
 assert GPL_LICENSE.is_file() and hashlib.sha256(GPL_LICENSE.read_bytes()).hexdigest() == GPL_SHA
