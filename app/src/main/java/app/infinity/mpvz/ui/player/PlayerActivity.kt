@@ -450,6 +450,8 @@ class PlayerActivity :
    * Repository for managing playback state.
    */
   private val playbackStateRepository: PlaybackStateRepository by inject()
+  private val watchStatsRepository: app.infinity.mpvz.repository.WatchStatsRepository by inject()
+  private var watchStatsTickerJob: Job? = null
 
   private val torrentStreamingEngine: TorrentStreamingEngine by inject()
 
@@ -1611,6 +1613,7 @@ class PlayerActivity :
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
     activeNativeCloseActivity = WeakReference(this)
+    startWatchStatsTicker()
     requestAudioOpenFromMini(intent)
     Log.i(
       "Mpv∞-BuildIdentity",
@@ -7597,6 +7600,43 @@ class PlayerActivity :
     }
   }
 
+  /**
+   * Samples playback every [WATCH_STATS_TICK_SECONDS] seconds and records watched time into
+   * [WatchStatsRepository]. Runs for both the MPV and native (Media3) engines; paused or idle
+   * ticks contribute nothing, so seeks and stalls do not inflate the totals.
+   */
+  private fun startWatchStatsTicker() {
+    watchStatsTickerJob?.cancel()
+    watchStatsTickerJob = lifecycleScope.launch {
+      while (isActive) {
+        delay(WATCH_STATS_TICK_MS)
+        runCatching { recordWatchStatsSegment(WATCH_STATS_TICK_SECONDS) }
+          .onFailure { Log.w(TAG, "Watch stats recording failed", it) }
+      }
+    }
+  }
+
+  private suspend fun recordWatchStatsSegment(seconds: Long) {
+    val item = PlaybackSession.queue.value.currentItem ?: return
+    val playing =
+      if (activeEngineMode == PlaybackEngineMode.NATIVE) {
+        nativeEngineOrNull()?.snapshot?.value?.isPlaying == true
+      } else {
+        PlaybackSession.getPropertyBoolean("pause") == false
+      }
+    if (!playing) return
+    val title = item.title?.takeIf { it.isNotBlank() }
+      ?: item.originalUri.substringAfterLast('/').takeIf { it.isNotBlank() }
+      ?: return
+    watchStatsRepository.record(
+      title = title,
+      isAudio = item.declaredMediaKind() == DeclaredPlaybackMediaKind.AUDIO,
+      seconds = seconds,
+      artworkUri = item.artworkUri,
+      sourceUri = item.originalUri,
+    )
+  }
+
   private fun capturePlaybackStateSnapshot(mediaTitle: String): PlaybackStateSnapshot? {
     // Use the save-specific identifier so a save fired mid-transition (when mediaIdentifier
     // already points at the incoming item but MPV still reports the outgoing item's position)
@@ -11717,6 +11757,8 @@ class PlayerActivity :
   companion object {
     private val MPV_ASSET_PREPARATION_LOCK = Any()
     private const val MPV_ASSET_PREPARATION_WAIT_TIMEOUT_MS = 5_000L
+    private const val WATCH_STATS_TICK_SECONDS = 15L
+    private const val WATCH_STATS_TICK_MS = WATCH_STATS_TICK_SECONDS * 1000L
     @Volatile
     private var activeNativeCloseActivity: WeakReference<PlayerActivity>? = null
 

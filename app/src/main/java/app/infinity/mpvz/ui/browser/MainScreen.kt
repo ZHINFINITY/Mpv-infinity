@@ -182,7 +182,6 @@ object MainScreen : Screen {
     val showMusicTab by appearancePreferences.showMusicTab.collectAsState()
     val liquidGlassSurfacesForBrowser by appearancePreferences.liquidGlassSurfaces.collectAsState()
     val showRecentsTab by appearancePreferences.showRecentsTab.collectAsState()
-    val showPlaylistsTab by appearancePreferences.showPlaylistsTab.collectAsState()
     val showNetworkTab by appearancePreferences.showNetworkTab.collectAsState()
     val showJellyfinTab by appearancePreferences.showJellyfinTab.collectAsState()
     val showNavidromeTab by appearancePreferences.showNavidromeTab.collectAsState()
@@ -199,7 +198,6 @@ object MainScreen : Screen {
         showHomeTab,
         showMusicTab,
         showRecentsTab,
-        showPlaylistsTab,
         showNetworkTab,
         showJellyfinTab,
         showNavidromeTab,
@@ -209,7 +207,6 @@ object MainScreen : Screen {
         buildList {
           if (showHomeTab) add(MainTab.HOME)
           if (showMusicTab) add(MainTab.MUSIC)
-          if (showPlaylistsTab) add(MainTab.PLAYLISTS)
           if (showJellyfinTab) add(MainTab.JELLYFIN)
           if (showNavidromeTab) add(MainTab.NAVIDROME)
           if (showAudiobooksTab) add(MainTab.AUDIOBOOKS)
