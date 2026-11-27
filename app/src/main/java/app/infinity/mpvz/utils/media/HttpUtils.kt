@@ -18,6 +18,26 @@ import java.net.URLDecoder
 
 object HttpUtils {
   private const val TAG = "HttpUtils"
+
+  fun isMusicStreamingUrl(url: String?): Boolean {
+    if (url.isNullOrBlank()) return false
+    val host = runCatching { Uri.parse(url).host?.lowercase().orEmpty() }.getOrElse { return false }
+    return isMusicStreamingHost(host)
+  }
+
+  private fun isMusicStreamingHost(host: String): Boolean = when {
+    host == "music.youtube.com" -> true
+    host == "soundcloud.com" || host == "www.soundcloud.com" ||
+      host == "on.soundcloud.com" || host == "m.soundcloud.com" -> true
+    host == "bandcamp.com" || host.endsWith(".bandcamp.com") -> true
+    host == "audiomack.com" || host == "www.audiomack.com" -> true
+    host == "open.spotify.com" || host == "spotify.com" || host == "www.spotify.com" -> true
+    host == "music.apple.com" -> true
+    host == "music.amazon.com" || host.startsWith("music.amazon.") -> true
+    host == "deezer.com" || host == "www.deezer.com" || host == "deezer.page.link" -> true
+    host == "tidal.com" || host == "www.tidal.com" || host == "listen.tidal.com" -> true
+    else -> false
+  }
   private const val CONNECTION_TIMEOUT = 3000
   private const val READ_TIMEOUT = 3000
   internal val directMediaExtensions =

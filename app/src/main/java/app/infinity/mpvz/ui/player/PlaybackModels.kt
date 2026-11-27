@@ -8,6 +8,7 @@
 package app.infinity.mpvz.ui.player
 
 import app.infinity.mpvz.database.entities.PlaybackStateEntity
+import app.infinity.mpvz.utils.media.HttpUtils
 import app.infinity.mpvz.utils.media.fileExtension
 import app.infinity.mpvz.utils.storage.FileTypeUtils
 import java.net.URI
@@ -157,6 +158,9 @@ internal fun PlaybackItem.declaredMediaKind(videoHint: Boolean = false): Declare
   if (mimeType?.startsWith("audio/", ignoreCase = true) == true) return DeclaredPlaybackMediaKind.AUDIO
   if (mimeType?.startsWith("video/", ignoreCase = true) == true) return DeclaredPlaybackMediaKind.VIDEO
 
+  if (HttpUtils.isMusicStreamingUrl(originalUri) || HttpUtils.isMusicStreamingUrl(playableUri)) {
+    return DeclaredPlaybackMediaKind.AUDIO
+  }
   val extensions =
     sequenceOf(originalUri, playableUri, title)
       .filterNotNull()

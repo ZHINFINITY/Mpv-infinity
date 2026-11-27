@@ -7646,14 +7646,20 @@ class PlayerActivity :
     // Native engine: trust what the decoder actually reports. Streaming audio often has no
     // declared kind and no mpv properties, so it was counted as video before this check.
     val nativeReportsNoVideo = nativeSnapshot != null && nativeSnapshot.videoWidth == 0
+    val mpvVideoCodec = PlaybackSession.getPropertyString("video-codec")
+    // mpv exposes embedded album art as a video track (mjpeg/png/webp), so a music file with
+    // cover art reports a non-blank codec and must not be counted as video for stats.
+    val mpvVideoIsCoverArtOnly =
+      mpvVideoCodec?.lowercase() in setOf("mjpeg", "mjpb", "png", "webp", "bmp", "gif")
     val mpvReportsNoVideo =
-      PlaybackSession.getPropertyString("video-codec").isNullOrBlank() &&
+      mpvVideoCodec.isNullOrBlank() &&
         PlaybackSession.getPropertyString("video-format").isNullOrBlank()
     val isAudio =
       item.declaredMediaKind() == DeclaredPlaybackMediaKind.AUDIO ||
         item.isDefinitelyAudioOnly() ||
         (item.declaredMediaKind() == DeclaredPlaybackMediaKind.UNKNOWN &&
-          (nativeReportsNoVideo || (activeEngineMode != PlaybackEngineMode.NATIVE && mpvReportsNoVideo)))
+          (nativeReportsNoVideo ||
+            (activeEngineMode != PlaybackEngineMode.NATIVE && (mpvReportsNoVideo || mpvVideoIsCoverArtOnly))))
     watchStatsRepository.record(
       title = title,
       isAudio = isAudio,
