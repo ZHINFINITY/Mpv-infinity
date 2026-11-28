@@ -35,7 +35,7 @@ class MusicPlaybackIsolationContractTest {
         )
         .readText()
 
-    assertTrue(screen.contains("MusicPlaybackLauncher.playLocalAudioPathsIfPresent"))
+    assertTrue(screen.contains("MusicPlaybackLauncher.playRecentAudioPathIfPresent"))
     assertTrue(screen.contains("launchSource = \"search\""))
   }
 

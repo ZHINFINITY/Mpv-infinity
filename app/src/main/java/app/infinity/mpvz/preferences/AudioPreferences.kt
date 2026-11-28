@@ -46,6 +46,10 @@ class AudioPreferences(
     },
   )
   val equalizerVolumeBoostDb = preferenceStore.getInt("audio_equalizer_volume_boost_db", 0)
+  /** Dynamic-mode tone controls; restored with the rest of the equalizer state. */
+  val equalizerToneX = preferenceStore.getInt("audio_equalizer_tone_x", 0)
+  val equalizerToneY = preferenceStore.getInt("audio_equalizer_tone_y", 0)
+  val equalizerToneFocused = preferenceStore.getBoolean("audio_equalizer_tone_focused", false)
   val audioVisualizerStyle = preferenceStore.getEnum("audio_visualizer_style", AudioVisualizerStyle.Blob)
   val audioOrientation = preferenceStore.getEnum("audio_player_orientation", AudioPlayerOrientation.Auto)
   val audioAmbientMode = preferenceStore.getBoolean("audio_ambient_mode", true)

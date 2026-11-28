@@ -827,12 +827,14 @@ fun FileSystemBrowserScreen(path: String? = null) {
                 isFabVisible = isFabVisible, // Pass FAB visibility state
                 onVideoClick = { video ->
                   coroutineScope.launch {
+                    // Extension-and-audiobook gated single-item launcher: a local video
+                    // found by search must reach the normal video player, not the audio
+                    // Now Playing screen.
                     val handled =
-                      MusicPlaybackLauncher.playLocalAudioPathsIfPresent(
+                      MusicPlaybackLauncher.playRecentAudioPathIfPresent(
                         context = context,
-                        paths = listOf(video.path),
-                        fallbackTitles = listOf(video.title),
-                        currentIndex = 0,
+                        path = video.path,
+                        fallbackTitle = video.title,
                         launchSource = "search",
                       )
                     if (!handled) MediaUtils.playFile(video, context, "search")
