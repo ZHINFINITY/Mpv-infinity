@@ -107,10 +107,24 @@ jobs:
           python3 scripts/verify-mpv-aar-lgpl.py app/libs/mpvlib.aar --abis arm64-v8a,armeabi-v7a,x86,x86_64 --only-selected-abis --require-vulkan
           python3 scripts/verify-mpv-aar-lgpl.py app/libs/mpvlib-no-vulkun.aar --abis arm64-v8a,armeabi-v7a,x86,x86_64 --only-selected-abis --forbid-vulkan
 
-      # Release ships the arm64-v8a Standard APK only, with the Flow-only MPVFlow
-      # runtime so MPV-engine frame interpolation is available.
+      # The arm64-v8a Standard release ships the Flow-only MPVFlow runtime so
+      # MPV-engine frame interpolation is available; every other ABI and the
+      # non-Vulkan builds keep the stock runtime. Build those stock APKs first,
+      # because the Flow overlay replaces app/libs/mpvlib.aar.
       - name: Verify vendored libplacebo API headers
         run: python3 scripts/tests/mpvflow_placebo_api_headers_test.py
+
+      - name: Build stock release APKs for all ABIs
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew assembleStandardRelease assembleNoVulkanRelease --stacktrace --no-daemon --max-workers=2
+          release_dir="app/build/outputs/apk/standard/release"
+          mkdir -p "$RUNNER_TEMP/standard-stock"
+          cp "$release_dir"/*.apk "$RUNNER_TEMP/standard-stock/"
+          rm -f "$RUNNER_TEMP/standard-stock/app-standard-arm64-v8a-release-unsigned.apk"
+          ls -1 "$RUNNER_TEMP/standard-stock"
+
       - name: Restore verified Flow-only MPVFlow arm64 runtime
         id: mpvflow-runtime-cache
         uses: actions/cache/restore@v4
@@ -180,6 +194,7 @@ jobs:
           if grep -Ev '^lib/arm64-v8a/' <<< "$entries" | grep -E '^lib/' >/dev/null; then
             echo "Flow arm64 release APK contains non-arm64 native libraries" >&2; exit 1
           fi
+          cp "$RUNNER_TEMP/standard-stock/"*.apk "$release_dir/"
           ls -1 "$release_dir"
           echo "Standard arm64-v8a release built with the Flow-only MPVFlow runtime."
 
@@ -221,10 +236,22 @@ jobs:
 
           release_dir="app/build/outputs/apk/standard/release"
           test -d "$release_dir"
+          architectures=(universal arm64-v8a armeabi-v7a x86 x86_64)
+          for abi in "${architectures[@]}"; do
+            sign_apk \
+              "$release_dir/app-standard-${abi}-release-unsigned.apk" \
+              "$release_dir/app-standard-${abi}-release.apk" \
+              "standard $abi release"
+          done
+          no_vulkan_dir="app/build/outputs/apk/noVulkan/release"
           sign_apk \
-            "$release_dir/app-standard-arm64-v8a-release-unsigned.apk" \
-            "$release_dir/app-standard-arm64-v8a-release.apk" \
-            "standard arm64-v8a release"
+            "$no_vulkan_dir/app-noVulkan-universal-release-unsigned.apk" \
+            "$no_vulkan_dir/app-noVulkan-universal-release.apk" \
+            "non-Vulkan universal release"
+          sign_apk \
+            "$no_vulkan_dir/app-noVulkan-arm64-v8a-release-unsigned.apk" \
+            "$no_vulkan_dir/app-noVulkan-arm64-v8a-release.apk" \
+            "non-Vulkan arm64-v8a release"
 
       - name: Stage release assets and checksums
         shell: bash
@@ -234,11 +261,23 @@ jobs:
           : > checksums.txt
 
           release_dir="app/build/outputs/apk/standard/release"
-          src="$release_dir/app-standard-arm64-v8a-release.apk"
-          dst="release-assets/Mpv∞-arm64-v8a-${VERSION_TAG}.apk"
-          test -f "$src"
-          cp "$src" "$dst"
-          sha256sum "$dst" | tee -a checksums.txt
+          architectures=(universal arm64-v8a armeabi-v7a x86 x86_64)
+          for abi in "${architectures[@]}"; do
+            src="$release_dir/app-standard-${abi}-release.apk"
+            dst="release-assets/Mpv∞-${abi}-${VERSION_TAG}.apk"
+            test -f "$src"
+            cp "$src" "$dst"
+            sha256sum "$dst" | tee -a checksums.txt
+          done
+
+          no_vulkan_dir="app/build/outputs/apk/noVulkan/release"
+          cp "$no_vulkan_dir/app-noVulkan-universal-release.apk" \
+            "release-assets/Mpv∞-no-vulkan-${VERSION_TAG}.apk"
+          sha256sum "release-assets/Mpv∞-no-vulkan-${VERSION_TAG}.apk" | tee -a checksums.txt
+          cp "$no_vulkan_dir/app-noVulkan-arm64-v8a-release.apk" \
+            "release-assets/Mpv∞-no-vulkan-arm64-v8a-${VERSION_TAG}.apk"
+          sha256sum "release-assets/Mpv∞-no-vulkan-arm64-v8a-${VERSION_TAG}.apk" | tee -a checksums.txt
+          ls -1 release-assets
 
       - name: Prepare release notes
         shell: bash
