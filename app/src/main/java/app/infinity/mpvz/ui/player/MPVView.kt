@@ -923,6 +923,9 @@ class MPVView(
       Debanding.GPU -> PlaybackSession.setOptionString("deband", "yes")
     }
 
+    // Re-apply the user's stacked on-video effects for the freshly opened video.
+    VideoFxFilter.reapplyAll(decoderPreferences)
+
     // Keep the MPV stats OSD video-only. Otherwise a music item can inherit the previous
     // video's stats overlay when MPV is reused for audio playback. Only a positively
     // video-classified item may show stats: "not definitely audio" is also every item whose

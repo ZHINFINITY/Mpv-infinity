@@ -113,6 +113,9 @@ class DecoderPreferences(
   val hueFilter = preferenceStore.getInt("filter_hue")
   val sharpnessFilter = preferenceStore.getInt("filter_sharpness")
 
+  /** Comma-separated ids of enabled on-video effect filters (see VideoFxFilters). */
+  val videoFxFilters = preferenceStore.getString("video_fx_filters", "")
+
   // Anime4K Preferences
   val enableAnime4K = preferenceStore.getBoolean("enable_anime4k", false)
   val anime4kMode = preferenceStore.getString("anime4k_mode", "OFF")

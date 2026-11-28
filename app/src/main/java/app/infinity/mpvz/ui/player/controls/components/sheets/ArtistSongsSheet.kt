@@ -10,6 +10,7 @@ package app.infinity.mpvz.ui.player.controls.components.sheets
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -26,11 +27,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.presentation.components.PlayerSheet
+import app.infinity.mpvz.presentation.components.PlayerSheetDragHandle
 import app.infinity.mpvz.ui.browser.music.MusicLibraryScanner
 import app.infinity.mpvz.ui.browser.music.MusicPlaybackLauncher
 import app.infinity.mpvz.ui.browser.music.MusicSong
@@ -57,34 +60,40 @@ fun ArtistSongsSheet(
   }
 
   PlayerSheet(onDismissRequest) {
-    Column(modifier = modifier.padding(vertical = MaterialTheme.spacing.medium)) {
+    Column(modifier = modifier.fillMaxWidth().padding(vertical = MaterialTheme.spacing.medium)) {
+      PlayerSheetDragHandle()
       Text(
         text = artist,
         style = MaterialTheme.typography.titleMedium,
         fontWeight = FontWeight.SemiBold,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
-        modifier = Modifier.padding(horizontal = MaterialTheme.spacing.large, vertical = MaterialTheme.spacing.small),
+        color = MaterialTheme.colorScheme.onSurface,
+        modifier = Modifier.padding(horizontal = MaterialTheme.spacing.medium, vertical = MaterialTheme.spacing.medium),
       )
       when {
         loading -> Text(
           text = "Loading songs…",
           style = MaterialTheme.typography.bodyMedium,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
-          modifier = Modifier.padding(horizontal = MaterialTheme.spacing.large, vertical = MaterialTheme.spacing.medium),
+          modifier = Modifier.padding(horizontal = MaterialTheme.spacing.medium, vertical = MaterialTheme.spacing.medium),
         )
         songs.isEmpty() -> Text(
           text = "No songs from this artist in your library",
           style = MaterialTheme.typography.bodyMedium,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
-          modifier = Modifier.padding(horizontal = MaterialTheme.spacing.large, vertical = MaterialTheme.spacing.medium),
+          modifier = Modifier.padding(horizontal = MaterialTheme.spacing.medium, vertical = MaterialTheme.spacing.medium),
         )
-        else -> LazyColumn(modifier = Modifier.heightIn(max = 420.dp)) {
+        else -> LazyColumn(
+          modifier = Modifier.heightIn(max = 420.dp),
+          contentPadding = PaddingValues(vertical = MaterialTheme.spacing.extraSmall),
+        ) {
           itemsIndexed(songs) { index, song ->
             Row(
               modifier =
                 Modifier
                   .fillMaxWidth()
+                  .clip(MaterialTheme.shapes.medium)
                   .clickable {
                     MusicPlaybackLauncher.playSongs(
                       context = context,
@@ -94,20 +103,21 @@ fun ArtistSongsSheet(
                     )
                     onDismissRequest()
                   }
-                  .padding(horizontal = MaterialTheme.spacing.large, vertical = MaterialTheme.spacing.medium),
+                  .padding(horizontal = MaterialTheme.spacing.medium, vertical = MaterialTheme.spacing.small),
               horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.medium),
               verticalAlignment = Alignment.CenterVertically,
             ) {
               Text(
                 text = song.title,
                 style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
               )
               Text(
                 text = song.album,
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
