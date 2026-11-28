@@ -2,11 +2,54 @@
 
 ## 2.2.6
 
-- 🎞️ Frame interpolation gets motion-analysis and blending refinements to reduce warped or ghosted edges in challenging scenes while keeping motion smooth.
-- ▶️ Playback is more reliable through startup, buffering, background return, aspect-ratio changes, subtitles, and watch-history updates.
-- 🎵 Music now keeps its track title, metadata, duration, and playback state separate from video playback.
-- ✨ Video controls and mark-as actions behave more consistently, with improved translations and subtitle-lane handling.
-- 🐛 Fixed several Media3, Native-player, and metadata regressions, plus removed retired diagnostic tooling from the shipping path.
+A large release: the music player is rebuilt to share the main player, streaming and battery work got a pass, and the player, Profile tab and glass UI were reworked.
+
+### Music player
+
+- 🎵 Music and video now share one playback screen, so mini player, full player and background playback stay in sync.
+- 💿 Immersive full-bleed album art, glass transport buttons, whole-pill mini-player progress, ambient bottom bar and a lyric strip.
+- 🎚️ Equalizer with a tone pad and 7-band presets; settings persist across restarts, including dynamic tone controls.
+- 🔊 The audio output picker really routes playback (speaker, Bluetooth, wired, USB), with one icon per device and silent routes hidden.
+- 📝 Embedded lyrics load automatically when track metadata arrives; tapping the artist opens their songs over the player.
+- ❤️ Notification and in-app hearts both favourite the same library entry, so likes match.
+- 🌈 Ambience styles work on the hardware renderer, follow the album-art palette and respond faster.
+
+### Video playback
+
+- ⚡ Hardware decoding (HW+) now engages reliably and the decoder choice persists.
+- 🎞️ Frame interpolation refined: smoother motion with less ghosting and less CPU work.
+- ✨ Stackable on-video effects: Sharpen, Clarity, Denoise, Pop — freely combinable, live-toggled, remembered per track.
+- 🖼️ Four video ambience styles, now applying correctly and filling the zoom margin.
+- 📊 Playback stats overlay is video-only and no longer flashes over music.
+- 🔋 Battery: quieter logging, motion work parked when paused, fewer redraws, less copy-mode decoding.
+
+### Streaming
+
+- 📡 New range-aware proxy for direct links: one socket per chunk, parallel segment prefetch with retry and resume after stalls.
+- 🚀 Deeper playback cache and bitrate-scaled torrent read-ahead for smoother direct and torrent playback.
+
+### Library and browsing
+
+- 📈 Profile tab: watch statistics (tap any of the last 7 day bars for that day), snapshot gallery and folders, and frame capture.
+- 🎬 Media server browsing: Next Up row, episode names wrap instead of clipping, tapping an episode plays it, and API calls retry.
+- 🏷️ Badges: marker-encoded packs render, and remote badge packs load.
+- 🖼️ Thumbnails cache across restarts, survive token rotation and generate faster for network sources.
+- 🔎 Search routes correctly: audio to the music player, video to the video player, with folder queueing respected in playlist mode.
+- 🌐 Streaming screen: Add/WebDAV buttons no longer hide under the mini player; paste-a-URL autofill and saved-server reuse.
+
+### Interface
+
+- 💎 Glass refined throughout: popups properly frosted, switches restored to the clean look, safe fallback on unsupported devices.
+- 🧩 Profile shortcuts back to compact icon tiles.
+- 🔄 Tab switching keeps state and is instant; minimise swipe easier.
+
+### Fixes
+
+- 🐛 Videos no longer open in the music player from search or history.
+- 🐛 Player screen leak fixed.
+- 🐛 Badge overflow and ∞ gating fixed.
+- 🐛 Audio route and stats fixes, including signed battery stats.
+
 
 ## 2.2.5
 
