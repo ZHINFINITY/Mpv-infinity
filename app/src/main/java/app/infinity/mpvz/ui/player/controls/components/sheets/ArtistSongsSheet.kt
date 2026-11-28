@@ -28,12 +28,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.presentation.components.PlayerSheet
 import app.infinity.mpvz.presentation.components.PlayerSheetDragHandle
+import app.infinity.mpvz.presentation.components.PlayerSheetLayoutPolicy
 import app.infinity.mpvz.ui.browser.music.MusicLibraryScanner
 import app.infinity.mpvz.ui.browser.music.MusicPlaybackLauncher
 import app.infinity.mpvz.ui.browser.music.MusicSong
@@ -52,6 +54,10 @@ fun ArtistSongsSheet(
   val context = LocalContext.current
   var songs by remember(artist) { mutableStateOf<List<MusicSong>>(emptyList()) }
   var loading by remember(artist) { mutableStateOf(true) }
+  val screenHeightDp = LocalConfiguration.current.screenHeightDp
+  // Leave the top of the player free so the playing album art stays visible behind the sheet.
+  val listMaxHeight = PlayerSheetLayoutPolicy.listMaxHeightDp(screenHeightDp).dp
+  val sheetMaxHeight = PlayerSheetLayoutPolicy.listSheetMaxHeightDp(screenHeightDp).dp
 
   LaunchedEffect(artist) {
     loading = true
@@ -59,7 +65,7 @@ fun ArtistSongsSheet(
     loading = false
   }
 
-  PlayerSheet(onDismissRequest) {
+  PlayerSheet(onDismissRequest, customMaxHeight = sheetMaxHeight) {
     Column(modifier = modifier.fillMaxWidth().padding(vertical = MaterialTheme.spacing.medium)) {
       PlayerSheetDragHandle()
       Text(
@@ -85,7 +91,7 @@ fun ArtistSongsSheet(
           modifier = Modifier.padding(horizontal = MaterialTheme.spacing.medium, vertical = MaterialTheme.spacing.medium),
         )
         else -> LazyColumn(
-          modifier = Modifier.heightIn(max = 420.dp),
+          modifier = Modifier.heightIn(max = listMaxHeight),
           contentPadding = PaddingValues(vertical = MaterialTheme.spacing.extraSmall),
         ) {
           itemsIndexed(songs) { index, song ->

@@ -47,4 +47,16 @@ class PlayerSheetLayoutPolicyTest {
       PlayerSheetLayoutPolicy.maxHeightDp(0, portrait = true, imeVisible = false, customMaxHeightDp = null)
     }
   }
+
+  @Test fun artistTrackListsStayWellUnderHalfTheWindowSoTheAlbumArtIsVisible() {
+    // The artist sheet used to grow to the 90% sheet limit and covered the playing album art.
+    assertEquals(272f, PlayerSheetLayoutPolicy.listMaxHeightDp(800), 0.001f)
+    val sheet = PlayerSheetLayoutPolicy.listSheetMaxHeightDp(800)
+    assertTrue("sheet $sheet must leave the art visible", sheet <= 800f * 0.5f)
+    assertTrue(PlayerSheetLayoutPolicy.listMaxHeightDp(360) >= 160f)
+    assertTrue(PlayerSheetLayoutPolicy.listMaxHeightDp(2400) <= 320f)
+    assertThrows(IllegalArgumentException::class.java) {
+      PlayerSheetLayoutPolicy.listMaxHeightDp(0)
+    }
+  }
 }

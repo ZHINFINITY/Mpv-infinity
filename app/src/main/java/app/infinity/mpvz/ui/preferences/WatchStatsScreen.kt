@@ -12,6 +12,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -393,8 +394,11 @@ private fun WeeklyActivityBentoCard(days: Map<String, Long>) {
   val dates = remember(today) { (6 downTo 0).map { today.minusDays(it.toLong()) } }
   val values = dates.map { days[it.toString()] ?: 0L }
   val max = values.maxOrNull() ?: 0L
-  val todayWatchTime = values.lastOrNull() ?: 0L
   val chartMax = max.coerceAtLeast(1L)
+  var selectedIndex by rememberSaveable { mutableStateOf(dates.lastIndex) }
+  val safeIndex = selectedIndex.coerceIn(dates.indices)
+  val selectedDate = dates[safeIndex]
+  val selectedWatchTime = values[safeIndex]
 
   val primaryColor = MaterialTheme.colorScheme.primary
   val trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
@@ -412,6 +416,7 @@ private fun WeeklyActivityBentoCard(days: Map<String, Long>) {
         Row(
           horizontalArrangement = Arrangement.spacedBy(10.dp),
           verticalAlignment = Alignment.CenterVertically,
+          modifier = Modifier.weight(1f, fill = false),
         ) {
           Surface(
             shape = CircleShape,
@@ -439,11 +444,21 @@ private fun WeeklyActivityBentoCard(days: Map<String, Long>) {
           color = MaterialTheme.colorScheme.primaryContainer,
           contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
         ) {
-          val todayText = formatHumanDuration(todayWatchTime)
+          val locale = Locale.getDefault()
+          val dayLabel =
+            if (safeIndex == dates.lastIndex) {
+              stringResource(R.string.watch_stats_today)
+            } else {
+              "${selectedDate.dayOfWeek.getDisplayName(TextStyle.SHORT, locale)} " +
+                "${selectedDate.month.getDisplayName(TextStyle.SHORT, locale)} ${selectedDate.dayOfMonth}"
+            }
+          val selectedText = formatHumanDuration(selectedWatchTime)
+          val headerText = "$dayLabel · $selectedText"
           Text(
-            text = stringResource(R.string.watch_stats_today, todayText),
+            text = headerText,
             style = MaterialTheme.typography.labelLargeEmphasized,
-            fontFamily = expressiveDisplayFontForText(todayText),
+            fontFamily = expressiveDisplayFontForText(selectedText),
+            maxLines = 1,
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
           )
         }
@@ -453,13 +468,13 @@ private fun WeeklyActivityBentoCard(days: Map<String, Long>) {
       Row(
         modifier = Modifier
           .fillMaxWidth()
-          .height(130.dp),
+          .height(142.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.Bottom,
       ) {
         dates.forEachIndexed { index, date ->
           val value = values[index]
-          val isToday = index == 6
+          val isSelected = index == safeIndex
           val fraction = if (max > 0L) (value.toFloat() / chartMax.toFloat()).coerceIn(0f, 1f) else 0f
           val animatedFraction by animateFloatAsState(
             targetValue = fraction,
@@ -470,7 +485,15 @@ private fun WeeklyActivityBentoCard(days: Map<String, Long>) {
           Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.weight(1f),
+            modifier = Modifier
+              .weight(1f)
+              .clip(RoundedCornerShape(12.dp))
+              .clickable { selectedIndex = index }
+              .background(
+                color =
+                  if (isSelected) primaryColor.copy(alpha = 0.12f) else Color.Transparent,
+              )
+              .padding(vertical = 6.dp),
           ) {
             // Track & Fill bar
             Box(
@@ -488,7 +511,7 @@ private fun WeeklyActivityBentoCard(days: Map<String, Long>) {
                     .fillMaxHeight(animatedFraction.coerceAtLeast(0.12f))
                     .clip(CircleShape)
                     .background(
-                      if (isToday) {
+                      if (isSelected) {
                         Brush.verticalGradient(
                           listOf(
                             MaterialTheme.colorScheme.tertiary,
@@ -509,7 +532,7 @@ private fun WeeklyActivityBentoCard(days: Map<String, Long>) {
             }
 
             // Day label
-            if (isToday) {
+            if (isSelected) {
               Surface(
                 shape = CircleShape,
                 color = MaterialTheme.colorScheme.primary,
