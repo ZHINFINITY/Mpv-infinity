@@ -118,7 +118,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ./gradlew assembleStandardRelease assembleNoVulkanRelease --stacktrace --no-daemon --max-workers=2
+          ./gradlew assembleStandardRelease --stacktrace --no-daemon --max-workers=2
+          ./gradlew assembleNoVulkanRelease --stacktrace --no-daemon --max-workers=2
           release_dir="app/build/outputs/apk/standard/release"
           mkdir -p "$RUNNER_TEMP/standard-stock"
           cp "$release_dir"/*.apk "$RUNNER_TEMP/standard-stock/"
