@@ -7,7 +7,14 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT = ROOT / ".github/workflows/mpvflow-debug-arm64.yml"
-WORKFLOW = Path(sys.argv.pop()) if len(sys.argv) > 1 else DEFAULT
+def _workflow_path() -> Path:
+  """Prefer the CLI argument, but never consume a runner's argv when imported."""
+  if __name__ == "__main__" and len(sys.argv) > 1:
+    return Path(sys.argv[1])
+  return DEFAULT
+
+
+WORKFLOW = _workflow_path()
 TEXT = WORKFLOW.read_text(encoding="utf-8")
 
 def parse_steps(text: str) -> dict[str, str]:
