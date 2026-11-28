@@ -18,6 +18,9 @@ import app.infinity.mpvz.database.repository.NetworkStreamEntryRepository
 import app.infinity.mpvz.database.repository.PlaybackStateRepositoryImpl
 import app.infinity.mpvz.database.repository.PlaylistRepository
 import app.infinity.mpvz.database.repository.RecentlyPlayedRepositoryImpl
+import app.infinity.mpvz.domain.framecapture.FrameCaptureRepository
+import app.infinity.mpvz.domain.framecapture.FrameCaptureRepositoryImpl
+import app.infinity.mpvz.repository.WatchStatsRepository
 import app.infinity.mpvz.domain.playbackstate.repository.PlaybackStateRepository
 import app.infinity.mpvz.domain.recentlyplayed.repository.RecentlyPlayedRepository
 import app.infinity.mpvz.domain.thumbnail.ThumbnailRepository
@@ -827,6 +830,37 @@ val MIGRATION_25_26 =
       db.execSQL("ALTER TABLE `PlaybackStateEntity` ADD COLUMN `secondarySubSpeed` REAL NOT NULL DEFAULT -1.0")
     }
   }
+
+val MIGRATION_26_27 =
+  object : Migration(26, 27) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+      db.execSQL(
+        """CREATE TABLE IF NOT EXISTS `frame_captures` (
+        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+        `imageUri` TEXT,
+        `imagePath` TEXT,
+        `videoUri` TEXT NOT NULL,
+        `videoPath` TEXT,
+        `videoTitle` TEXT NOT NULL,
+        `positionMs` INTEGER NOT NULL,
+        `capturedAt` INTEGER NOT NULL,
+        `folderId` INTEGER,
+        `imageWidth` INTEGER,
+        `imageHeight` INTEGER
+      )""",
+      )
+      db.execSQL("CREATE INDEX IF NOT EXISTS `index_frame_captures_capturedAt` ON `frame_captures` (`capturedAt`)")
+      db.execSQL("CREATE INDEX IF NOT EXISTS `index_frame_captures_folderId` ON `frame_captures` (`folderId`)")
+      db.execSQL(
+        """CREATE TABLE IF NOT EXISTS `snapshot_folders` (
+        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+        `name` TEXT NOT NULL,
+        `createdAt` INTEGER NOT NULL
+      )""",
+      )
+      db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_snapshot_folders_name` ON `snapshot_folders` (`name`)")
+    }
+  }
 val DatabaseModule =
   module {
     single<Json> {
@@ -867,8 +901,17 @@ val DatabaseModule =
           MIGRATION_23_24,
           MIGRATION_24_25,
           MIGRATION_25_26,
+          MIGRATION_26_27,
         ).build()
     }
+
+    single { get<MpvInfinityDatabase>().frameCaptureDao() }
+
+    single { get<MpvInfinityDatabase>().snapshotFolderDao() }
+
+    singleOf(::FrameCaptureRepositoryImpl).bind(FrameCaptureRepository::class)
+
+    singleOf(::WatchStatsRepository)
 
     singleOf(::PlaybackStateRepositoryImpl).bind(PlaybackStateRepository::class)
 

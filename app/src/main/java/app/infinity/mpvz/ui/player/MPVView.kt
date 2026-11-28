@@ -166,7 +166,7 @@ class MPVView(
     val requestedMpvFlowComputeApi = decoderPreferences.mpvFlowComputeApi.get()
     val mpvFlowFrameInterpolationActive =
       mpvFlowRequested &&
-        BuildConfig.MPV_HAS_FONGMI_MEMC &&
+        BuildConfig.MPV_HAS_PINNED_MEMC &&
         !frameInterpolationConfigOwned &&
         (forceMpvInterpolationOwner || decoderPreferences.playbackEngine.get() != PlaybackEngineMode.NATIVE)
     val mpvFlowSoftBlendDebugActive =
@@ -448,7 +448,16 @@ class MPVView(
     PlaybackSession.setOptionString("profile", profile)
     val backend = selectRenderBackend()
     val useVulkan = backend.gpuApi == "vulkan"
-    val hwdecMode = preferredHwdecMode(useVulkan)
+    val hwdecMode =
+      RendererBackendPolicy.hwdecForRequestedDecoder(
+        hardwareDecodingEnabled = decoderPreferences.tryHWDecoding.get(),
+        requested = decoderPreferences.requestedDecoder.get(),
+        directMediaCodecAvailable =
+          RendererBackendPolicy.canUseDirectMediaCodec(
+            usesVulkan = useVulkan,
+            buildSupportsMediaCodecVulkan = BuildConfig.MPV_SUPPORTS_MEDIACODEC_VULKAN,
+          ),
+      ) ?: preferredHwdecMode(useVulkan)
     val mpvFlowFrameInterpolationPreference = decoderPreferences.mpvFlowFrameInterpolation.get()
     val displayRefreshRate =
       if (Looper.myLooper() == Looper.getMainLooper()) snapshotDisplayRefreshRateOnMain()
@@ -464,7 +473,7 @@ class MPVView(
     val anime4kActive = decoderPreferences.enableAnime4K.get() && decoderPreferences.anime4kMode.get() != "OFF"
     val mpvFlowFrameInterpolationCandidate =
       mpvFlowFrameInterpolationPreference &&
-        BuildConfig.MPV_HAS_FONGMI_MEMC &&
+        BuildConfig.MPV_HAS_PINNED_MEMC &&
         !frameInterpolationConfigOwned &&
         !anime4kActive &&
         RendererBackendPolicy.canUseDirectGpuFlow(backend.vo, backend.gpuApi) &&
@@ -478,7 +487,7 @@ class MPVView(
           PlaybackSession.setOptionString("display-fps-override", "0")
         else -> null
       }
-    // FongMi MEMC replaces mpv's ordinary `interpolation` frame mixer. Match the pinned
+    // Pinned MEMC replaces mpv's ordinary `interpolation` frame mixer. Match the pinned
     // motion contract: enable the motion option with display-synced ticks, without also enabling
     // the separate built-in interpolation path.
     val flowVideoSyncRc =
@@ -546,7 +555,7 @@ class MPVView(
     // Mailbox replaces stale queued presentation images without reducing the requested output rate.
     // libplacebo falls back to FIFO on Android surfaces that do not support mailbox presentation.
     val flowSwapMode =
-      if (BuildConfig.MPV_HAS_FONGMI_MEMC && backend.gpuApi == "vulkan") {
+      if (BuildConfig.MPV_HAS_PINNED_MEMC && backend.gpuApi == "vulkan") {
         when {
           MpvConfigOverridePolicy.isOwnedByMpvConf("vulkan-swap-mode") -> null
           mpvFlowFrameInterpolationEnabled -> "mailbox"
@@ -640,7 +649,7 @@ class MPVView(
     if (mpvFlowFrameInterpolationEnabled) {
       // Prefer direct MediaCodec/Vulkan frames when supported. The standard flavor uses
       // mediacodec-copy so hardware decoding remains enabled when direct Vulkan import is absent;
-      // FongMi motion synthesis stays on Vulkan and never reads synthesized output back.
+      // Pinned motion synthesis stays on Vulkan and never reads synthesized output back.
       val hardwareDecodeMode =
         RendererBackendPolicy.gpuFlowHwdecMode(
           hardwareDecodingEnabled = decoderPreferences.tryHWDecoding.get(),
@@ -720,7 +729,7 @@ class MPVView(
         null
       }
     val mpvFlowRendererOptionResult =
-      if (BuildConfig.MPV_HAS_FONGMI_MEMC &&
+      if (BuildConfig.MPV_HAS_PINNED_MEMC &&
         !MpvConfigOverridePolicy.isOwnedByMpvConf("motion-interpolation")) {
         val targetFps = if (mpvFlowFrameInterpolationEnabled) mpvFlowTargetFps else 0
         val result = PlaybackSession.setOptionString("motion-interpolation", targetFps.toString())
@@ -759,7 +768,7 @@ class MPVView(
       val reason =
         when {
           mpvFlowFrameInterpolationEnabled -> "enabled"
-          !BuildConfig.MPV_HAS_FONGMI_MEMC -> "runtime_unavailable"
+          !BuildConfig.MPV_HAS_PINNED_MEMC -> "runtime_unavailable"
           frameInterpolationConfigOwned -> "mpv_config_owns_options"
           anime4kActive -> "anime4k_active"
           !RendererBackendPolicy.canUseDirectGpuFlow(backend.vo, backend.gpuApi) ->
@@ -814,9 +823,11 @@ class MPVView(
     PlaybackSession.setOptionString("vd-lavc-film-grain", "auto")
 
     // Streaming improvements
-    // Use adaptive HLS bitrate selection to avoid forcing the heaviest stream profile.
-    // This reduces thermal load and helps prevent jitter/rebuffering on long sessions.
-    PlaybackSession.setOptionString("hls-bitrate", "no")
+    // Cap HLS so the player decodes the rendition it needs, not the heaviest one available:
+    // "no" makes mpv pick the first stream it finds (typically the top bitrate), which both
+    // wastes battery and re-buffers on weak links. 4 Mbit/s is comfortably above a crisp 1080p
+    // mobile rendition; the demuxer cache below smooths the segments that remain.
+    PlaybackSession.setOptionString("hls-bitrate", "4000000")
     PlaybackSession.setOptionString("http-allow-redirect", "yes")
     PlaybackSession.setOptionString("cookies", "yes")
     PlaybackSession.setOptionString("cookies-file", AndroidCookieJar.playbackCookieFile(context).absolutePath)
@@ -831,22 +842,41 @@ class MPVView(
     PlaybackSession.setOptionString("cache-pause", "yes")
     PlaybackSession.setOptionString("cache-pause-wait", "2")
     PlaybackSession.setOptionString("demuxer-max-bytes", "128MiB")
+    // Deep back-buffer: seeks backward into what was already watched play from memory instead of
+    // refetching from a slow or dead origin (torrent seeders, rate-limited direct links).
+    PlaybackSession.setOptionString("demuxer-max-back-bytes", "32MiB")
+    // Larger low-level stream buffer: fewer read round-trips per second of media, which the
+    // loopback torrent/relay proxies and slow direct links benefit from the most.
+    PlaybackSession.setOptionString("stream-buffer-size", "4MiB")
+    // Fail fast on a dead connect so the reconnect policy starts recovering instead of hanging
+    // the open for mpv's 60s default.
+    PlaybackSession.setOptionString("network-timeout", "15")
+    // Hold the first frames until a small buffer is in, so playback doesn't stutter in its
+    // first seconds on a slow-start source.
+    PlaybackSession.setOptionString("cache-pause-initial", "yes")
     // Recover boundedly from transient HTTP/TLS disconnects, including non-seekable live inputs.
     // Do not use reconnect_at_eof globally: a legitimate VOD EOF must still finish normally.
-    // http_persistent=1 keeps one connection alive across HLS/DASH segments instead of a fresh
-    // TCP+TLS handshake per segment, which shows up as recurring buffering on high-latency CDNs.
+    // The http protocol options live in stream-lavf-o: libavformat applies that dict to the opened
+    // URLContext. In demuxer-lavf-o mpv rejects them one by one ("Could not set AVOption
+    // http_persistent='1'") and the policy silently never applies.
     PlaybackSession.setOptionString(
       "demuxer-lavf-o",
-      "http_persistent=1,reconnect=1,reconnect_on_network_error=1,reconnect_streamed=1," +
-        "reconnect_delay_max=5,reconnect_max_retries=5,reconnect_delay_total_max=20",
+      // hls/dash demuxer options. Persistent connections save a TCP+TLS handshake per segment;
+      // http_multiple fetches the next segment over a second connection so one slow segment does
+      // not stall the chain; seg_max_retry=6 (ffmpeg retries a failed segment once by default)
+      // keeps a single dropped segment read from aborting the whole download and showing up as
+      // endless buffering.
+      "http_persistent=1,http_multiple=1,seg_max_retry=6",
     )
     // demuxer-lavf-o only reaches demuxer-internal opens (HLS/DASH segments). The primary http(s)
     // URL is opened by stream_lavf, which reads stream-lavf-o; without it a dropped connection or
-    // one failed seek-reopen permanently stalls network playback (endless buffering).
+    // one failed seek-reopen permanently stalls network playback (endless buffering). The short
+    // reconnect delay keeps a hiccup from freezing playback for the whole backoff window.
     PlaybackSession.setOptionString(
       "stream-lavf-o",
-      "reconnect=1,reconnect_on_network_error=1,reconnect_on_http_error=5xx,reconnect_streamed=1," +
-        "reconnect_delay_max=5,reconnect_max_retries=5,reconnect_delay_total_max=20",
+      "http_persistent=1,reconnect=1,reconnect_on_network_error=1,reconnect_on_http_error=5xx," +
+        "reconnect_streamed=1,reconnect_delay_max=1,reconnect_max_retries=8," +
+        "reconnect_delay_total_max=20",
     )
     // Drop only video-output-bound late frames when rendering cannot keep up.
     // This prevents long-term jitter buildup without aggressively sacrificing smoothness.
@@ -856,7 +886,7 @@ class MPVView(
     PlaybackSession.setOptionString("hr-seek", if (preciseSeek) "yes" else "no")
     PlaybackSession.setOptionString("hr-seek-framedrop", if (preciseSeek) "no" else "yes")
 
-    // FongMi motion-interpolation replaces mpv's ordinary frame mixer; never enable the separate
+    // Pinned motion-interpolation replaces mpv's ordinary frame mixer; never enable the separate
     // `interpolation` option here.
     if (!MpvConfigOverridePolicy.isOwnedByMpvConf("video-sync")) {
       PlaybackSession.setOptionString(
@@ -892,6 +922,9 @@ class MPVView(
       Debanding.CPU -> PlaybackSession.command("vf", "add", "@deband:gradfun=radius=12")
       Debanding.GPU -> PlaybackSession.setOptionString("deband", "yes")
     }
+
+    // Re-apply the user's stacked on-video effects for the freshly opened video.
+    VideoFxFilter.reapplyAll(decoderPreferences)
 
     // Keep the MPV stats OSD video-only. Otherwise a music item can inherit the previous
     // video's stats overlay when MPV is reused for audio playback. Only a positively
@@ -1335,7 +1368,7 @@ class MPVView(
         (decoderPreferences.anime4kMode.get() != "OFF")
     val flowRequiresVulkan =
       decoderPreferences.mpvFlowFrameInterpolation.get() &&
-        BuildConfig.MPV_HAS_FONGMI_MEMC &&
+        BuildConfig.MPV_HAS_PINNED_MEMC &&
         BuildConfig.MPV_SUPPORTS_VULKAN &&
         !MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.FRAME_INTERPOLATION) &&
         !anime4kEnabled &&

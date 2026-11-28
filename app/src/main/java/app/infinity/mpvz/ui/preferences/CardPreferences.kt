@@ -21,6 +21,8 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -29,7 +31,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import app.infinity.mpvz.ui.theme.AppMotion
+import app.infinity.mpvz.ui.theme.ConnectedLayout
 import app.infinity.mpvz.ui.theme.LocalEmphasizedTypography
+import app.infinity.mpvz.ui.theme.rememberConnectedShape
+import app.infinity.mpvz.ui.liquidglass.playerGlassContainerColor
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.ui.preferences.components.settingsGlassSurface
@@ -129,5 +135,61 @@ fun PreferenceSectionHeader(
         color = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
       )
     }
+  }
+}
+
+/** True inside [PreferenceCard]/[ExpressivePreferenceTile]; nested rows then skip their own inset. */
+internal val LocalInsidePreferenceCard = staticCompositionLocalOf { false }
+
+/**
+ * A Material 3 Expressive preference section made from individually connected tiles.
+ *
+ * Unlike [PreferenceCard], this does not draw one large container behind every setting. Each
+ * child owns its complete row and uses [ExpressivePreferenceTile] or the connected parameters on
+ * a preference component.
+ */
+@Composable
+fun ExpressivePreferenceGroup(
+  modifier: Modifier = Modifier,
+  content: @Composable ColumnScope.() -> Unit,
+) {
+  Column(
+    modifier =
+      modifier
+        .fillMaxWidth()
+        .padding(horizontal = 16.dp, vertical = 8.dp),
+    verticalArrangement = Arrangement.spacedBy(4.dp),
+    content = content,
+  )
+}
+
+/** A full-width tile whose outer and inner corners follow its position in a vertical group. */
+@Composable
+fun ExpressivePreferenceTile(
+  index: Int,
+  itemCount: Int,
+  modifier: Modifier = Modifier,
+  selected: Boolean = false,
+  content: @Composable () -> Unit,
+) {
+  val colors = MaterialTheme.colorScheme
+  val containerColor by animateColorAsState(
+    targetValue =
+      playerGlassContainerColor(
+        if (selected) colors.secondaryContainer else colors.surfaceContainerLow,
+        selected = selected,
+      ),
+    animationSpec = AppMotion.Effect.Color,
+    label = "expressivePreferenceTileColor",
+  )
+  val shape =
+    rememberConnectedShape(
+      index = index,
+      itemCount = itemCount,
+      layout = ConnectedLayout.Vertical,
+      selected = selected,
+    )
+  Surface(modifier = modifier.fillMaxWidth(), shape = shape, color = containerColor) {
+    CompositionLocalProvider(LocalInsidePreferenceCard provides true) { content() }
   }
 }

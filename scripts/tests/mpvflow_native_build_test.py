@@ -37,7 +37,7 @@ def pl_log_emits(message_level: str, threshold: str) -> bool:
 ROOT = Path(__file__).resolve().parents[2]
 PREPARE = ROOT / "scripts/prepare-mpvflow.py"
 BUILD = ROOT / "scripts/build-mpvflow-mpv-runtime.sh"
-FONGMI_DIR = ROOT / "app/src/main/cpp/mpvflow/fongmi"
+PINNED_DIR = ROOT / "app/src/main/cpp/mpvflow/pinned"
 PLAYBACK_SESSION = ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/PlaybackSession.kt"
 MPV_VIEW = ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/MPVView.kt"
 MEDIA3_SINK = ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowVideoSink.kt"
@@ -83,17 +83,17 @@ assert patched_reconfig.index("MPVFLOW_RECONFIG_MOTION_QUEUE_RESET") < patched_r
 patched_reconfig_again, reset_added_again = prepare_module.reset_motion_queue_on_video_reconfig(patched_reconfig)
 assert not reset_added_again and patched_reconfig_again == patched_reconfig
 
-fongmi_motion = (FONGMI_DIR / "motion.c").read_text(encoding="utf-8")
-fongmi_test = (FONGMI_DIR / "test/gpu_motion.c").read_text(encoding="utf-8")
+pinned_motion = (PINNED_DIR / "motion.c").read_text(encoding="utf-8")
+pinned_test = (PINNED_DIR / "test/gpu_motion.c").read_text(encoding="utf-8")
 media3_native = (ROOT / "app/src/main/cpp/media3flow_vulkan_jni.cpp").read_text(encoding="utf-8")
-assert 'pl_var_vec2("source_size")' in fongmi_motion
-assert 'pl_var_vec2("motion_size")' in fongmi_motion
-assert "mp_motion_render_sources_to" in fongmi_motion and "scaled_source_pair" in fongmi_test
-assert "mp_motion_" not in media3_native, "Native Media3 must remain on its pre-FongMi MPVFlow implementation"
+assert 'pl_var_vec2("source_size")' in pinned_motion
+assert 'pl_var_vec2("motion_size")' in pinned_motion
+assert "mp_motion_render_sources_to" in pinned_motion and "scaled_source_pair" in pinned_test
+assert "mp_motion_" not in media3_native, "Native Media3 must remain on its pre-Pinned MPVFlow implementation"
 assert "mpvflow_gpu_synthesize_with_policy_to_texture(" in media3_native
 cmake_config = (ROOT / "app/src/main/cpp/CMakeLists.txt").read_text(encoding="utf-8")
 runtime_packager = (ROOT / "scripts/package-mpv-runtime-aar.py").read_text(encoding="utf-8")
-assert "mpvflow/fongmi/motion.c" not in cmake_config, "FongMi motion must not be linked into Native Media3"
+assert "mpvflow/pinned/motion.c" not in cmake_config, "Pinned motion must not be linked into Native Media3"
 assert "pl_shader_custom" in cmake_config, "Native MPVFlow must retain its generic renderer-hook shader API"
 assert '"pl_shader_custom"' in runtime_packager, "the MPV runtime overlay must export the MPVFlow renderer-hook shader API"
 assert 'PlaybackSession.setOptionString("motion-interpolation", targetFps.toString())' in MPV_VIEW.read_text(encoding="utf-8")
@@ -106,7 +106,7 @@ for marker in (
     'git -C "$MPV_BUILDER_DIR" rev-parse HEAD',
     'git -C "$MPV_SOURCE_DIR" rev-parse HEAD',
     "download.count(ffmpeg_clone) != 1",
-    'ffmpeg_version_suffix = f"mpvflow-fongmi-{ffmpeg_revision}"',
+    'ffmpeg_version_suffix = f"mpvflow-pinned-{ffmpeg_revision}"',
     'if "--extra-version=" in ffmpeg_script:',
     'git -C ffmpeg fetch --depth=1 origin {ffmpeg_revision}',
     'git -C ffmpeg remote get-url origin',
@@ -585,8 +585,8 @@ assert "if (qcom->dispatches % 120 == 0)" in qcom_source, (
 assert 'qcom_log(qcom->gpu, PL_LOG_INFO,\n             "MPVFLOW_DIAGNOSTIC event=qcom_block_match_image state=created' in qcom_source, (
     "QCOM image-sharing diagnostics must be visible at Flow verbosity and occur only during image creation"
 )
-assert 'FONGMI_PATCH = VENDOR / "fongmi/mpv-fongmi-android.patch"' not in prepare_source
-assert '"--input", str(FONGMI_PATCH)' not in prepare_source
+assert 'PINNED_PATCH = VENDOR / "pinned/mpv-pinned-android.patch"' not in prepare_source
+assert '"--input", str(PINNED_PATCH)' not in prepare_source
 assert '"mpvflow-vo-gpu-next.patch"' not in prepare_source
 assert '"mpvflow-aimagereader-vulkan.patch"' not in prepare_source
 assert '"video/out/gpu_next/motion.c"' in prepare_source
@@ -595,15 +595,15 @@ assert '"motion-interpolation", OPT_INT(motion_fps)' in prepare_source
 assert '"video/out/hwdec/hwdec_aimagereader_vk_direct.c"' in prepare_source
 assert '"motion-interpolation-info", mp_property_motion_info' in prepare_source
 assert 'mp.get_property_native("motion-interpolation-info")' in prepare_source
-assert "validate_fongmi_frame_priv_members(vo)" in prepare_source
+assert "validate_pinned_frame_priv_members(vo)" in prepare_source
 assert '"bool retry = result == RA_HWDEC_MAP_RETRY;"' in prepare_source
 assert '"fp->source->failed = ret != RA_HWDEC_MAP_RETRY;"' in prepare_source
-assert "Pinned FongMi VO is missing the transient hwdec-map retry/ownership contract" in prepare_source
+assert "Pinned Pinned VO is missing the transient hwdec-map retry/ownership contract" in prepare_source
 assert "vulkan_context = enable_mailbox_suboptimal_tolerance(vulkan_context)" in prepare_source, (
     "the measured mailbox suboptimal fix must be applied by the pinned MPV preparation pipeline"
 )
 assert "mpvflow_gpu.c" not in prepare_source, "MPV runtime preparation must not stage the retired Flow renderer"
-assert "FONGMI_PATCH" not in prepare_source, "MPV runtime must compile the pinned FongMi source directly"
+assert "PINNED_PATCH" not in prepare_source, "MPV runtime must compile the pinned Pinned source directly"
 assert "mpvflow_gpu.c" not in prepare_source, "MPV runtime preparation must not stage the retired Flow renderer"
 prepare_call = 'python3 "$ROOT/scripts/prepare-mpvflow.py" --mpv-dir "$BUILDSCRIPTS/deps/mpv" --libplacebo-dir "$BUILDSCRIPTS/deps/libplacebo"'
 assert prepare_call in build, "the native build must patch pinned libplacebo before compilation"
@@ -673,7 +673,7 @@ visibility_shader_header = ROOT / "app/src/main/cpp/mpvflow/mpvflow_visibility_r
 assert visibility_shader_header.is_file(), "the validated visibility-resolver shader must be embedded for native builds"
 assert flow_visibility_header.is_file(), "the shared internal-symbol visibility header must be vendored"
 assert "mpvflow_rate_limiter_ready" in (ROOT / "app/src/main/cpp/mpvflow/mpvflow_rate_limit.h").read_text(encoding="utf-8")
-assert "FONGMI_PATCH" not in prepare_source
+assert "PINNED_PATCH" not in prepare_source
 assert "motion-interpolation" in MPV_VIEW.read_text(encoding="utf-8")
 assert "motion-interpolation" in (ROOT / "app/src/main/java/app/infinity/mpvz/preferences/MpvConfigOverride.kt").read_text(encoding="utf-8")
 
@@ -850,11 +850,11 @@ for marker in (
     'PlaybackSession.setOptionString("video-sync", "audio")',
     "fallback=source_passthrough",
 ):
-    assert marker in init_options, f"FongMi MPV must establish and safely gate its display cadence: missing {marker!r}"
+    assert marker in init_options, f"Pinned MPV must establish and safely gate its display cadence: missing {marker!r}"
 assert init_options.index('PlaybackSession.setOptionString("video-sync", "display-resample")') < init_options.index(
     'PlaybackSession.setOptionString("motion-interpolation", targetFps.toString())'
-), "display sync must be configured before enabling FongMi motion"
-assert 'PlaybackSession.setOptionString(\n        "interpolation"' not in init_options, "FongMi must not enable mpv's separate interpolation mixer"
+), "display sync must be configured before enabling Pinned motion"
+assert 'PlaybackSession.setOptionString(\n        "interpolation"' not in init_options, "Pinned must not enable mpv's separate interpolation mixer"
 assert "val targetFps = if (mpvFlowFrameInterpolationEnabled) mpvFlowTargetFps else 0" in init_options
 renderer_option_order = (
     'PlaybackSession.setOptionString("gpu-api", backend.gpuApi)',
@@ -888,7 +888,7 @@ flow_selector = view_source.split("val flowRequiresVulkan =", 1)[1].split(
     "val gpuNextEnabled =", 1
 )[0]
 for marker in (
-    "BuildConfig.MPV_HAS_FONGMI_MEMC",
+    "BuildConfig.MPV_HAS_PINNED_MEMC",
     "BuildConfig.MPV_SUPPORTS_VULKAN",
     "!MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.FRAME_INTERPOLATION)",
     "PlaybackEngineMode.NATIVE",
@@ -1206,7 +1206,7 @@ assert "} else {\n                        *owned[i] = NULL;\n                   
        "\n                *owned[i] = NULL;\n" not in pair_cleanup, (
     "failed OpenCL buffer destruction must retain its handle so runtime fallback cannot mistake live interop resources for cleaned resources"
 )
-assert "mp_motion_" not in media3_jni_source, "Native Media3 must not initialize, call, or destroy the MPV-only FongMi core"
+assert "mp_motion_" not in media3_jni_source, "Native Media3 must not initialize, call, or destroy the MPV-only Pinned core"
 media3_sink_source = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/Media3FlowVideoSink.kt").read_text(
     encoding="utf-8"
 )
@@ -1479,14 +1479,14 @@ with tempfile.TemporaryDirectory(prefix="mpvflow-builder-patch-test-") as tempor
     )
     assert result.returncode == 0, f"builder patcher fixture failed:\n{result.stdout}{result.stderr}"
     patched_downloads = downloads.read_text(encoding="utf-8")
-    assert "https://github.com/FongMi/libplacebo.git" in patched_downloads, "FongMi libplacebo source was lost"
-    assert "63659d96d1bff7d7a5a1368e9538056a193fc6fb" in patched_downloads, "Mpv-infinity FongMi libplacebo pin was lost"
+    assert "https://github.com/FongMi/libplacebo.git" in patched_downloads, "Pinned libplacebo source was lost"
+    assert "63659d96d1bff7d7a5a1368e9538056a193fc6fb" in patched_downloads, "Mpv-infinity Pinned libplacebo pin was lost"
     assert "git -C libplacebo fetch --depth=1 origin 63659d96d1bff7d7a5a1368e9538056a193fc6fb" in patched_downloads
     assert "git -C libplacebo checkout --detach FETCH_HEAD" in patched_downloads
     assert 'libplacebo_actual" != "63659d96d1bff7d7a5a1368e9538056a193fc6fb"' in patched_downloads
     assert "git -C libplacebo submodule update --init --recursive" in patched_downloads
-    assert FFMPEG_REPOSITORY in patched_downloads, "FongMi FFmpeg source repository was lost"
-    assert f"git -C ffmpeg fetch --depth=1 origin {FFMPEG_SHA}" in patched_downloads, "FongMi FFmpeg commit pin was lost"
+    assert FFMPEG_REPOSITORY in patched_downloads, "Pinned FFmpeg source repository was lost"
+    assert f"git -C ffmpeg fetch --depth=1 origin {FFMPEG_SHA}" in patched_downloads, "Pinned FFmpeg commit pin was lost"
     assert f'ffmpeg_actual" != "{FFMPEG_SHA}"' in patched_downloads, "FFmpeg checkout must be verified against the exact commit"
     assert "git -C glslang fetch --depth 1 origin 1062752a891c95b2bfeed9e356562d88f9df84ac" in patched_downloads
     assert "lua_sha256=b9e2e4aad6789b3b63a056d442f7b39f0ecfca3ae0f1fc0ae4e9614401b69f4b" in patched_downloads
@@ -1545,8 +1545,8 @@ with tempfile.TemporaryDirectory(prefix="mpvflow-builder-patch-test-") as tempor
     assert "--enable-gpl" not in patched_ffmpeg and "--enable-nonfree" not in patched_ffmpeg and "--disable-version3" not in patched_ffmpeg, (
         "FFmpeg's GPL/nonfree flags or incompatible LGPLv2.1 mode were not removed"
     )
-    assert f"--extra-version=mpvflow-fongmi-{FFMPEG_SHA}" in patched_ffmpeg, (
-        "FFmpeg must embed a version marker bound to the exact pinned FongMi source commit"
+    assert f"--extra-version=mpvflow-pinned-{FFMPEG_SHA}" in patched_ffmpeg, (
+        "FFmpeg must embed a version marker bound to the exact pinned Pinned source commit"
     )
     subprocess.run(["bash", "-n", str(ffmpeg)], check=True)
     assert "--arch arm64" in ci.read_text(encoding="utf-8"), "native build must remain arm64-only"
@@ -1561,7 +1561,7 @@ struct frame_priv {
     struct mp_image_params mapped_params;
 };
 """
-prepare.validate_fongmi_frame_priv_members(frame_priv_fixture)
+prepare.validate_pinned_frame_priv_members(frame_priv_fixture)
 misplaced_frame_priv_fixture = """\
 static void unrelated(void) {
     struct source_frame *source;
@@ -1575,16 +1575,16 @@ struct frame_priv {
 };
 """
 try:
-    prepare.validate_fongmi_frame_priv_members(misplaced_frame_priv_fixture)
+    prepare.validate_pinned_frame_priv_members(misplaced_frame_priv_fixture)
 except SystemExit:
     pass
 else:
-    raise AssertionError("FongMi frame ownership fields outside frame_priv must fail native preparation")
+    raise AssertionError("Pinned frame ownership fields outside frame_priv must fail native preparation")
 
-assert "static void scaled_source_pair(" in fongmi_test
-assert "assert(mp_motion_render_sources_to(" in fongmi_test
-assert "assert(error < 0.025);" in fongmi_test, "the scaled full-resolution result must pass the pixel-error threshold"
-assert "source_size" in fongmi_motion and "motion_size" in fongmi_motion
+assert "static void scaled_source_pair(" in pinned_test
+assert "assert(mp_motion_render_sources_to(" in pinned_test
+assert "assert(error < 0.025);" in pinned_test, "the scaled full-resolution result must pass the pixel-error threshold"
+assert "source_size" in pinned_motion and "motion_size" in pinned_motion
 
 rate_limit_test = r"""
 #include <assert.h>

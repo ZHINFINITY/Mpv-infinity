@@ -17,7 +17,7 @@ def test_standard_workflow_is_flow_only() -> None:
     gradle = (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
 
     cache_step_name = "- name: Restore verified Flow-only MPVFlow arm64 runtime"
-    experiment_cache_step_name = "- name: Restore verified Mpv-infinity FongMi 645 arm64 runtime"
+    experiment_cache_step_name = "- name: Restore verified Mpv-infinity Pinned 645 arm64 runtime"
     builder_sha = "1efc82739f6f7034cd63e7ee8b3ec5431df27467"
     mpv_sha = "645f8ecdd3c94379048e9ee3e7014e174de0bd02"
     placebo_sha = "63659d96d1bff7d7a5a1368e9538056a193fc6fb"
@@ -31,29 +31,29 @@ def test_standard_workflow_is_flow_only() -> None:
     manual_cache_key = runtime_cache_key(workflow, cache_step_name)
     push_cache_key = runtime_cache_key(flow_workflow, experiment_cache_step_name)
     release_cache_key = runtime_cache_key(release_workflow, cache_step_name)
-    assert manual_cache_key == release_cache_key, "normal debug and release builds must share the upstream FongMi runtime"
-    assert manual_cache_key != push_cache_key, "the downsample test runtime must not reuse the normal FongMi cache"
-    assert "scripts/patch_fongmi_motion_downsample.py" not in manual_cache_key
-    assert "scripts/patch_fongmi_motion_downsample.py" in push_cache_key
+    assert manual_cache_key == release_cache_key, "normal debug and release builds must share the upstream Pinned runtime"
+    assert manual_cache_key != push_cache_key, "the downsample test runtime must not reuse the normal Pinned cache"
+    assert "scripts/patch_motion_downsample.py" not in manual_cache_key
+    assert "scripts/patch_motion_downsample.py" in push_cache_key
     for native_input in (
         "scripts/build-mpvflow-mpv-runtime.sh",
         "scripts/prepare-mpvflow.py",
         "scripts/mpvrx_motion_source.py",
         "scripts/prepare-mpvflow-vulkan-headers.py",
         "scripts/patch-ffmpeg-symver.py",
-        "scripts/patches/mpvlibandroid-fongmi/**",
+        "scripts/patches/mpvlibandroid-pinned/**",
         "app/src/main/cpp/**",
         "THIRD_PARTY_LICENSES/**",
         "app/src/main/assets/mpv/licenses/**",
     ):
         assert native_input in manual_cache_key, f"native cache key must include {native_input}"
         assert native_input in push_cache_key, f"test-only native cache key must include {native_input}"
-    assert "scripts/patch_fongmi_motion_artifact.py" not in manual_cache_key
-    assert "scripts/patch_fongmi_motion_artifact.py" not in push_cache_key
+    assert "scripts/patch_motion_artifact.py" not in manual_cache_key
+    assert "scripts/patch_motion_artifact.py" not in push_cache_key
     assert ".github/workflows/debug-apk.yml" not in manual_cache_key
     assert ".github/workflows/mpvflow-debug-arm64.yml" not in manual_cache_key
     for pin in (
-        f"mpvflow-arm64-runtime-v8-builder-{builder_sha[:16]}-mpv-fongmi-{mpv_sha}-libplacebo-fongmi-{placebo_sha}-ffmpeg-fongmi-{ffmpeg_sha}-vulkan-headers-khronos-{vulkan_headers_sha}-cores2-",
+        f"mpvflow-arm64-runtime-v8-builder-{builder_sha[:16]}-mpv-pinned-{mpv_sha}-libplacebo-pinned-{placebo_sha}-ffmpeg-pinned-{ffmpeg_sha}-vulkan-headers-khronos-{vulkan_headers_sha}-cores2-",
         "mpvflow-runtime-cache.outputs.cache-hit",
     ):
         assert pin in manual_cache_key or all(pin in candidate for candidate in (workflow, flow_workflow)), (
@@ -78,14 +78,14 @@ def test_standard_workflow_is_flow_only() -> None:
             "scripts/prepare-mpvflow.py",
             "scripts/mpvrx_motion_source.py",
             "scripts/patch-ffmpeg-symver.py",
-            "scripts/patches/mpvlibandroid-fongmi/**",
+            "scripts/patches/mpvlibandroid-pinned/**",
             "app/src/main/cpp",
             "THIRD_PARTY_LICENSES",
             "app/src/main/assets/mpv/licenses",
             "MPVFLOW_MPV_BUILD_CORES: '2'",
         ):
             assert required_input in candidate
-        cached_name = "Use cached Flow-only MPVFlow arm64 runtime" if candidate is workflow else "Use cached Mpv-infinity FongMi 645 arm64 runtime"
+        cached_name = "Use cached Flow-only MPVFlow arm64 runtime" if candidate is workflow else "Use cached Mpv-infinity Pinned 645 arm64 runtime"
         cached_runtime_step = candidate.split("- name: " + cached_name, 1)[1].split(
             "- name:", 1
         )[0]
@@ -95,7 +95,7 @@ def test_standard_workflow_is_flow_only() -> None:
     ) < workflow.index("- name: Run focused interpolation regression tests")
     assert flow_workflow.index("- name: Run MPVFlow core and GPU shader regression tests") < flow_workflow.index(
         "- name: Verify GPL-free Mpv-infinity arm64 runtime"
-    ) < flow_workflow.index("- name: Save verified Mpv-infinity FongMi 645 arm64 runtime")
+    ) < flow_workflow.index("- name: Save verified Mpv-infinity Pinned 645 arm64 runtime")
 
     assert "MPVFLOW_INCLUDE_RIFE" not in builder
     assert "build-rife-native.sh" not in builder
@@ -121,7 +121,7 @@ def test_standard_workflow_is_flow_only() -> None:
     assert "steps.mpvflow-runtime-cache.outputs.cache-hit" not in native_dependencies_step
 
     push_build_step = flow_workflow.split(
-        "- name: Build Mpv-infinity FongMi 645 MPV native arm64 Debug runtime", 1
+        "- name: Build Mpv-infinity Pinned 645 MPV native arm64 Debug runtime", 1
     )[1].split("- name:", 1)[0]
     assert "./scripts/build-mpvflow-mpv-runtime.sh" in push_build_step
     assert "steps.mpvflow-runtime-cache.outputs.cache-hit != 'true'" in push_build_step
@@ -140,7 +140,7 @@ def test_standard_workflow_is_flow_only() -> None:
     assert "scripts/tests/package_mpv_runtime_aar_test.py" in focused_tests
     assert "scripts/tests/mpvflow_native_build_test.py" in focused_tests
     core_runner = (ROOT / "scripts/test-mpvflow-core.sh").read_text(encoding="utf-8")
-    assert 'scripts/tests/mpvflow_fongmi_native_source_test.py' in core_runner
+    assert 'scripts/tests/mpvflow_pinned_native_source_test.py' in core_runner
     assert 'scripts/tests/mpvflow_placebo_api_headers_test.py' in core_runner
 
     unit_tests = workflow.split("- name: Run Standard arm64 debug unit tests", 1)[1].split("- name:", 1)[0]
@@ -163,7 +163,7 @@ def test_standard_workflow_is_flow_only() -> None:
     for verifier in (region3_verifier, pair_verifier):
         assert 'MPV_LIBRARY = "lib/arm64-v8a/libmpv.so"' in verifier
         assert 'NATIVE_LIBRARY = "lib/arm64-v8a/libmedia3flow_vulkan.so"' in verifier
-        assert 'FONGMI_MEMC_OPTION = b"motion-interpolation"' in verifier
+        assert 'PINNED_MEMC_OPTION = b"motion-interpolation"' in verifier
     assert workflow.index("- name: Run focused interpolation regression tests") < workflow.index(
         "- name: Build debug APK"
     )

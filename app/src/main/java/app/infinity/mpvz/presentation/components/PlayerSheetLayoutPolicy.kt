@@ -23,4 +23,19 @@ object PlayerSheetLayoutPolicy {
         else -> screenHeightDp.toFloat()
       }
   }
+
+  /** Height the player needs above a track list so the playing album art stays uncovered. */
+  const val LIST_SHEET_CHROME_DP = 104f
+
+  /**
+   * Cap for a scrollable track list inside a player sheet. Deliberately well under
+   * [maxHeightDp] so a long artist or playlist list cannot grow over the album art.
+   */
+  fun listMaxHeightDp(screenHeightDp: Int): Float {
+    require(screenHeightDp > 0) { "screenHeightDp must be positive" }
+    return (screenHeightDp * 0.34f).coerceIn(160f, 320f)
+  }
+
+  fun listSheetMaxHeightDp(screenHeightDp: Int): Float =
+    listMaxHeightDp(screenHeightDp) + LIST_SHEET_CHROME_DP
 }

@@ -54,6 +54,62 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.domain.network.NetworkConnection
 import app.infinity.mpvz.domain.network.NetworkProtocol
+import app.infinity.mpvz.data.network.ServerUrlUtils
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.material3.AssistChip
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.autofill.ContentType
+import androidx.compose.ui.semantics.contentType
+import androidx.compose.ui.semantics.semantics
+
+/** Process-scoped draft of the Add Connection form. The secret field is deliberately never kept. */
+internal data class AddConnectionDraft(
+  val name: String = "",
+  val protocol: NetworkProtocol = NetworkProtocol.SMB,
+  val host: String = "",
+  val port: String = "",
+  val username: String = "",
+  val path: String = "/",
+  val isAnonymous: Boolean = false,
+  val useHttps: Boolean = false,
+  val sftpHostKeyFingerprint: String = "",
+) {
+  companion object {
+    @Volatile var current: AddConnectionDraft = AddConnectionDraft()
+  }
+}
+
+@Composable
+private fun SavedServerShortcuts(
+  connections: List<NetworkConnection>,
+  onPick: (NetworkConnection) -> Unit,
+) {
+  Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Text(
+      androidx.compose.ui.res.stringResource(app.infinity.mpvz.R.string.ui_network_reuse_saved_server),
+      style = MaterialTheme.typography.labelLarge,
+      color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Row(
+      modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+      horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+      connections.distinctBy { Triple(it.protocol, it.host, it.username) }.take(8).forEach { saved ->
+        AssistChip(
+          onClick = { onPick(saved) },
+          label = {
+            Text(
+              "${saved.protocol.displayName} · ${saved.host}",
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+            )
+          },
+          shape = RoundedCornerShape(50),
+        )
+      }
+    }
+  }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -62,27 +118,81 @@ fun AddConnectionSheet(
   onDismiss: () -> Unit,
   onSave: (NetworkConnection) -> Unit,
   modifier: Modifier = Modifier,
+  savedConnections: List<NetworkConnection> = emptyList(),
 ) {
   if (!isOpen) return
 
-  var name by remember { mutableStateOf("") }
-  var protocol by remember { mutableStateOf(NetworkProtocol.SMB) }
-  var host by remember { mutableStateOf("") }
-  var port by remember { mutableStateOf(protocol.defaultPort.toString()) }
-  var username by remember { mutableStateOf("") }
+  val draft = AddConnectionDraft.current
+  var name by remember { mutableStateOf(draft.name) }
+  var protocol by remember { mutableStateOf(draft.protocol) }
+  var host by remember { mutableStateOf(draft.host) }
+  var port by remember { mutableStateOf(draft.port.ifBlank { draft.protocol.defaultPort.toString() }) }
+  var username by remember { mutableStateOf(draft.username) }
   var password by remember { mutableStateOf("") }
-  var path by remember { mutableStateOf("/") }
-  var isAnonymous by remember { mutableStateOf(false) }
-  var useHttps by remember { mutableStateOf(false) }
-  var sftpHostKeyFingerprint by remember { mutableStateOf("") }
+  var path by remember { mutableStateOf(draft.path) }
+  var isAnonymous by remember { mutableStateOf(draft.isAnonymous) }
+  var useHttps by remember { mutableStateOf(draft.useHttps) }
+  var sftpHostKeyFingerprint by remember { mutableStateOf(draft.sftpHostKeyFingerprint) }
   var protocolMenuExpanded by remember { mutableStateOf(false) }
   val validSftpFingerprint = sftpHostKeyFingerprint.trim().matches(Regex("""SHA256:[A-Za-z0-9+/]{43}"""))
+
+  // Keep the typed fields (never the secret) so closing the sheet or rotating doesn't wipe them.
+  SideEffect {
+    AddConnectionDraft.current =
+      AddConnectionDraft(
+        name = name,
+        protocol = protocol,
+        host = host,
+        port = port,
+        username = username,
+        path = path,
+        isAnonymous = isAnonymous,
+        useHttps = useHttps,
+        sftpHostKeyFingerprint = sftpHostKeyFingerprint,
+      )
+  }
+
+  val applyHostInput: (String) -> Unit = { raw ->
+    val parsed = ServerUrlUtils.parseServerAddress(raw)
+    if (parsed == null) {
+      host = raw
+    } else {
+      val schemeProtocol =
+        when (parsed.scheme) {
+          "smb" -> NetworkProtocol.SMB
+          "ftp" -> NetworkProtocol.FTP
+          "sftp", "ssh" -> NetworkProtocol.SFTP
+          "http", "https", "dav", "davs", "webdav" -> NetworkProtocol.WEBDAV
+          else -> null
+        }
+      val resolvedProtocol = schemeProtocol ?: protocol
+      val secure =
+        when (parsed.scheme) {
+          "https", "davs" -> true
+          "http", "dav" -> false
+          else -> useHttps
+        }
+      protocol = resolvedProtocol
+      useHttps = secure
+      host = parsed.host
+      port =
+        parsed.port?.toString()
+          ?: if (resolvedProtocol == NetworkProtocol.WEBDAV && secure) "443" else resolvedProtocol.defaultPort.toString()
+      parsed.path?.let { path = it }
+      parsed.username?.let {
+        username = it
+        isAnonymous = false
+      }
+      if (name.isBlank()) name = parsed.host
+    }
+  }
 
   val handleDismiss = {
     onDismiss()
   }
 
   val handleSave = {
+    AddConnectionDraft.current = AddConnectionDraft()
     val connection =
       NetworkConnection(
         name = name.ifBlank { "${protocol.displayName} - $host" },
@@ -192,10 +302,34 @@ fun AddConnectionSheet(
           }
         }
 
-        // Host
+        if (savedConnections.isNotEmpty()) {
+          SavedServerShortcuts(
+            connections = savedConnections,
+            onPick = { saved ->
+              protocol = saved.protocol
+              host = saved.host
+              port = saved.port.toString()
+              username = saved.username
+              path = saved.path
+              isAnonymous = saved.isAnonymous
+              useHttps = saved.useHttps
+              sftpHostKeyFingerprint = saved.sftpHostKeyFingerprint
+            },
+          )
+        }
+
+        // Host: pasting a full address (https://user@nas:5006/dav) fills every field below.
         OutlinedTextField(
+          shape = RoundedCornerShape(16.dp),
           value = host,
-          onValueChange = { host = it },
+          onValueChange = applyHostInput,
+          supportingText = {
+            Text(
+              androidx.compose.ui.res.stringResource(app.infinity.mpvz.R.string.ui_network_paste_url_hint),
+              maxLines = 2,
+            )
+          },
+          keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
           label = {
             Text(
               androidx.compose.ui.res
@@ -320,13 +454,18 @@ fun AddConnectionSheet(
                 overflow = TextOverflow.Ellipsis,
               )
             },
-            modifier = Modifier.weight(0.50f),
+            modifier =
+              Modifier
+                .weight(0.50f)
+                .semantics { contentType = ContentType.Username },
+            shape = RoundedCornerShape(16.dp),
             singleLine = true,
             enabled = !isAnonymous,
           )
 
           // Password
           OutlinedTextField(
+            shape = RoundedCornerShape(16.dp),
             value = password,
             onValueChange = { password = it },
             label = {
@@ -337,7 +476,10 @@ fun AddConnectionSheet(
                 overflow = TextOverflow.Ellipsis,
               )
             },
-            modifier = Modifier.weight(0.50f),
+            modifier =
+              Modifier
+                .weight(0.50f)
+                .semantics { contentType = ContentType.Password },
             singleLine = true,
             enabled = !isAnonymous,
             visualTransformation = PasswordVisualTransformation(),

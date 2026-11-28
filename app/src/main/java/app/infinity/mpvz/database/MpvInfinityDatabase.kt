@@ -60,8 +60,10 @@ import app.infinity.mpvz.domain.network.NetworkConnection
     AudiobookChapterEntity::class,
     AudiobookshelfServerEntity::class,
     DownloadItemEntity::class,
+    app.infinity.mpvz.database.entities.FrameCaptureEntity::class,
+    app.infinity.mpvz.database.entities.SnapshotFolderEntity::class,
   ],
-  version = 26,
+  version = 27,
   exportSchema = true,
 )
 @TypeConverters(NetworkProtocolConverter::class, NetworkStreamEntryTypeConverter::class)
@@ -91,4 +93,8 @@ abstract class MpvInfinityDatabase : RoomDatabase() {
   abstract fun audiobookshelfServerDao(): AudiobookshelfServerDao
 
   abstract fun downloadItemDao(): DownloadItemDao
+
+  abstract fun frameCaptureDao(): app.infinity.mpvz.database.dao.FrameCaptureDao
+
+  abstract fun snapshotFolderDao(): app.infinity.mpvz.database.dao.SnapshotFolderDao
 }

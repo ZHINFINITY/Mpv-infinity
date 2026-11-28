@@ -94,8 +94,22 @@ enum class AmbientStyle(
   /** Edge-sampled glow bleeding outward from the video borders. */
   Glow(R.string.ambient_glow),
 
+  /** Zoomed, wide-radius projection of the whole picture — diffuse cinema backdrop. */
+  Cinema(R.string.ambient_style_cinema),
+
+  /** Concentric light ripples radiating outward from the video edge. */
+  Echo(R.string.ambient_style_echo),
+
+  /** Glass-table reflection of the frame across the nearest video border. */
+  Mirror(R.string.ambient_style_mirror),
+
   /** Soft blurred projection of the whole frame, like YouTube's Ambient Mode. */
   YouTube(R.string.ambient_style_youtube),
+  ;
+
+  /** True for styles rendered by the MPV glsl-shader pipeline (everything but YouTube). */
+  val isShaderBacked: Boolean
+    get() = this != YouTube
 }
 
 enum class MPVProfile(
@@ -139,6 +153,7 @@ enum class Sheets {
   AudiobookRewind,
   AudiobookSleepTimer,
   FrameInterpolationFps,
+  AudioOutput,
 }
 
 enum class Panels {

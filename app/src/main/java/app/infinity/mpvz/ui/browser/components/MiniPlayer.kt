@@ -93,6 +93,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.foundation.gestures.detectTapGestures
+import `is`.xyz.mpv.MPVLib
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInWindow
@@ -769,19 +771,49 @@ private fun MiniPlayerContent(
         }
       }
     } else {
-      // Audio Mini Player View
+      // Audio Mini Player View — tinted with the album art's ambient color so the strip
+      // reads as part of the artwork (mpvrx behaviour) instead of a flat grey bar.
+      val miniAmbient = coverArt?.bitmap?.let { bitmap ->
+        remember(bitmap) {
+          androidx.palette.graphics.Palette.from(bitmap).clearFilters().generate().let { palette ->
+            val rgb = palette.getDominantColor(0)
+            if (rgb != 0) androidx.compose.ui.graphics.Color(rgb).copy(alpha = 0.55f) else null
+          }
+        }
+      }
+      // The whole pill is the progress indicator (mpvrx): the fill grows from the left edge up
+      // to the play head underneath the controls. It is painted in the draw phase so the
+      // once-a-second position ticks repaint instead of recomposing the glass.
+      val pillBase =
+        miniAmbient?.copy(alpha = 0.55f)
+          ?: MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.96f)
+      val pillFillStart = MaterialTheme.colorScheme.primary.copy(alpha = 0.26f)
+      val pillFillEnd = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
+      val pillPlayhead = MaterialTheme.colorScheme.primary.copy(alpha = 0.9f)
       Row(
         modifier = Modifier
           .fillMaxWidth()
           .drawBehind {
+            drawRect(pillBase)
             val dur = duration?.toFloat() ?: 0f
             val pos = positionState.value?.toFloat() ?: 0f
-            val progressFraction = if (dur > 0f) (pos / dur).coerceIn(0f, 1f) else 0f
-            val trackY = size.height - 2.dp.toPx()
-            val radius = androidx.compose.ui.geometry.CornerRadius(1.dp.toPx())
-            drawRoundRect(color = progressTrackColor, topLeft = androidx.compose.ui.geometry.Offset(0f, trackY), size = Size(size.width, 2.dp.toPx()), cornerRadius = radius)
-            if (progressFraction > 0f) {
-              drawRoundRect(color = primaryContainerColor.copy(alpha = 0.72f), topLeft = androidx.compose.ui.geometry.Offset(0f, trackY), size = Size(size.width * progressFraction, 2.dp.toPx()), cornerRadius = radius)
+            val fraction = if (dur > 0f) (pos / dur).coerceIn(0f, 1f) else 0f
+            if (fraction > 0f) {
+              val filled = size.width * fraction
+              drawRect(
+                brush = Brush.horizontalGradient(
+                  colors = listOf(pillFillStart, pillFillEnd),
+                  startX = 0f,
+                  endX = size.width,
+                ),
+                size = Size(filled, size.height),
+              )
+              val headX = (filled - 1.dp.toPx()).coerceAtLeast(0f)
+              drawRect(
+                color = pillPlayhead,
+                topLeft = androidx.compose.ui.geometry.Offset(headX, 0f),
+                size = Size(1.5.dp.toPx(), size.height),
+              )
             }
           }
           .padding(horizontal = 12.dp, vertical = 8.dp),

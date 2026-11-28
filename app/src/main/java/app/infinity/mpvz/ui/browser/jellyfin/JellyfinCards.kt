@@ -531,18 +531,22 @@ fun JellyfinSectionHeader(
     horizontalArrangement = Arrangement.SpaceBetween,
     verticalAlignment = Alignment.CenterVertically,
   ) {
-    Column {
+    Column(modifier = Modifier.weight(1f, fill = false)) {
       Text(
         text = title,
         style = MaterialTheme.typography.titleMedium,
         fontWeight = FontWeight.Bold,
         color = MaterialTheme.colorScheme.onSurface,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
       )
       if (!subtitle.isNullOrBlank()) {
         Text(
           text = subtitle,
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
         )
       }
     }
@@ -804,7 +808,7 @@ fun JellyfinResumeCard(
         text = title,
         style = MaterialTheme.typography.bodyMedium,
         fontWeight = FontWeight.SemiBold,
-        maxLines = 1,
+        maxLines = 2,
         overflow = TextOverflow.Ellipsis,
         textAlign = TextAlign.Start,
         color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
@@ -814,7 +818,8 @@ fun JellyfinResumeCard(
         text = subtitle,
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        maxLines = 1,
+        // "S1:E4 • <episode name>" needs a second line; one clipped it mid-word.
+        maxLines = 2,
         overflow = TextOverflow.Ellipsis,
         textAlign = TextAlign.Start,
         modifier = Modifier.fillMaxWidth(),
@@ -1016,9 +1021,9 @@ fun JellyfinPosterCard(
               add(if (item.childCount == 1) "1 Season" else "${item.childCount} Seasons")
             } else if (item.type == "Episode") {
               if (item.parentIndexNumber != null && item.indexNumber != null) {
-                add("S${item.parentIndexNumber}:E${item.indexNumber}")
+                add("S${item.parentIndexNumber}:E${item.indexNumber} • ${item.name}")
               } else {
-                add("Episode")
+                add(item.name)
               }
             } else if (item.productionYear == null) {
               add(item.type)
@@ -1030,7 +1035,8 @@ fun JellyfinPosterCard(
         text = subtitle,
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        maxLines = 1,
+        // "S1:E4 • <episode name>" plus rating does not fit one line; two keeps names whole.
+        maxLines = 2,
         overflow = TextOverflow.Ellipsis,
         textAlign = TextAlign.Start,
         modifier = Modifier.fillMaxWidth(),
@@ -1548,12 +1554,22 @@ fun JellyfinEpisodeCard(
       }
 
       Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        val epPrefix = if (item.indexNumber != null) "EPISODE ${item.indexNumber} • " else ""
+        val epPrefix = if (item.indexNumber != null) "EPISODE ${item.indexNumber}" else ""
+        if (epPrefix.isNotEmpty()) {
+          Text(
+            text = epPrefix,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+          )
+        }
         Text(
-          text = "$epPrefix${item.name}",
+          text = item.name,
           style = MaterialTheme.typography.titleMedium,
           fontWeight = FontWeight.Bold,
-          maxLines = 1,
+          maxLines = 2,
           overflow = TextOverflow.Ellipsis,
         )
         if (!item.overview.isNullOrBlank()) {
@@ -1608,15 +1624,6 @@ fun JellyfinEpisodeCard(
             )
           }
         null -> {}
-      }
-
-      IconButton(onClick = onPlay) {
-        Icon(
-          imageVector = Icons.RoundedFilled.PlayArrow,
-          contentDescription = "Play",
-          tint = MaterialTheme.colorScheme.primary,
-          modifier = Modifier.size(26.dp),
-        )
       }
     }
   }

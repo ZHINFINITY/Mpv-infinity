@@ -52,6 +52,7 @@ enum class PlayerButton(
   NONE(Icons.RoundedFilled.Bookmarks),
   FRAME_INTERPOLATION(Icons.RoundedFilled.AutoAwesome),
   FRAME_INTERPOLATION_FPS(Icons.RoundedFilled.TargetFps),
+  FX(Icons.RoundedFilled.AutoFixHigh),
 }
 
 /**
@@ -103,4 +104,5 @@ fun getPlayerButtonLabel(button: PlayerButton): String =
     PlayerButton.NONE -> stringResource(R.string.btn_label_none)
     PlayerButton.FRAME_INTERPOLATION -> stringResource(R.string.pref_decoder_mpvflow_title)
     PlayerButton.FRAME_INTERPOLATION_FPS -> stringResource(R.string.player_interpolation_target_fps)
+    PlayerButton.FX -> "Effects"
   }

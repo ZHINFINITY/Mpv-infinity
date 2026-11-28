@@ -61,6 +61,7 @@ fun VideoSettingsPanel(
       verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.medium),
     ) {
       VideoSettingsFilterPresetsCard()
+      VideoSettingsFxCard()
       VideoSettingsFiltersCard()
       VideoSettingsDebandCard()
     }

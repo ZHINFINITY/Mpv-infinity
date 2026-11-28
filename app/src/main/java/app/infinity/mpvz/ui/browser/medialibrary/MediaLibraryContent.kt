@@ -114,6 +114,7 @@ import app.infinity.mpvz.ui.securefolder.SecureFolderGateScreen
 import app.infinity.mpvz.ui.utils.LocalBackStack
 import app.infinity.mpvz.utils.history.RecentlyPlayedOps
 import app.infinity.mpvz.utils.media.CopyPasteOps
+import app.infinity.mpvz.ui.browser.music.MusicPlaybackLauncher
 import app.infinity.mpvz.utils.media.MediaUtils
 import app.infinity.mpvz.utils.media.OpenDocumentTreeContract
 import app.infinity.mpvz.utils.sort.SortUtils
@@ -327,7 +328,18 @@ fun MediaLibraryContent(forceAudio: Boolean = false) {
 
   fun playFromMediaLibrary(video: Video) {
     if (!playlistMode || mediaTypeVideosWithInfo.size <= 1) {
-      MediaUtils.playFile(video, context, "media_library")
+      // Music files must open the music player (same as library playback), not
+      // the legacy player UI — including when reached from search results.
+      coroutineScope.launch {
+        val opened = MusicPlaybackLauncher.playLocalAudioPathsIfPresent(
+          context = context,
+          paths = listOf(video.path),
+          fallbackTitles = listOf<String?>(video.displayName),
+          currentIndex = 0,
+          launchSource = "media_library",
+        )
+        if (!opened) MediaUtils.playFile(video, context, "media_library")
+      }
       return
     }
 

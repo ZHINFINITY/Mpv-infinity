@@ -80,6 +80,12 @@
   <string name="pref_nav_navidrome_summary">Navidrome in der unteren Navigationsleiste ein- oder ausblenden</string>
   <string name="pref_nav_audiobooks_title">Hörbücher-Tab anzeigen</string>
   <string name="pref_nav_audiobooks_summary">Lokale Hörbücher und Audiobookshelf-Hörbücher in der unteren Navigationsleiste ein- oder ausblenden</string>
+
+  <string name="pref_nav_profile_title">Profil-Tab anzeigen</string>
+  <string name="pref_nav_profile_summary">Profil-Bereich in der unteren Navigationsleiste ein- oder ausblenden</string>
+  <string name="playlist_zip_option_title">Zip-Datei abspielen</string>
+  <string name="playlist_zip_option_summary">Wähle ein Zip-Archiv mit Videos oder Musik und spiele es wie eine Playlist ab</string>
+  <string name="playlist_zip_option_failed">Zip-Datei konnte nicht geöffnet werden</string>
   <string name="pref_section_network">Netzwerk</string>
   <string name="pref_media_servers_title">Medienserver</string>
   <string name="pref_media_servers_summary">Jellyfin-, Navidrome- und Audiobookshelf-Verbindungen verwalten</string>
@@ -1199,6 +1205,9 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="ui_view_options">Ansichtsoptionen</string>
   <string name="ambient_glow">Leuchten</string>
   <string name="ambient_style_youtube">YouTube</string>
+  <string name="ambient_style_cinema">Kino</string>
+  <string name="ambient_style_echo">Echo</string>
+  <string name="ambient_style_mirror">Spiegel</string>
   <string name="ambient_color">Farbe</string>
   <string name="ambient_compositing">Compositing</string>
   <string name="ambient_visual_style">Visueller Stil</string>

@@ -11,6 +11,8 @@ import androidx.annotation.StringRes
 import app.infinity.mpvz.R
 import app.infinity.mpvz.preferences.preference.PreferenceStore
 import app.infinity.mpvz.preferences.preference.getEnum
+import app.infinity.mpvz.ui.player.controls.components.sheets.EqualizerMode
+import app.infinity.mpvz.ui.player.controls.components.sheets.EqualizerPreset
 
 class AudioPreferences(
   preferenceStore: PreferenceStore,
@@ -31,11 +33,25 @@ class AudioPreferences(
   val volumeNormalization = preferenceStore.getBoolean("audio_volume_normalization", false)
   val drcEnabled = preferenceStore.getBoolean("audio_drc_enabled", false)
   val showAudioVisualizer = preferenceStore.getBoolean("show_audio_visualizer", false)
+  /** Persisted equalizer state, so a new playback session restores the user's settings. */
+  val equalizerEnabled = preferenceStore.getBoolean("audio_equalizer_enabled", false)
+  val equalizerMode = preferenceStore.getEnum("audio_equalizer_mode", EqualizerMode.DYNAMIC)
+  val equalizerPreset = preferenceStore.getEnum("audio_equalizer_preset", EqualizerPreset.FLAT)
+  val equalizerBandGains = preferenceStore.getObject(
+    key = "audio_equalizer_band_gains",
+    defaultValue = listOf(0f, 0f, 0f, 0f, 0f, 0f, 0f),
+    serializer = { list -> list.joinToString(",") { it.toString() } },
+    deserializer = { str ->
+      str.split(",").mapNotNull { it.toFloatOrNull() }.ifEmpty { listOf(0f, 0f, 0f, 0f, 0f, 0f, 0f) }
+    },
+  )
+  val equalizerVolumeBoostDb = preferenceStore.getInt("audio_equalizer_volume_boost_db", 0)
   val audioVisualizerStyle = preferenceStore.getEnum("audio_visualizer_style", AudioVisualizerStyle.Blob)
   val audioOrientation = preferenceStore.getEnum("audio_player_orientation", AudioPlayerOrientation.Auto)
   val audioAmbientMode = preferenceStore.getBoolean("audio_ambient_mode", true)
   /** Use artwork-derived colors for the music player background instead of the app theme. */
   val audioPaletteBackground = preferenceStore.getBoolean("audio_palette_background", true)
+  val audioImmersiveArtwork = preferenceStore.getBoolean("audio_immersive_artwork", true)
   val audioStandbyMode = preferenceStore.getBoolean("audio_standby_mode", false)
   val audioStandbyDelaySeconds = preferenceStore.getInt("audio_standby_delay_seconds", 5)
   val audioWavySeekbar = preferenceStore.getBoolean("audio_wavy_seekbar", true)

@@ -34,6 +34,7 @@ import org.libtorrent4j.SessionHandle
 import org.libtorrent4j.SessionManager
 import org.libtorrent4j.SessionParams
 import org.libtorrent4j.SettingsPack
+import org.libtorrent4j.swig.settings_pack
 import org.libtorrent4j.Sha1Hash
 import org.libtorrent4j.TorrentFlags
 import org.libtorrent4j.TorrentHandle
@@ -336,6 +337,13 @@ class TorrentStreamingEngine(
           setMaxMetadataSize(MAX_METADATA_BYTES.toInt())
           setEnableDht(true)
           setEnableLsd(true)
+          // Streaming tuning: keep enough peer slots and connections open that the time-critical
+          // piece deadlines always have a fast peer to request from.
+          connectionsLimit(300)
+          activeDownloads(-1)
+          setInteger(settings_pack.int_types.unchoke_slots_limit.swigValue(), 24)
+          alertQueueSize(20_000)
+          maxQueuedDiskBytes(4 * 1024 * 1024)
         }
       startedSession.start(SessionParams(settings))
       ensureCurrent(startGeneration)

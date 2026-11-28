@@ -332,6 +332,7 @@ object PlaylistScreen : Screen {
       onDismiss = { showPlaylistActionSheet = false },
       onCreatePlaylist = viewModel::createPlaylist,
       onCreateM3UPlaylistFromFile = { uri, forceRadio ->
+
         viewModel.createM3UPlaylistFromFile(uri, forceRadio).also { result ->
           if (result.isSuccess) viewModel.refresh()
         }
@@ -342,6 +343,29 @@ object PlaylistScreen : Screen {
         }
       },
       context = context,
+      onPlayZipFile = { uri ->
+        scope.launch {
+          val archive =
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+              app.infinity.mpvz.domain.archive.ZipArchiveMedia.openForPlayback(context, uri)
+            }
+          if (archive != null) {
+            app.infinity.mpvz.utils.media.MediaUtils.playFile(
+              source = archive.absolutePath,
+              context = context,
+              launchSource = "zip_archive",
+              title = archive.nameWithoutExtension,
+            )
+          } else {
+            android.widget.Toast
+              .makeText(
+                context,
+                context.getString(app.infinity.mpvz.R.string.playlist_zip_option_failed),
+                android.widget.Toast.LENGTH_LONG,
+              ).show()
+          }
+        }
+      },
     )
 
     if (showRenameDialog && selectionManager.isSingleSelection) {

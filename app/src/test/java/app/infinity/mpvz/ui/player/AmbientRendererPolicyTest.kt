@@ -19,12 +19,13 @@ class AmbientRendererPolicyTest {
   private fun source(path: String) = File(root, "app/src/main/java/app/infinity/mpvz/$path").readText()
 
   @Test
-  fun onlyAnExplicitLegacyGpuOutputUsesGlowShaderPath() {
+  fun bothMpvGpuRenderersUseTheGlowShaderPath() {
     assertTrue(AmbientRendererPolicy.usesFrameCapturedAmbient(nativeEngineActive = false, videoOutput = null))
-    assertTrue(AmbientRendererPolicy.usesFrameCapturedAmbient(nativeEngineActive = false, videoOutput = "gpu-next"))
-    assertTrue(AmbientRendererPolicy.usesFrameCapturedAmbient(nativeEngineActive = false, videoOutput = "GPU-NEXT"))
+    assertFalse(AmbientRendererPolicy.usesFrameCapturedAmbient(nativeEngineActive = false, videoOutput = "gpu-next"))
+    assertFalse(AmbientRendererPolicy.usesFrameCapturedAmbient(nativeEngineActive = false, videoOutput = "GPU-NEXT"))
     assertFalse(AmbientRendererPolicy.usesFrameCapturedAmbient(nativeEngineActive = false, videoOutput = "gpu"))
     assertTrue(AmbientRendererPolicy.usesFrameCapturedAmbient(nativeEngineActive = true, videoOutput = "gpu"))
+    assertTrue(AmbientRendererPolicy.usesFrameCapturedAmbient(nativeEngineActive = false, videoOutput = "mediacodec_embed"))
   }
 
   @Test
@@ -94,7 +95,7 @@ class AmbientRendererPolicyTest {
     assertTrue(mpvView.contains("PlaybackSession.observeProperty(\"vo\", MPVLib.MpvFormat.MPV_FORMAT_STRING)"))
     assertTrue(viewModel.contains("&& !frameCapturedAmbientFallback"))
     assertTrue(viewModel.contains("@Volatile private var frameCapturedAmbientFallback = true"))
-    assertTrue(fallbackSetter.contains("AmbientRendererPolicy.shouldResumeGlowAfterFrameCaptureFallback(enabled, isAmbientGlowRuntimeActive())"))
+    assertTrue(fallbackSetter.contains("AmbientRendererPolicy.shouldResumeGlowAfterFrameCaptureFallback(enabled, isAmbientShaderRuntimeActive())"))
     assertTrue(fallbackSetter.contains("scheduleAmbientUpdate(0)"))
     assertTrue(viewModel.contains("if (enabled) {\n      disableAmbientShader()"))
   }
@@ -107,7 +108,7 @@ class AmbientRendererPolicyTest {
       AmbientRendererPolicy.usesFrameCapturedAmbient(nativeEngineActive = false, videoOutput = output)
     }
 
-    assertEquals(listOf(true, false), fallbackStates)
+    assertEquals(listOf(false, false), fallbackStates)
     assertTrue(activity.contains("PlaybackSession.propString[\"vo\"].collectAsState()"))
     assertTrue(activity.contains("LaunchedEffect(usesFrameCapturedAmbient)"))
     assertTrue(activity.contains("viewModel.setFrameCapturedAmbientFallback(usesFrameCapturedAmbient)"))

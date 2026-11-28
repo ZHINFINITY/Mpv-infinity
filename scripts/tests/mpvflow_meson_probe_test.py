@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Guard FongMi source preparation against the retired Meson renderer-hook probe."""
+"""Guard Pinned source preparation against the retired Meson renderer-hook probe."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -7,7 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 PREPARE = (ROOT / "scripts/prepare-mpvflow.py").read_text(encoding="utf-8")
 
-# #140 intentionally keeps the native FongMi runtime path and no longer patches
+# #140 intentionally keeps the native Pinned runtime path and no longer patches
 # upstream MPV's Meson project to probe an app-owned renderer hook.
 for retired_marker in (
     "RENDERER_HOOK_PROBE",
@@ -19,4 +19,4 @@ for retired_marker in (
         f"retired renderer-hook Meson probe was reintroduced: {retired_marker}"
     )
 
-print("FongMi MPV preparation remains free of the retired Meson renderer-hook probe")
+print("Pinned MPV preparation remains free of the retired Meson renderer-hook probe")

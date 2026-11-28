@@ -295,7 +295,9 @@ fun JellyfinContent(
 
   LaunchedEffect(isMusicOnlyMode, uiState.activeServer?.id) {
     val server = uiState.activeServer
-    server?.let {
+    // Leaving and re-entering the tab re-runs this effect; only a real server/mode change may
+    // rebuild the dashboard, otherwise the whole library flashed and refetched on every return.
+    server?.takeIf { !viewModel.hasEnteredMode(it.id, isMusicOnlyMode) }?.let {
       if (isMusicOnlyMode) viewModel.enterMusicOnlyMode(it)
       else viewModel.enterFullLibraryMode(it)
     }
@@ -635,6 +637,21 @@ fun JellyfinContent(
                           title = "Continue Watching",
                           subtitle = "Jump back in",
                           items = uiState.resumeItems,
+                          server = server,
+                          isContinueWatching = true,
+                          onItemClick = { item -> viewModel.playItem(context, item) },
+                          onItemLongClick = { item -> viewModel.openDetail(item) },
+                        )
+                      }
+                    }
+
+                    // 3b. Next Up Section — the next unwatched episode of each series.
+                    if (uiState.nextUpItems.isNotEmpty()) {
+                      item {
+                        JellyfinHorizontalSection(
+                          title = "Next Up",
+                          subtitle = "New episodes in your series",
+                          items = uiState.nextUpItems,
                           server = server,
                           isContinueWatching = true,
                           onItemClick = { item -> viewModel.playItem(context, item) },

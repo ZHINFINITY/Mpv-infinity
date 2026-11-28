@@ -14,6 +14,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -133,6 +134,7 @@ fun AmbientSheet(
         modifier =
           Modifier
             .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 8.dp),
       ) {
         AmbientStyle.entries.forEachIndexed { index, style ->
@@ -152,7 +154,7 @@ fun AmbientSheet(
         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
       )
 
-      if (ambientStyle == AmbientStyle.Glow) {
+      if (ambientStyle.isShaderBacked) {
       // ── Quality Presets ──────────────────────────────────────────────
       Row(
         modifier =

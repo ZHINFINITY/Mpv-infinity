@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify Native Media3 pair-ghost policy and MPV FongMi MEMC in an APK."""
+"""Verify Native Media3 pair-ghost policy and MPV Pinned MEMC in an APK."""
 from __future__ import annotations
 import argparse
 import hashlib
@@ -9,7 +9,7 @@ import zipfile
 
 MPV_LIBRARY = "lib/arm64-v8a/libmpv.so"
 NATIVE_LIBRARY = "lib/arm64-v8a/libmedia3flow_vulkan.so"
-FONGMI_MEMC_OPTION = b"motion-interpolation"
+PINNED_MEMC_OPTION = b"motion-interpolation"
 PAIR_GHOST_MARKERS = (
     b"MPVFLOW_PAIR_GHOST_SPATIAL_GAP_V3",
     b"scene.r>=.003&&weak>=.04&&weak<=.25&&supported>=.008",
@@ -28,8 +28,8 @@ def verify_apk(apk: Path) -> dict:
         except KeyError as error:
             raise AssertionError("pair-ghost check missing packaged library: " + error.args[0]) from error
 
-    if FONGMI_MEMC_OPTION not in mpv_data:
-        raise AssertionError(f"{MPV_LIBRARY} lacks the FongMi MEMC option marker")
+    if PINNED_MEMC_OPTION not in mpv_data:
+        raise AssertionError(f"{MPV_LIBRARY} lacks the Pinned MEMC option marker")
     for marker in PAIR_GHOST_MARKERS:
         if marker not in native_data:
             raise AssertionError(f"{NATIVE_LIBRARY} lacks pair policy evidence: {marker.decode()}")
@@ -39,7 +39,7 @@ def verify_apk(apk: Path) -> dict:
             "library": MPV_LIBRARY,
             "sha256": hashlib.sha256(mpv_data).hexdigest(),
             "bytes": len(mpv_data),
-            "verified_markers": [FONGMI_MEMC_OPTION.decode("ascii")],
+            "verified_markers": [PINNED_MEMC_OPTION.decode("ascii")],
         },
         {
             "library": NATIVE_LIBRARY,
@@ -53,7 +53,7 @@ def verify_apk(apk: Path) -> dict:
         "apk": apk.name,
         "apk_sha256": hashlib.sha256(apk.read_bytes()).hexdigest(),
         "libraries": records,
-        "limits": "Packaging proof only; MPV FongMi MEMC and Native pair-policy checks are separate, not phone visual/performance proof.",
+        "limits": "Packaging proof only; MPV Pinned MEMC and Native pair-policy checks are separate, not phone visual/performance proof.",
     }
 
 
@@ -64,7 +64,7 @@ def main() -> None:
     report = verify_apk(args.apk)
     destination = args.apk.parent / "pair-ghost-verification.json"
     destination.write_text(json.dumps(report, indent=2) + "\n")
-    print("Native pair-ghost policy and MPV FongMi MEMC verified in separate arm64 libraries")
+    print("Native pair-ghost policy and MPV Pinned MEMC verified in separate arm64 libraries")
     print(destination)
 
 

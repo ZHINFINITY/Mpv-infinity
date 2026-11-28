@@ -10,7 +10,7 @@ package app.infinity.mpvz.utils.media
 import android.net.Uri
 import android.util.Log
 import app.infinity.mpvz.network.SharedHttpClient
-import app.infinity.mpvz.network.awaitResponse
+import app.infinity.mpvz.network.awaitResponseRetrying
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -191,7 +191,7 @@ class JellyfinSessionReporter(
           .post(jsonBody.toRequestBody(JSON_MEDIA_TYPE))
           .build()
 
-      httpClient.newCall(request).awaitResponse().use { response ->
+      httpClient.newCall(request).awaitResponseRetrying().use { response ->
         if (response.isSuccessful) {
           Log.d(TAG, "Successfully reported status to Jellyfin: $urlString")
         } else {

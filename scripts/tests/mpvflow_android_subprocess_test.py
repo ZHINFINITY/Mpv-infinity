@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Guard Android MPV subprocess fallback and FongMi MEMC runtime wiring."""
+"""Guard Android MPV subprocess fallback and Pinned MEMC runtime wiring."""
 from __future__ import annotations
 
 import importlib.util
@@ -43,10 +43,10 @@ class AndroidSubprocessFallbackTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             prepare.prefer_fork_for_android_mpv_subprocesses(CLONE_LINE + "\n" + CLONE_LINE)
 
-    def test_fongmi_interpolation_code_and_target_fps_option_remain_registered(self):
+    def test_pinned_interpolation_code_and_target_fps_option_remain_registered(self):
         prepare_source = (ROOT / "scripts/prepare-mpvflow.py").read_text(encoding="utf-8")
         mpv_view = (ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/MPVView.kt").read_text(encoding="utf-8")
-        self.assertNotIn("FONGMI_PATCH", prepare_source)
+        self.assertNotIn("PINNED_PATCH", prepare_source)
         self.assertIn('"video/out/gpu_next/motion.c"', prepare_source)
         self.assertIn('motion_option_marker = \'{"motion-interpolation", OPT_INT(motion_fps), M_RANGE(0, 240)}\'', prepare_source)
         self.assertIn('"video/out/hwdec/hwdec_aimagereader_vk_direct.c"', prepare_source)

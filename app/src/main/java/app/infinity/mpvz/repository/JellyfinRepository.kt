@@ -60,6 +60,12 @@ class JellyfinRepository(
   ): Result<List<JellyfinItem>> =
     client.getResumeItems(server.serverUrl, server.userId, server.accessToken, limit)
 
+  suspend fun getNextUpEpisodes(
+    server: JellyfinServer,
+    limit: Int = 12,
+  ): Result<List<JellyfinItem>> =
+    client.getNextUpEpisodes(server.serverUrl, server.userId, server.accessToken, limit)
+
   suspend fun getLatestMedia(
     server: JellyfinServer,
     parentId: String? = null,

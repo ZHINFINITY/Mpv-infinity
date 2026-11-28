@@ -364,9 +364,15 @@ object AppearancePreferencesScreen : Screen {
                     },
                     title = { Text("Liquid glass surfaces") },
                     summary = {
-                      Text(
-                        app.infinity.mpvz.ui.theme.GlassDeviceSupportText.summary(glassVerdict),
-                      )
+                      val engineText =
+                        if (liquidGlassSurfaces && app.infinity.mpvz.ui.theme.lens.LocalLensGlassEnabled.current) {
+                          "On — lens refraction active (Android 13+)"
+                        } else if (liquidGlassSurfaces) {
+                          "On — frost fallback on this device"
+                        } else {
+                          app.infinity.mpvz.ui.theme.GlassDeviceSupportText.summary(glassVerdict)
+                        }
+                      Text(engineText)
                     },
                     enabled = !glassVerdict.hard,
                   )
@@ -748,6 +754,29 @@ object AppearancePreferencesScreen : Screen {
                       AudioBadgeStyle.Frost -> "Frost"
                       AudioBadgeStyle.Liquid -> "Liquid Glass"
                       AudioBadgeStyle.Prism -> "Prism"
+                      AudioBadgeStyle.NeonCinema -> "Neon Cinema"
+                      AudioBadgeStyle.Goat -> "GOAT"
+                      AudioBadgeStyle.Shamil -> "Shamil"
+                      AudioBadgeStyle.ShamilSvg -> "Shamil SVG"
+                      AudioBadgeStyle.Cyrusir -> "Cyrus"
+                      AudioBadgeStyle.Blry12 -> "blry12"
+                      AudioBadgeStyle.Iaemtary -> "IaemTary"
+                      AudioBadgeStyle.Dustincos -> "Dustincos"
+                      AudioBadgeStyle.Tea -> "Tea"
+                      AudioBadgeStyle.Rayw -> "RayW"
+                      AudioBadgeStyle.Gold -> "Gold"
+                      AudioBadgeStyle.Sterzeck -> "Sterzeck"
+                      AudioBadgeStyle.BorderedColoured -> "Bordered Coloured"
+                      AudioBadgeStyle.FilledColoured -> "Filled Coloured"
+                      AudioBadgeStyle.FrBlackWhite -> "Black & White"
+                      AudioBadgeStyle.FrIconDark -> "Icon Dark"
+                      AudioBadgeStyle.FrIconLight -> "Icon Light"
+                      AudioBadgeStyle.FrLight -> "FR Light"
+                      AudioBadgeStyle.FrMinimal -> "FR Minimal"
+                      AudioBadgeStyle.FrNeonIcon -> "FR Neon Icon"
+                      AudioBadgeStyle.FrSplit -> "FR Split"
+                      AudioBadgeStyle.FrTextBlack -> "FR Text Black"
+                      AudioBadgeStyle.FrTextWhite -> "FR Text White"
                     },
                     color = MaterialTheme.colorScheme.outline,
                   )
@@ -944,12 +973,10 @@ object AppearancePreferencesScreen : Screen {
             PreferenceCard {
               val showHomeTab by preferences.showHomeTab.collectAsState()
               val showMusicTab by preferences.showMusicTab.collectAsState()
-              val showRecentsTab by preferences.showRecentsTab.collectAsState()
-              val showPlaylistsTab by preferences.showPlaylistsTab.collectAsState()
-              val showNetworkTab by preferences.showNetworkTab.collectAsState()
               val showJellyfinTab by preferences.showJellyfinTab.collectAsState()
               val showNavidromeTab by preferences.showNavidromeTab.collectAsState()
               val showAudiobooksTab by preferences.showAudiobooksTab.collectAsState()
+              val showProfileTab by preferences.showProfileTab.collectAsState()
 
               SwitchPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.pref_nav_home_title),
@@ -974,51 +1001,6 @@ object AppearancePreferencesScreen : Screen {
                 summary = {
                   Text(
                     text = stringResource(id = R.string.pref_nav_music_summary),
-                    color = MaterialTheme.colorScheme.outline,
-                  )
-                },
-              )
-
-              PreferenceDivider()
-
-              SwitchPreference(
-                modifier = Modifier.settingsSearchTarget(R.string.pref_nav_recents_title),
-                value = showRecentsTab,
-                onValueChange = preferences.showRecentsTab::set,
-                title = { Text(text = stringResource(id = R.string.pref_nav_recents_title)) },
-                summary = {
-                  Text(
-                    text = stringResource(id = R.string.pref_nav_recents_summary),
-                    color = MaterialTheme.colorScheme.outline,
-                  )
-                },
-              )
-
-              PreferenceDivider()
-
-              SwitchPreference(
-                modifier = Modifier.settingsSearchTarget(R.string.pref_nav_playlists_title),
-                value = showPlaylistsTab,
-                onValueChange = preferences.showPlaylistsTab::set,
-                title = { Text(text = stringResource(id = R.string.pref_nav_playlists_title)) },
-                summary = {
-                  Text(
-                    text = stringResource(id = R.string.pref_nav_playlists_summary),
-                    color = MaterialTheme.colorScheme.outline,
-                  )
-                },
-              )
-
-              PreferenceDivider()
-
-              SwitchPreference(
-                modifier = Modifier.settingsSearchTarget(R.string.pref_nav_network_title),
-                value = showNetworkTab,
-                onValueChange = preferences.showNetworkTab::set,
-                title = { Text(text = stringResource(id = R.string.pref_nav_network_title)) },
-                summary = {
-                  Text(
-                    text = stringResource(id = R.string.pref_nav_network_summary),
                     color = MaterialTheme.colorScheme.outline,
                   )
                 },
@@ -1064,6 +1046,21 @@ object AppearancePreferencesScreen : Screen {
                 summary = {
                   Text(
                     text = stringResource(id = R.string.pref_nav_audiobooks_summary),
+                    color = MaterialTheme.colorScheme.outline,
+                  )
+                },
+              )
+
+              PreferenceDivider()
+
+              SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_nav_profile_title),
+                value = showProfileTab,
+                onValueChange = preferences.showProfileTab::set,
+                title = { Text(text = stringResource(id = R.string.pref_nav_profile_title)) },
+                summary = {
+                  Text(
+                    text = stringResource(id = R.string.pref_nav_profile_summary),
                     color = MaterialTheme.colorScheme.outline,
                   )
                 },

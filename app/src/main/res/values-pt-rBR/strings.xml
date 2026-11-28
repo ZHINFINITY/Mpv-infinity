@@ -80,6 +80,12 @@
   <string name="pref_nav_navidrome_summary">Mostrar ou ocultar Navidrome na barra de navegação inferior</string>
   <string name="pref_nav_audiobooks_title">Mostrar a aba Audiolivros</string>
   <string name="pref_nav_audiobooks_summary">Mostrar ou ocultar os audiolivros locais e do Audiobookshelf na barra de navegação inferior</string>
+
+  <string name="pref_nav_profile_title">Mostrar aba Perfil</string>
+  <string name="pref_nav_profile_summary">Mostrar ou ocultar a seção Perfil na barra de navegação inferior</string>
+  <string name="playlist_zip_option_title">Reproduzir um arquivo zip</string>
+  <string name="playlist_zip_option_summary">Escolha um arquivo zip com vídeos ou músicas e reproduza como uma lista</string>
+  <string name="playlist_zip_option_failed">Não foi possível abrir o arquivo zip</string>
   <string name="pref_section_network">Rede</string>
   <string name="pref_media_servers_title">Servidores de mídia</string>
   <string name="pref_media_servers_summary">Gerenciar conexões do Jellyfin, Navidrome e Audiobookshelf</string>
@@ -1199,6 +1205,9 @@ Reinicie o aplicativo para que todas as alterações entrem em vigor.</string>
   <string name="ui_view_options">Opções de visualização</string>
   <string name="ambient_glow">Brilho</string>
   <string name="ambient_style_youtube">YouTube</string>
+  <string name="ambient_style_cinema">Cinema</string>
+  <string name="ambient_style_echo">Eco</string>
+  <string name="ambient_style_mirror">Espelho</string>
   <string name="ambient_color">Cor</string>
   <string name="ambient_compositing">Composição</string>
   <string name="ambient_visual_style">Estilo visual</string>

@@ -450,6 +450,8 @@ class PlayerActivity :
    * Repository for managing playback state.
    */
   private val playbackStateRepository: PlaybackStateRepository by inject()
+  private val watchStatsRepository: app.infinity.mpvz.repository.WatchStatsRepository by inject()
+  private var watchStatsTickerJob: Job? = null
 
   private val torrentStreamingEngine: TorrentStreamingEngine by inject()
 
@@ -1611,6 +1613,7 @@ class PlayerActivity :
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
     activeNativeCloseActivity = WeakReference(this)
+    startWatchStatsTicker()
     requestAudioOpenFromMini(intent)
     Log.i(
       "Mpv∞-BuildIdentity",
@@ -1787,6 +1790,13 @@ class PlayerActivity :
     playerInitializationStarted = true
     applyInitialVideoOrientation(intent)
     setContentView(binding.root)
+    val snapshotSurfaceView = binding.media3Player.videoSurfaceView as? android.view.SurfaceView
+    if (snapshotSurfaceView != null) {
+      // WeakReference so the static holder can never pin a destroyed PlayerActivity (LeakCanary: the
+      // lambda captured `this` activity through the binding).
+      val surfaceRef = java.lang.ref.WeakReference(snapshotSurfaceView)
+      app.infinity.mpvz.ui.player.screenshot.ScreenshotSaver.nativeSurfaceProvider = { surfaceRef.get() }
+    }
     startMpvAssetPreparation()
     configureNativeEngineIfNeeded()
     releaseDetachedBackgroundPlaybackBeforeFreshLaunch()
@@ -2794,9 +2804,14 @@ class PlayerActivity :
       LaunchedEffect(usesFrameCapturedAmbient) {
         viewModel.setFrameCapturedAmbientFallback(usesFrameCapturedAmbient)
       }
-      // Native, gpu-next, and not-yet-resolved MPV outputs use frame capture; keep the selection
-      // stored so switching back to the compatible MPV renderer restores the user's preference.
+      // Native and not-yet-resolved MPV outputs use frame capture; both mpv GPU renderers run
+      // the styled ambient shaders. Keep the selection stored either way.
       val effectiveAmbientStyle = AmbientRendererPolicy.effectiveStyle(style, usesFrameCapturedAmbient)
+      // Pinching out scales the video view down and exposes whatever sits behind it. That needs
+      // the same captured frame the YouTube presentation uses, even when the ambient style is a
+      // shader: a shader only paints inside the video rect, so the revealed margin would
+      // otherwise stay black.
+      val videoZoom by viewModel.videoZoom.collectAsState()
       val active =
         enabled &&
           lifecycleActive &&
@@ -2805,6 +2820,15 @@ class PlayerActivity :
           !isAmbientPipMode &&
           playbackReady &&
           (if (nativeActive) nativeFrameAvailable else playbackState.surfaceAttached)
+      val revealsAmbientBackdrop =
+        enabled &&
+          lifecycleActive &&
+          !isAudioOnly &&
+          !isAmbientPipMode &&
+          playbackReady &&
+          !active &&
+          videoZoom < 0f
+      val captureActive = active || revealsAmbientBackdrop
       val ambientSurface = if (nativeActive) {
         binding.media3Player.videoSurfaceView as? android.view.SurfaceView
       } else {
@@ -2813,7 +2837,7 @@ class PlayerActivity :
       val ambientFrame =
         ambientSurface?.let { surface -> rememberVideoAmbientFrame(
           surfaceView = surface,
-          active = active,
+          active = captureActive,
           playbackGeneration = ambientPlaybackKey,
           hdrScreenMode = hdrScreenMode,
           orientation = orientation,
@@ -2843,17 +2867,19 @@ class PlayerActivity :
 
       // Auto-crop changes after playback becomes ready. Refreshing on the property itself keeps
       // YouTube Ambient's SurfaceView aligned with the newly cropped content rectangle.
-      LaunchedEffect(active, presentationActive, videoCrop) {
+      val showAmbientBackdrop = presentationActive ||
+        (revealsAmbientBackdrop && ambientFrame.supported && ambientFrame.frame != null)
+      LaunchedEffect(active, presentationActive, showAmbientBackdrop, videoCrop) {
         // Do not resize the video until a real ambient frame exists. Otherwise MPV briefly
         // renders fullscreen and is then compressed into the ambient aspect window.
         composedVideoAmbientPresentationActive = presentationActive
-        setVideoAmbientPresentationActive(presentationActive, showBackground = presentationActive)
+        setVideoAmbientPresentationActive(presentationActive, showBackground = showAmbientBackdrop)
       }
 
       // Player glass cannot sample this ComposeView, so share its colour with the controls.
-      LaunchedEffect(presentationActive, ambientFrame.base) {
+      LaunchedEffect(presentationActive, showAmbientBackdrop, ambientFrame.base) {
         app.infinity.mpvz.ui.theme.PlayerAmbientTint.publish(
-          if (presentationActive) ambientFrame.base else null,
+          if (showAmbientBackdrop) ambientFrame.base else null,
         )
       }
       androidx.compose.runtime.DisposableEffect(Unit) {
@@ -2877,7 +2903,10 @@ class PlayerActivity :
       }
 
       MpvInfinityTheme {
-        if (presentationActive) {
+        // showAmbientBackdrop also covers the margin that pinching out reveals: the layer was
+        // made visible for it but composed nothing unless a full presentation was active, so the
+        // revealed area stayed black.
+        if (showAmbientBackdrop) {
           VideoAmbientBackground(
             frame = ambientFrame.frame,
             baseColor = ambientFrame.base,
@@ -3319,6 +3348,7 @@ class PlayerActivity :
 
   override fun onDestroy() {
     Log.d(TAG, "PlayerActivity onDestroy")
+    app.infinity.mpvz.ui.player.screenshot.ScreenshotSaver.nativeSurfaceProvider = null
     nativeVideoSurfaceCallback?.let { callback ->
       nativeVideoSurfaceCallbackView?.holder?.removeCallback(callback)
     }
@@ -7597,6 +7627,69 @@ class PlayerActivity :
     }
   }
 
+  /**
+   * Samples playback every [WATCH_STATS_TICK_SECONDS] seconds and records watched time into
+   * [WatchStatsRepository]. Runs for both the MPV and native (Media3) engines; paused or idle
+   * ticks contribute nothing, so seeks and stalls do not inflate the totals.
+   */
+  private fun startWatchStatsTicker() {
+    watchStatsTickerJob?.cancel()
+    watchStatsTickerJob = lifecycleScope.launch {
+      while (isActive) {
+        delay(WATCH_STATS_TICK_MS)
+        runCatching { recordWatchStatsSegment(WATCH_STATS_TICK_SECONDS) }
+          .onFailure { Log.w(TAG, "Watch stats recording failed", it) }
+      }
+    }
+  }
+
+  private var watchStatsLastRecordAtMs: Long = 0L
+
+  private suspend fun recordWatchStatsSegment(seconds: Long) {
+    val item = PlaybackSession.queue.value.currentItem ?: return
+    val playing =
+      if (activeEngineMode == PlaybackEngineMode.NATIVE) {
+        nativeEngineOrNull()?.snapshot?.value?.isPlaying == true
+      } else {
+        PlaybackSession.getPropertyBoolean("pause") == false
+      }
+    if (!playing) return
+    val nativeSnapshot = if (activeEngineMode == PlaybackEngineMode.NATIVE) nativeEngineOrNull()?.snapshot?.value else null
+    val title = item.title?.takeIf { it.isNotBlank() }
+      ?: item.originalUri.substringAfterLast('/').takeIf { it.isNotBlank() }
+      ?: return
+    val nowMs = System.currentTimeMillis()
+    // A new "session" starts after a 2-minute gap (new item or a long pause), not on
+    // every 15-second tick, so the session count stays meaningful.
+    val countsAsSession = nowMs - watchStatsLastRecordAtMs > 120_000L
+    // Native engine: trust what the decoder actually reports. Streaming audio often has no
+    // declared kind and no mpv properties, so it was counted as video before this check.
+    val nativeReportsNoVideo = nativeSnapshot != null && nativeSnapshot.videoWidth == 0
+    val mpvVideoCodec = PlaybackSession.getPropertyString("video-codec")
+    // mpv exposes embedded album art as a video track (mjpeg/png/webp), so a music file with
+    // cover art reports a non-blank codec and must not be counted as video for stats.
+    val mpvVideoIsCoverArtOnly =
+      mpvVideoCodec?.lowercase() in setOf("mjpeg", "mjpb", "png", "webp", "bmp", "gif")
+    val mpvReportsNoVideo =
+      mpvVideoCodec.isNullOrBlank() &&
+        PlaybackSession.getPropertyString("video-format").isNullOrBlank()
+    val isAudio =
+      item.declaredMediaKind() == DeclaredPlaybackMediaKind.AUDIO ||
+        item.isDefinitelyAudioOnly() ||
+        (item.declaredMediaKind() == DeclaredPlaybackMediaKind.UNKNOWN &&
+          (nativeReportsNoVideo ||
+            (activeEngineMode != PlaybackEngineMode.NATIVE && (mpvReportsNoVideo || mpvVideoIsCoverArtOnly))))
+    watchStatsRepository.record(
+      title = title,
+      isAudio = isAudio,
+      seconds = seconds,
+      artworkUri = item.artworkUri,
+      sourceUri = item.originalUri,
+      countsAsSession = countsAsSession,
+    )
+    watchStatsLastRecordAtMs = nowMs
+  }
+
   private fun capturePlaybackStateSnapshot(mediaTitle: String): PlaybackStateSnapshot? {
     // Use the save-specific identifier so a save fired mid-transition (when mediaIdentifier
     // already points at the incoming item but MPV still reports the outgoing item's position)
@@ -11717,6 +11810,8 @@ class PlayerActivity :
   companion object {
     private val MPV_ASSET_PREPARATION_LOCK = Any()
     private const val MPV_ASSET_PREPARATION_WAIT_TIMEOUT_MS = 5_000L
+    private const val WATCH_STATS_TICK_SECONDS = 15L
+    private const val WATCH_STATS_TICK_MS = WATCH_STATS_TICK_SECONDS * 1000L
     @Volatile
     private var activeNativeCloseActivity: WeakReference<PlayerActivity>? = null
 

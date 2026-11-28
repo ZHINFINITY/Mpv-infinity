@@ -16,7 +16,7 @@ import app.infinity.mpvz.domain.jellyfin.JellyfinAuthResult
 import app.infinity.mpvz.domain.jellyfin.JellyfinItem
 import app.infinity.mpvz.domain.jellyfin.JellyfinMediaSource
 import app.infinity.mpvz.domain.jellyfin.JellyfinUser
-import app.infinity.mpvz.network.awaitResponse
+import app.infinity.mpvz.network.awaitResponseRetrying
 import app.infinity.mpvz.utils.media.PlaybackSubtitleTrack
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -206,7 +206,7 @@ class JellyfinClient(
               .build()
 
           val result =
-            httpClient.newCall(request).awaitResponse().use { response ->
+            httpClient.newCall(request).awaitResponseRetrying().use { response ->
               if (!response.isSuccessful) {
                 throw IOException("Authentication failed: HTTP ${response.code} ${response.message}")
               }
@@ -261,7 +261,7 @@ class JellyfinClient(
               .build()
 
           val result =
-            httpClient.newCall(request).awaitResponse().use { response ->
+            httpClient.newCall(request).awaitResponseRetrying().use { response ->
               if (!response.isSuccessful) {
                 throw IOException("Token validation failed: HTTP ${response.code} ${response.message}")
               }
@@ -311,7 +311,7 @@ class JellyfinClient(
             .get()
             .build()
 
-        httpClient.newCall(request).awaitResponse().use { response ->
+        httpClient.newCall(request).awaitResponseRetrying().use { response ->
           if (!response.isSuccessful) {
             throw IOException("Failed to load libraries: HTTP ${response.code}")
           }
@@ -342,7 +342,7 @@ class JellyfinClient(
             .get()
             .build()
 
-        httpClient.newCall(request).awaitResponse().use { response ->
+        httpClient.newCall(request).awaitResponseRetrying().use { response ->
           if (!response.isSuccessful) {
             throw IOException("Failed to load genres: HTTP ${response.code}")
           }
@@ -372,9 +372,40 @@ class JellyfinClient(
             .get()
             .build()
 
-        httpClient.newCall(request).awaitResponse().use { response ->
+        httpClient.newCall(request).awaitResponseRetrying().use { response ->
           if (!response.isSuccessful) {
             throw IOException("Failed to load resume items: HTTP ${response.code}")
+          }
+          val bodyStr = response.body.string()
+          val root = json.parseToJsonElement(bodyStr).jsonObject
+          val itemsArray = root["Items"]?.jsonArray ?: JsonArray(emptyList())
+          itemsArray.map { parseItem(it.jsonObject) }
+        }
+      }
+    }
+
+  suspend fun getNextUpEpisodes(
+    serverUrl: String,
+    userId: String,
+    token: String,
+    limit: Int = 12,
+  ): Result<List<JellyfinItem>> =
+    withContext(Dispatchers.IO) {
+      runCatching {
+        val base = normalizeUrl(serverUrl)
+        val endpoint =
+          "$base/Shows/NextUp?UserId=$userId&Limit=$limit&Fields=Overview,PrimaryImageAspectRatio,UserData,SeriesName,SeriesId,SeriesPrimaryImageTag,SeasonName,IndexNumber,ParentIndexNumber,MediaSources,MediaStreams,Genres,OfficialRating,CommunityRating,CriticRating,ProductionYear,Taglines,PremiereDate,Status"
+        val request =
+          Request
+            .Builder()
+            .url(endpoint)
+            .addJellyfinHeaders(token)
+            .get()
+            .build()
+
+        httpClient.newCall(request).awaitResponseRetrying().use { response ->
+          if (!response.isSuccessful) {
+            throw IOException("Failed to load next up episodes: HTTP ${response.code}")
           }
           val bodyStr = response.body.string()
           val root = json.parseToJsonElement(bodyStr).jsonObject
@@ -407,7 +438,7 @@ class JellyfinClient(
             .get()
             .build()
 
-        httpClient.newCall(request).awaitResponse().use { response ->
+        httpClient.newCall(request).awaitResponseRetrying().use { response ->
           if (!response.isSuccessful) {
             throw IOException("Failed to load latest media: HTTP ${response.code}")
           }
@@ -443,7 +474,7 @@ class JellyfinClient(
             .get()
             .build()
 
-        httpClient.newCall(request).awaitResponse().use { response ->
+        httpClient.newCall(request).awaitResponseRetrying().use { response ->
           if (!response.isSuccessful) {
             throw IOException("Failed to load suggestions: HTTP ${response.code}")
           }
@@ -480,7 +511,7 @@ class JellyfinClient(
             .get()
             .build()
 
-        httpClient.newCall(request).awaitResponse().use { response ->
+        httpClient.newCall(request).awaitResponseRetrying().use { response ->
           if (!response.isSuccessful) {
             throw IOException("Failed to load similar items: HTTP ${response.code}")
           }
@@ -511,7 +542,7 @@ class JellyfinClient(
             .get()
             .build()
 
-        httpClient.newCall(request).awaitResponse().use { response ->
+        httpClient.newCall(request).awaitResponseRetrying().use { response ->
           if (!response.isSuccessful) {
             throw IOException("Failed to load item: HTTP ${response.code}")
           }
@@ -580,7 +611,7 @@ class JellyfinClient(
             .get()
             .build()
 
-        httpClient.newCall(request).awaitResponse().use { response ->
+        httpClient.newCall(request).awaitResponseRetrying().use { response ->
           if (!response.isSuccessful) {
             throw IOException("Failed to load items: HTTP ${response.code}")
           }
@@ -636,7 +667,7 @@ class JellyfinClient(
             .get()
             .build()
 
-        httpClient.newCall(request).awaitResponse().use { response ->
+        httpClient.newCall(request).awaitResponseRetrying().use { response ->
           if (!response.isSuccessful) {
             throw IOException("Failed to load artists: HTTP ${response.code}")
           }
@@ -673,7 +704,7 @@ class JellyfinClient(
             .get()
             .build()
 
-        httpClient.newCall(request).awaitResponse().use { response ->
+        httpClient.newCall(request).awaitResponseRetrying().use { response ->
           if (!response.isSuccessful) {
             throw IOException("Failed to load seasons: HTTP ${response.code}")
           }
@@ -705,7 +736,7 @@ class JellyfinClient(
             .get()
             .build()
 
-        httpClient.newCall(request).awaitResponse().use { response ->
+        httpClient.newCall(request).awaitResponseRetrying().use { response ->
           if (!response.isSuccessful) {
             throw IOException("Failed to load episodes: HTTP ${response.code}")
           }
@@ -751,7 +782,7 @@ class JellyfinClient(
     runCatching {
       val endpoint = "${normalizeUrl(serverUrl)}/Users/$userId/Items/$itemId?Fields=MediaSources"
       val request = Request.Builder().url(endpoint).addJellyfinHeaders(token).get().build()
-      httpClient.newCall(request).awaitResponse().use { response ->
+      httpClient.newCall(request).awaitResponseRetrying().use { response ->
         check(response.isSuccessful) { "HTTP ${response.code}" }
         val sources = json.parseToJsonElement(response.body.string()).jsonObject["MediaSources"]?.jsonArray.orEmpty()
         sources.mapNotNull { element ->
@@ -793,7 +824,7 @@ class JellyfinClient(
             .get()
             .build()
 
-        httpClient.newCall(request).awaitResponse().use { response ->
+        httpClient.newCall(request).awaitResponseRetrying().use { response ->
           if (!response.isSuccessful) {
             return@use emptyList<PlaybackSubtitleTrack>()
           }
@@ -862,7 +893,7 @@ class JellyfinClient(
           .post(payload.toRequestBody(JSON_MEDIA_TYPE))
           .build()
 
-      httpClient.newCall(request).awaitResponse().close()
+      httpClient.newCall(request).awaitResponseRetrying().close()
     }.onFailure { Log.w(TAG, "Failed reporting playback start: ${it.message}") }
   }
 
@@ -894,7 +925,7 @@ class JellyfinClient(
           .post(payload.toRequestBody(JSON_MEDIA_TYPE))
           .build()
 
-      httpClient.newCall(request).awaitResponse().close()
+      httpClient.newCall(request).awaitResponseRetrying().close()
     }.onFailure { Log.w(TAG, "Failed reporting playback progress: ${it.message}") }
   }
 
@@ -924,7 +955,7 @@ class JellyfinClient(
           .post(payload.toRequestBody(JSON_MEDIA_TYPE))
           .build()
 
-      httpClient.newCall(request).awaitResponse().close()
+      httpClient.newCall(request).awaitResponseRetrying().close()
     }.onFailure { Log.w(TAG, "Failed reporting playback stop: ${it.message}") }
   }
 
@@ -945,7 +976,7 @@ class JellyfinClient(
             .addJellyfinHeaders(token)
             .post(ByteArray(0).toRequestBody(null))
             .build()
-        httpClient.newCall(request).awaitResponse().use { response ->
+        httpClient.newCall(request).awaitResponseRetrying().use { response ->
           if (!response.isSuccessful) throw IOException("Failed to mark as played: HTTP ${response.code}")
         }
       }
@@ -968,7 +999,7 @@ class JellyfinClient(
             .addJellyfinHeaders(token)
             .delete()
             .build()
-        httpClient.newCall(request).awaitResponse().use { response ->
+        httpClient.newCall(request).awaitResponseRetrying().use { response ->
           if (!response.isSuccessful) throw IOException("Failed to mark as unplayed: HTTP ${response.code}")
         }
       }
@@ -1001,7 +1032,7 @@ class JellyfinClient(
               .delete()
               .build()
           }
-        httpClient.newCall(request).awaitResponse().use { response ->
+        httpClient.newCall(request).awaitResponseRetrying().use { response ->
           if (!response.isSuccessful) throw IOException("Failed to toggle favorite: HTTP ${response.code}")
         }
       }
@@ -1190,7 +1221,7 @@ class JellyfinClient(
             .post("".toRequestBody(JSON_MEDIA_TYPE))
             .build()
 
-        httpClient.newCall(request).awaitResponse().use { response ->
+        httpClient.newCall(request).awaitResponseRetrying().use { response ->
           if (!response.isSuccessful) {
             return@withContext Result.failure(IOException("Create playlist failed: ${response.code} ${response.message}"))
           }
@@ -1224,7 +1255,7 @@ class JellyfinClient(
             .post("".toRequestBody(JSON_MEDIA_TYPE))
             .build()
 
-        httpClient.newCall(request).awaitResponse().use { response ->
+        httpClient.newCall(request).awaitResponseRetrying().use { response ->
           if (!response.isSuccessful) {
             return@withContext Result.failure(IOException("Add to playlist failed: ${response.code} ${response.message}"))
           }
@@ -1252,7 +1283,7 @@ class JellyfinClient(
             .delete()
             .build()
 
-        httpClient.newCall(request).awaitResponse().use { response ->
+        httpClient.newCall(request).awaitResponseRetrying().use { response ->
           if (!response.isSuccessful && response.code != 204) {
             return@withContext Result.failure(IOException("Delete item failed: ${response.code} ${response.message}"))
           }

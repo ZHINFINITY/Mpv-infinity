@@ -17,9 +17,9 @@ import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
-APP_FIXTURE = ROOT / "app/src/main/cpp/mpvflow/fongmi/test/gpu_motion.c"
-APP_MOTION = ROOT / "app/src/main/cpp/mpvflow/fongmi/motion.c"
-APP_SHADER_GENERATOR = ROOT / "app/src/main/cpp/mpvflow/fongmi/test/gpu_motion.py"
+APP_FIXTURE = ROOT / "app/src/main/cpp/mpvflow/pinned/test/gpu_motion.c"
+APP_MOTION = ROOT / "app/src/main/cpp/mpvflow/pinned/motion.c"
+APP_SHADER_GENERATOR = ROOT / "app/src/main/cpp/mpvflow/pinned/test/gpu_motion.py"
 MPV_REVISION = "645f8ecdd3c94379048e9ee3e7014e174de0bd02"
 MATCH_GROUP_SIZE_MARKER = "#define MATCH_GROUP_SIZE 64"
 MATCH_SHARED_BYTES_MARKER = (

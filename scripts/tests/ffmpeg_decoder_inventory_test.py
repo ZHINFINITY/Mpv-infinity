@@ -95,7 +95,7 @@ class DecoderInventoryTest(unittest.TestCase):
         lib.codec_list(truehd)
         self.assertEqual({"truehd": True}, audio_decoders_present(lib.image(), ["truehd"]))
 
-    def test_pinned_ffmpeg_n9_0_and_fongmi_n9_1_flag_layout_is_unchanged(self) -> None:
+    def test_pinned_ffmpeg_n9_0_and_pinned_n9_1_flag_layout_is_unchanged(self) -> None:
         self.assertEqual(56, FFCODEC_FLAGS_OFFSET)
         self.assertEqual(1 << 24, FFCODEC_IS_DECODER_MASK)
 

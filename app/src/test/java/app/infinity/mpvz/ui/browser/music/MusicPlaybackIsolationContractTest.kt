@@ -14,18 +14,29 @@ class MusicPlaybackIsolationContractTest {
     File(root, "app/src/main/java/app/infinity/mpvz/ui/browser/music/$name").readText()
 
   @Test
-  fun localMusicRoutesToItsOwnActivityAndQueueStore() {
+  fun localMusicRoutesToTheSharedNowPlayingPlayer() {
     val launcher = musicSource("MusicPlaybackLauncher.kt")
 
-    assertTrue(launcher.contains("Intent(context, MusicPlayerActivity::class.java)"))
-    assertTrue(launcher.contains("MusicQueueLaunchStore.stage(songs, selectedIndex, launchSource)"))
+    assertTrue(launcher.contains("playSongsOnSharedPlayer(context, songs, selectedIndex, launchSource)"))
+    assertFalse(launcher.contains("MusicPlayerActivity::class.java"))
     assertTrue(launcher.contains("playRecentAudioPathIfPresent"))
-    assertTrue(launcher.contains("if (songs.any { isAudiobookSong(it) })"))
-    assertTrue(launcher.contains("playAudiobookSongsOnLegacyPlayer(context, songs, selectedIndex, launchSource)"))
     assertTrue(launcher.contains("fun isEligibleLocalMusicPath(path: String): Boolean"))
     assertTrue(launcher.contains("scheme != \"file\" && scheme != \"content\""))
     assertTrue(launcher.contains("setOf(\"aa\", \"aax\", \"aaxc\", \"m4b\")"))
     assertTrue(launcher.contains("AudiobookMarkerUtils.isAudiobookPath(path)"))
+  }
+
+  @Test
+  fun filesystemSearchAudioOpensTheSharedPlayerToo() {
+    val screen =
+      File(
+          root,
+          "app/src/main/java/app/infinity/mpvz/ui/browser/filesystem/FileSystemBrowserScreen.kt",
+        )
+        .readText()
+
+    assertTrue(screen.contains("MusicPlaybackLauncher.playLocalAudioPathsIfPresent"))
+    assertTrue(screen.contains("launchSource = \"search\""))
   }
 
   @Test

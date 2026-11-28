@@ -7,7 +7,6 @@
 
 package app.infinity.mpvz.preferences
 
-import app.infinity.mpvz.BuildConfig
 import app.infinity.mpvz.preferences.preference.PreferenceStore
 import app.infinity.mpvz.preferences.preference.getEnum
 import app.infinity.mpvz.ui.player.NotificationStyle
@@ -20,7 +19,9 @@ class AdvancedPreferences(
   val inputConf = preferenceStore.getString("input.conf")
   val mpvConfOverrides = preferenceStore.getStringSet("mpv_conf_overrides", emptySet())
 
-  val verboseLogging = preferenceStore.getBoolean("verbose_logging", BuildConfig.BUILD_TYPE != "release")
+  // Verbose libmpv logging streams every demuxer/decoder message through logcat, which costs
+  // CPU and I/O for the whole playback session. Keep it opt-in; warnings and errors still show.
+  val verboseLogging = preferenceStore.getBoolean("verbose_logging", false)
 
   val enabledStatisticsPage = preferenceStore.getInt("enabled_stats_page", 0)
 

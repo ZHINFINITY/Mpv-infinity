@@ -37,8 +37,12 @@ class MiniPlayer1944ContractTest {
     assertTrue(m.contains("R.string.ui_play"))
     assertTrue(m.contains("R.string.ui_next"))
     assertTrue(m.contains("R.string.ui_close"))
-    assertEquals(2, Regex("drawRoundRect\\(color = primaryContainerColor.copy\\(alpha = 0.72f\\)").findAll(m).count())
-    assertTrue(m.contains("val trackY = size.height - 2.dp.toPx()"))
+    // The whole audio pill is the progress bar (mpvrx): one base rect plus a fill that grows to a
+    // play head, all painted in the draw phase before the padding so it spans the full pill. The
+    // old 2dp hairline sat under an opaque background and was never visible.
+    assertTrue(m.contains("drawRect(pillBase)"))
+    assertTrue(m.contains("Brush.horizontalGradient("))
+    assertTrue(m.contains("color = pillPlayhead"))
   }
 
   @Test fun directQuickPlayHidesButNonDirectMenusRemainWhenMiniPlayerOwnsTheBrowserLane() {

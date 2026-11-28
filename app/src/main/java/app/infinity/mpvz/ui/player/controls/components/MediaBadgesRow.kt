@@ -103,13 +103,7 @@ fun MediaBadgesRow(
         // Full pack: match every badge in the selected pack's JSON.
         val pack = RemoteBadgePacks.load(context, badgeStyle.id)
         pack.filter { badge ->
-          listOf(mediaTitle, rawMediaTitle, mediaPath, derived).any { source ->
-            try {
-              source != null && badge.pattern.containsMatchIn(source)
-            } catch (_: Exception) {
-              false
-            }
-          }
+          listOf(mediaTitle, rawMediaTitle, mediaPath, derived).any { source -> badge.matches(source) }
         }
       }
   }

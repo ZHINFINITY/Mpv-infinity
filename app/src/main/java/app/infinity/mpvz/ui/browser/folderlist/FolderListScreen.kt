@@ -132,6 +132,7 @@ import app.infinity.mpvz.ui.components.InlineSearchBar
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.AudiobookPlayback
+import app.infinity.mpvz.ui.browser.music.MusicPlaybackLauncher
 import app.infinity.mpvz.ui.player.launchDirectAudiobookFiles
 import app.infinity.mpvz.ui.securefolder.SecureFolderGateScreen
 import app.infinity.mpvz.ui.utils.LocalBackStack
@@ -971,6 +972,18 @@ object FolderListScreen : Screen {
                         } else if (audiobookMode) {
                           coroutineScope.launch {
                             AudiobookPlayback.launchForFile(context, video.path, video.uri.toString())
+                          }
+                        } else if (MusicPlaybackLauncher.isEligibleLocalMusicPath(video.path)) {
+                          coroutineScope.launch {
+                            // Route music searched from the FOLDERS list through the music
+                            // player, not the legacy player, so it doesn't double-play.
+                            MusicPlaybackLauncher.playLocalAudioPathsIfPresent(
+                              context = context,
+                              paths = listOf(video.path),
+                              fallbackTitles = listOf<String?>(video.title),
+                              currentIndex = 0,
+                              launchSource = "folder_search",
+                            ) || run { MediaUtils.playFile(video, context); true }
                           }
                         } else {
                           MediaUtils.playFile(video, context)

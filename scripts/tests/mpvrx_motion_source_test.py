@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify the exact FongMi source and 480px integration used by Mpv-infinity."""
+"""Verify the exact Pinned source and 480px integration used by Mpv-infinity."""
 from __future__ import annotations
 
 import argparse
@@ -9,7 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 from mpvrx_motion_source import MPV_REVISION, verify_mpv_source  # noqa: E402
-from patch_fongmi_paired_color_mask import (  # noqa: E402
+from patch_paired_color_mask import (  # noqa: E402
     has_paired_color_mask,
     transform_source as transform_paired_color_mask,
 )
@@ -24,7 +24,7 @@ def main() -> None:
     try:
         antialias_patched = verify_mpv_source(args.mpv_dir)
     except (OSError, ValueError) as exc:
-        parser.exit(1, f"Mpv-infinity FongMi source verification failed: {exc}\n")
+        parser.exit(1, f"Mpv-infinity Pinned source verification failed: {exc}\n")
     if args.require_analysis_downsample_aa and not antialias_patched:
         parser.exit(1, "Mpv-infinity motion-analysis downsample antialias patch is required but missing\n")
     if args.require_paired_color_mask:
@@ -37,7 +37,7 @@ def main() -> None:
     suffix = " with bounded analysis-downsample antialiasing" if antialias_patched else ""
     if args.require_paired_color_mask:
         suffix += " and active paired-color mismatch mask"
-    print(f"Mpv-infinity FongMi motion source {MPV_REVISION}{suffix} and 480px integration verified")
+    print(f"Mpv-infinity Pinned motion source {MPV_REVISION}{suffix} and 480px integration verified")
 
 
 if __name__ == "__main__":

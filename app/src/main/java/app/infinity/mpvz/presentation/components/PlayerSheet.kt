@@ -18,6 +18,11 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.rememberSplineBasedDecay
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.gestures.AnchoredDraggableState
 import androidx.compose.foundation.gestures.DraggableAnchors
@@ -293,6 +298,29 @@ fun PlayerSheet(
           }
         }
     }
+  }
+}
+
+/** mpvRx's sheet handle: a slim centered bar that fades out once the sheet content takes over. */
+@Composable
+fun PlayerSheetDragHandle(
+  modifier: Modifier = Modifier,
+  visible: Boolean = true,
+) {
+  Box(
+    modifier
+      .fillMaxWidth()
+      .padding(top = 12.dp, bottom = 12.dp),
+    contentAlignment = Alignment.Center,
+  ) {
+    Box(
+      Modifier
+        .size(width = 34.dp, height = 4.dp)
+        .background(
+          if (visible) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f) else Color.Transparent,
+          RoundedCornerShape(2.dp),
+        ),
+    )
   }
 }
 

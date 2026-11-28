@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate and adapt the pinned native FongMi MPV runtime source."""
+"""Validate and adapt the pinned native Pinned MPV runtime source."""
 from __future__ import annotations
 
 import argparse
@@ -12,8 +12,9 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 from mpvrx_motion_source import verify_mpv_source
-from patch_fongmi_motion_downsample import apply_patch as apply_motion_downsample_patch
-from patch_fongmi_paired_color_mask import (
+from patch_audiotrack_device import apply_patch as apply_audiotrack_device_patch
+from patch_motion_downsample import apply_patch as apply_motion_downsample_patch
+from patch_paired_color_mask import (
     apply_patch as apply_motion_paired_color_mask_patch,
     strip_patch as strip_motion_paired_color_mask_patch,
 )
@@ -48,7 +49,7 @@ PLACEBO_TIMER_RING_NEW = (
 )
 
 
-def validate_fongmi_frame_priv_members(vo_source: str) -> None:
+def validate_pinned_frame_priv_members(vo_source: str) -> None:
     start = vo_source.find("struct frame_priv {")
     if start < 0:
         raise SystemExit("Pinned MPV vo_gpu_next.c has no struct frame_priv")
@@ -67,7 +68,7 @@ def validate_fongmi_frame_priv_members(vo_source: str) -> None:
     missing = [member for member in required if member not in body]
     if missing:
         raise SystemExit(
-            "Pinned FongMi frame ownership/MEMC fields must be members of struct frame_priv; "
+            "Pinned Pinned frame ownership/MEMC fields must be members of struct frame_priv; "
             "missing: " + ", ".join(missing)
         )
 
@@ -452,7 +453,7 @@ def main() -> None:
             motion_path, enabled=downsample_antialias_enabled
         )
     except (OSError, ValueError) as exc:
-        raise SystemExit(f"Mpv-infinity FongMi source/analysis verification failed: {exc}") from exc
+        raise SystemExit(f"Mpv-infinity Pinned source/analysis verification failed: {exc}") from exc
     if downsample_antialias_enabled:
         print(
             "Applied bounded Mpv-infinity motion-analysis downsample antialiasing"
@@ -472,7 +473,19 @@ def main() -> None:
         else "Selective paired-color mismatch mask already present"
     )
 
-    native_fongmi_markers = (
+    try:
+        audiotrack_device_applied = apply_audiotrack_device_patch(
+            mpv_dir / "audio/out/ao_audiotrack.c"
+        )
+    except (OSError, ValueError) as exc:
+        raise SystemExit(f"Mpv-infinity AudioTrack device routing failed: {exc}") from exc
+    print(
+        "Applied AudioTrack preferred-device routing"
+        if audiotrack_device_applied
+        else "AudioTrack preferred-device routing already present"
+    )
+
+    native_pinned_markers = (
         "version: '>=7.387.0'",
         "video/out/gpu_next/motion.c",
         "libmpv_motion = static_library('mpv-motion'",
@@ -498,10 +511,10 @@ def main() -> None:
     motion_header = motion_header_path.read_text(encoding="utf-8")
     android_context = android_context_path.read_text(encoding="utf-8")
     motion_option_marker = '{"motion-interpolation", OPT_INT(motion_fps), M_RANGE(0, 240)}'
-    if not all(marker in (meson + vo) for marker in native_fongmi_markers):
+    if not all(marker in (meson + vo) for marker in native_pinned_markers):
         raise SystemExit(
-            "Pinned MPV source is not the coordinated FongMi native source; "
-            "refusing to apply the obsolete mpv-fongmi-android.patch or copy duplicate motion/AImageReader files"
+            "Pinned MPV source is not the coordinated Pinned native source; "
+            "refusing to apply the obsolete mpv-pinned-android.patch or copy duplicate motion/AImageReader files"
         )
     if (
         motion_option_marker not in vo
@@ -521,8 +534,8 @@ def main() -> None:
         or '{"motion-interpolation-info", mp_property_motion_info}' not in command
         or 'mp.get_property_native("motion-interpolation-info")' not in stats_lua
     ):
-        raise SystemExit("The pinned native FongMi MEMC/Android/OSD source contract is incomplete")
-    validate_fongmi_frame_priv_members(vo)
+        raise SystemExit("The pinned native Pinned MEMC/Android/OSD source contract is incomplete")
+    validate_pinned_frame_priv_members(vo)
     mapper_sources = (
         mpv_dir / "video/out/hwdec/hwdec_aimagereader.c",
         mpv_dir / "video/out/hwdec/hwdec_aimagereader_vk.c",
@@ -532,7 +545,7 @@ def main() -> None:
     missing_mapper_sources = [path for path in mapper_sources if not path.is_file()]
     if missing_mapper_sources:
         raise SystemExit(
-            "Pinned FongMi MPV source is missing native AImageReader/Vulkan mapper files: "
+            "Pinned Pinned MPV source is missing native AImageReader/Vulkan mapper files: "
             + ", ".join(str(path) for path in missing_mapper_sources)
         )
     mapper_header = hwdec_header_path.read_text(encoding="utf-8")
@@ -542,7 +555,7 @@ def main() -> None:
         or "p->hwdec_map_retry |= retry;" not in vo
         or "fp->source->failed = ret != RA_HWDEC_MAP_RETRY;" not in vo
     ):
-        raise SystemExit("Pinned FongMi VO is missing the transient hwdec-map retry/ownership contract")
+        raise SystemExit("Pinned Pinned VO is missing the transient hwdec-map retry/ownership contract")
 
     vulkan_context = enable_android_external_memory_extensions(
         vulkan_context_path.read_text(encoding="utf-8")
@@ -583,7 +596,7 @@ def main() -> None:
     placebo_vulkan_header_path.write_text(placebo_vulkan_header, encoding="utf-8")
     placebo_stubs_path.write_text(placebo_stubs, encoding="utf-8")
     print(
-        f"Validated native FongMi GPU MEMC and Android MediaCodec/Vulkan mapping in {mpv_dir}; "
+        f"Validated native Pinned GPU MEMC and Android MediaCodec/Vulkan mapping in {mpv_dir}; "
         f"kept SPIR-V optimization enabled and applied Android Vulkan synchronization and "
         f"swapchain stability fixes in {libplacebo_dir}. Mpv-infinity analysis-downsample antialias "
         f"candidate {'enabled' if downsample_antialias_enabled else 'disabled'}; 480px cap unchanged."

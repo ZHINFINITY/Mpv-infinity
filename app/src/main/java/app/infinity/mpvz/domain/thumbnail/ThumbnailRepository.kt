@@ -30,6 +30,7 @@ import app.infinity.mpvz.domain.network.NetworkConnection
 import app.infinity.mpvz.preferences.ThumbnailMode
 import app.infinity.mpvz.repository.NetworkRepository
 import app.infinity.mpvz.ui.player.resolveLocalPath
+import app.infinity.mpvz.utils.media.VolatileUrlKey
 import `is`.xyz.mpv.FastThumbnails
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -112,11 +113,10 @@ class ThumbnailRepository(
   private val maxConcurrentFolders = 3
   private val localGenerationParallelism = resolveLocalGenerationParallelism()
   private val localGenerationSemaphore = Semaphore(localGenerationParallelism)
-  // Network thumbnails are independent range reads. Keep a small cap so a series folder can
-  // fill promptly without opening one WebDAV decoder per visible card.
-  // A decoder can issue several authenticated range requests for one MKV. Keep remote work
-  // serialized so a series folder cannot burst dozens of TorBox/WebDAV requests at once.
-  private val networkGenerationSemaphore = Semaphore(1)
+  // Network thumbnails are independent range reads. Two at a time fills a series folder about
+  // twice as fast while still never opening more than two remote decoders, so a folder cannot
+  // burst dozens of TorBox/WebDAV requests at once.
+  private val networkGenerationSemaphore = Semaphore(2)
   private val maxFolderBatchSize = 48
 
   private data class FolderState(
@@ -424,6 +424,19 @@ class ThumbnailRepository(
   ): String = "${memoryVideoBaseKey(video)}|$width|$height|${thumbnailModeKey()}|${thumbnailQualityKey()}"
 
   /**
+   * Non-blocking peek for composition. Building a key can hit the filesystem or MediaStore, so
+   * this only answers for keys [thumbnailKey] has already produced and returns null otherwise.
+   */
+  fun peekThumbnailFromMemory(
+    video: Video,
+    widthPx: Int,
+    heightPx: Int,
+  ): Bitmap? {
+    val key = thumbnailKey(video, widthPx, heightPx)
+    return synchronized(memoryCache) { memoryCache.get(key) }
+  }
+
+  /**
    * Folder prefetch and a visible card may request different sizes for the same source.
    * The disk entry is size-independent, so either completion can wake the card and let it
    * decode the cached bitmap at its own target dimensions.
@@ -543,7 +556,9 @@ class ThumbnailRepository(
 
   private fun videoBaseKey(video: Video): String {
     if (isNetworkUrl(video.path)) {
-      val base = video.path.ifBlank { video.uri.toString() }
+      // Stream URLs carry the server session token; normalise it away so the cache key survives
+      // a token reissue, otherwise every launch re-extracts the same thumbnail.
+      val base = VolatileUrlKey.normalize(video.path.ifBlank { video.uri.toString() })
       return "$base|network"
     }
 

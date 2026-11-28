@@ -8,6 +8,7 @@
 package app.infinity.mpvz.ui.player
 
 import app.infinity.mpvz.database.entities.PlaybackStateEntity
+import app.infinity.mpvz.utils.media.HttpUtils
 import app.infinity.mpvz.utils.media.fileExtension
 import app.infinity.mpvz.utils.storage.FileTypeUtils
 import java.net.URI
@@ -102,6 +103,12 @@ data class PlaybackItem(
   val hdrMetadata: Boolean? = null,
   /** File index inside a multi-file torrent; lets a series episode restart its stream. */
   val torrentFileIndex: Int? = null,
+  /**
+   * Stable library path (file path or server item id) for favourites, when it differs from the
+   * playback URI. Stream URLs carry session tokens, so favouriting by originalUri would never
+   * match the library entry the liked-songs list shows.
+   */
+  val favoritePath: String? = null,
 ) {
   /** True while this torrent episode still points at its magnet/torrent source instead of a live stream URL. */
   fun requiresTorrentResolution(): Boolean = torrentFileIndex != null && playableUri == originalUri
@@ -119,6 +126,7 @@ data class PlaybackItem(
       playlistItemId: Int? = null,
       artworkUri: String? = null,
       durationSeconds: Int? = null,
+      favoritePath: String? = null,
       audiobook: AudiobookPlaybackInfo? = null,
       videoWidth: Int? = null,
       videoHeight: Int? = null,
@@ -139,6 +147,7 @@ data class PlaybackItem(
         playlistItemId = playlistItemId,
         artworkUri = artworkUri,
         durationSeconds = durationSeconds,
+        favoritePath = favoritePath,
         audiobook = audiobook,
         videoWidth = videoWidth,
         videoHeight = videoHeight,
@@ -157,6 +166,9 @@ internal fun PlaybackItem.declaredMediaKind(videoHint: Boolean = false): Declare
   if (mimeType?.startsWith("audio/", ignoreCase = true) == true) return DeclaredPlaybackMediaKind.AUDIO
   if (mimeType?.startsWith("video/", ignoreCase = true) == true) return DeclaredPlaybackMediaKind.VIDEO
 
+  if (HttpUtils.isMusicStreamingUrl(originalUri) || HttpUtils.isMusicStreamingUrl(playableUri)) {
+    return DeclaredPlaybackMediaKind.AUDIO
+  }
   val extensions =
     sequenceOf(originalUri, playableUri, title)
       .filterNotNull()

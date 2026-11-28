@@ -15,8 +15,10 @@ import android.os.Looper
 import android.util.Log
 import android.view.Surface
 import app.infinity.mpvz.data.network.proxy.HlsStreamingProxy
+import app.infinity.mpvz.data.network.proxy.DirectLinkProxy
 import app.infinity.mpvz.data.network.proxy.NetworkStreamingProxy
 import app.infinity.mpvz.domain.network.NetworkPlaybackUri
+import app.infinity.mpvz.preferences.DecoderPreferences
 import app.infinity.mpvz.preferences.MpvConfigOverridePolicy
 import app.infinity.mpvz.utils.media.BoundedProviderIo
 import app.infinity.mpvz.utils.media.RadioStreamProbe
@@ -31,6 +33,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import org.koin.core.context.GlobalContext
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -177,6 +180,7 @@ object PlaybackSession : MPVLib.EventObserver {
   private data class NetworkStreamRegistration(
     val proxy: NetworkStreamingProxy? = null,
     val hlsProxy: HlsStreamingProxy? = null,
+    val directLinkProxy: DirectLinkProxy? = null,
     val streamId: String,
   )
 
@@ -1084,6 +1088,11 @@ object PlaybackSession : MPVLib.EventObserver {
       AudiobookPlayback.capture()
       loadedPlaybackItem = null
       val resolvedItem = item ?: PlaybackItem.fromUri(playableUri)
+      // The core is reused across video and music, so a music item used to inherit the previous
+      // video's stats page until the music UI hid it a second later. Hide it as the item loads,
+      // before the first frame: streaming music URLs carry no extension or mime type, so
+      // "definitely audio" misses them and the page stayed up for that first second.
+      if (resolvedItem.declaredMediaKind() != DeclaredPlaybackMediaKind.VIDEO) StatsLuaOverlay.hide()
       if (resolvedItem.audiobook != null) AudiobookPlayback.ensureStarted()
       if (resolvedItem.audiobook == null && speedBeforeAudiobook != null) {
         if (!MpvConfigOverridePolicy.isOwnedByMpvConf("speed")) {
@@ -1221,6 +1230,10 @@ object PlaybackSession : MPVLib.EventObserver {
             add("flatten-editions=yes")
           }
         }.joinToString(",")
+      // Loopback proxies (torrent, stream relays) close every response, so a persistent
+      // connection only ever hands libavformat a socket the server has dropped. Pick the
+      // connection policy per opened file, immediately before the load.
+      PlaybackLoopbackLavfOptions.applyFor(playableUri)
       MPVLib.command("loadfile", playableUri, "replace", "-1", loadOptions)
       propBoolean.emit("pause", holdForPositionRestore || desiredPaused)
       generation
@@ -1611,6 +1624,9 @@ object PlaybackSession : MPVLib.EventObserver {
   /** Retry the last selected stream after a decoder policy change if MPV deselected its failed chain. */
   fun setDecoderAndRecover(value: String) {
     if (MpvConfigOverridePolicy.isOwnedByMpvConf("hwdec")) return
+    // Remember the pick so the next file starts with it. The sheet used to change only the
+    // running core, which is why every new video dropped back to the "HW" copy mode.
+    runCatching { GlobalContext.get().get<DecoderPreferences>().requestedDecoder.set(value) }
     withReadyCore(Unit) {
       // Keep decoder selection and video-track recovery in the same core transaction. A media
       // replacement between these operations could otherwise restore an outgoing file's track.
@@ -1714,11 +1730,18 @@ object PlaybackSession : MPVLib.EventObserver {
         if (property == "duration") publishDurationSample(null)
         propLong.emit(property, null)
         propInt.emit(property, null)
+        propDouble.emit(property, null)
+        propFloat.emit(property, null)
         return
       }
       if (property == "duration") publishDurationSample(value.toDouble())
       propLong.emit(property, value)
       propInt.emit(property, value.toInt())
+      // mpv delivers a single format per observed property. Mirror numeric values into the
+      // other numeric channels so a Double consumer cannot starve the Int readers (and vice
+      // versa) for duration/time-pos, which left the mini player's progress bar frozen.
+      propDouble.emit(property, value.toDouble())
+      propFloat.emit(property, value.toFloat())
       observerSnapshot().forEach { observer -> runCatching { observer.eventProperty(property, value) } }
     }
   }
@@ -1755,11 +1778,17 @@ object PlaybackSession : MPVLib.EventObserver {
         if (property == "duration") publishDurationSample(null)
         propDouble.emit(property, null)
         propFloat.emit(property, null)
+        propLong.emit(property, null)
+        propInt.emit(property, null)
         return
       }
       if (property == "duration") publishDurationSample(value)
       propDouble.emit(property, value)
       propFloat.emit(property, value.toFloat())
+      if (!value.isNaN() && !value.isInfinite()) {
+        propLong.emit(property, value.toLong())
+        propInt.emit(property, value.toInt())
+      }
       observerSnapshot().forEach { observer -> runCatching { observer.eventProperty(property, value) } }
     }
   }
@@ -2256,6 +2285,43 @@ object PlaybackSession : MPVLib.EventObserver {
     return resolved.uri
   }
 
+  /**
+   * Routes plain http(s) direct links through the parallel-range proxy when the server supports
+   * byte ranges; returns null (callers fall back to the plain URL) for anything else. mpv opens
+   * the loopback URL, so remote credentials-free links gain multi-connection throughput.
+   */
+  private fun resolveDirectLinkViaProxy(item: PlaybackItem): ResolvedPlayable? {
+    val url = item.playableUri
+    if (!url.startsWith("http://", true) && !url.startsWith("https://", true)) return null
+    // Loopback URLs belong to our own relays (torrent bridge, network streaming proxy, HLS
+    // proxy, and the DirectLinkProxy itself). Feeding one relay into another adds a local hop
+    // that destroys the torrent bridge's sequential piece prefetch, so never re-proxy them.
+    if (DirectLinkProxy.isLoopbackUrl(url)) return null
+    val headers = item.headers
+    // Network I/O must stay off the main thread (field log: NetworkOnMainThreadException from
+    // this probe). On a background caller thread it runs inline; from the main thread we block
+    // an IO worker instead.
+    val eligibility =
+      if (Looper.myLooper() == Looper.getMainLooper()) {
+        kotlinx.coroutines.runBlocking(Dispatchers.IO) { DirectLinkProxy.probe(url, headers) }
+      } else {
+        DirectLinkProxy.probe(url, headers)
+      } ?: return null
+    val proxy = DirectLinkProxy.getInstance()
+    val proxyUrl =
+      proxy.register(
+        url = url,
+        fileSize = eligibility.contentLength,
+        mimeType = item.mimeType ?: "application/octet-stream",
+        headers = headers,
+      )
+    Log.d(TAG, "Routing direct link through DirectLinkProxy (parallel range fetch)")
+    return ResolvedPlayable(
+      proxyUrl,
+      NetworkStreamRegistration(directLinkProxy = proxy, streamId = proxyUrl),
+    )
+  }
+
   private fun resolvePlayableUri(item: PlaybackItem): ResolvedPlayable {
     val reference =
       NetworkPlaybackUri.parse(item.playableUri)
@@ -2289,6 +2355,8 @@ object PlaybackSession : MPVLib.EventObserver {
       Log.d(TAG, "Routing HLS stream through HlsStreamingProxy: $uri")
       return ResolvedPlayable(uri, NetworkStreamRegistration(hlsProxy = hlsProxy, streamId = streamId))
     }
+
+    resolveDirectLinkViaProxy(item)?.let { return it }
 
     // fdclose:// descriptors are single-use: mpv closes them after their first load. Replays
     // of queue items or persisted sessions must re-open a fresh descriptor from the content URI.
@@ -2357,13 +2425,14 @@ object PlaybackSession : MPVLib.EventObserver {
       return ResolvedPlayable(uri, NetworkStreamRegistration(hlsProxy = hlsProxy, streamId = streamId))
     }
 
+    kotlinx.coroutines.withContext(Dispatchers.IO) { resolveDirectLinkViaProxy(item) }?.let { return it }
+
     val context = applicationContext
     if (item.playableUri.startsWith("fd://") && item.originalUri.startsWith("content://")) {
       val resolved = context?.let { openContentUriBounded(item.originalUri, it) }
         ?: error("Unable to reopen content URI for playback")
       return ResolvedPlayable(resolved, ownedFd = resolved.fdNumberOrNull())
     }
-
     if (context != null) {
       val candidates = sequenceOf(item.playableUri, item.originalUri)
         .filter { it.startsWith("content://") }
@@ -2450,6 +2519,7 @@ object PlaybackSession : MPVLib.EventObserver {
     runCatching {
       registration.proxy?.unregisterStream(registration.streamId)
       registration.hlsProxy?.unregisterStream(registration.streamId)
+      registration.directLinkProxy?.unregister(registration.streamId)
     }.onFailure { error -> Log.w(TAG, "Failed to release network stream", error) }
   }
 

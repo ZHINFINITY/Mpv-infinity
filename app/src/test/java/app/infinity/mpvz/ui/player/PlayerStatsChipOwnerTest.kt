@@ -70,6 +70,41 @@ class PlayerStatsChipOwnerTest {
   }
 
   @Test
+  fun musicLoadHidesStatsPageForAnythingNotPositivelyVideo() {
+    val file = File("src/main/java/app/infinity/mpvz/ui/player/PlaybackSession.kt")
+      .takeIf { it.exists() }
+      ?: File("app/src/main/java/app/infinity/mpvz/ui/player/PlaybackSession.kt")
+    val text = file.readText()
+    // Streaming music URLs (Navidrome stream.view, Jellyfin /Audio/... proxies) often carry no
+    // extension or mime type, so gating the hide on "definitely audio" left the previous video's
+    // stats page up for the first second of every music item. Hide unless positively video.
+    assertTrue(
+      text.contains(
+        "if (resolvedItem.declaredMediaKind() != DeclaredPlaybackMediaKind.VIDEO) StatsLuaOverlay.hide()",
+      ),
+    )
+    assertFalse(text.contains("if (resolvedItem.isDefinitelyAudioOnly()) StatsLuaOverlay.hide()"))
+  }
+
+  @Test
+  fun mpvNetworkCachePauseWaitIsAppliedOnce() {
+    val file = File("src/main/java/app/infinity/mpvz/ui/player/MPVView.kt")
+      .takeIf { it.exists() }
+      ?: File("app/src/main/java/app/infinity/mpvz/ui/player/MPVView.kt")
+    val text = file.readText()
+    // A later duplicate assignment silently overrode the intended resume wait, so every network
+    // dip froze playback for the longer value instead of resuming after the short one.
+    assertEquals(
+      1,
+      Regex("setOptionString\\(\"cache-pause-wait\",").findAll(text).count(),
+    )
+    assertEquals(
+      1,
+      Regex("setOptionString\\(\"demuxer-readahead-secs\",").findAll(text).count(),
+    )
+  }
+
+  @Test
   fun runtimeMpvFlowControlsUseSettingsPolicyOutsideDebugBuilds() {
     val file = File("src/main/java/app/infinity/mpvz/ui/player/MPVView.kt")
       .takeIf { it.exists() }

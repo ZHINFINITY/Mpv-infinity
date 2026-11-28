@@ -76,6 +76,7 @@ import app.infinity.mpvz.preferences.AdvancedPreferences
 import app.infinity.mpvz.preferences.PlayerPreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.presentation.Screen
+import app.infinity.mpvz.ui.browser.LocalNavigationBarHeight
 import app.infinity.mpvz.ui.browser.MainScreen
 import app.infinity.mpvz.ui.browser.NavigationBarState
 import app.infinity.mpvz.ui.browser.components.MiniPlayer
@@ -651,8 +652,17 @@ class MainActivity : AppCompatActivity() {
                   if (route == MainScreen) {
                     route.Content()
                   } else {
-                    app.infinity.mpvz.ui.theme.BrowserGlassPopupSceneHost(enabled = popupGlassEnabled) {
-                      route.Content()
+                    // Pushed screens (Network streaming, downloads, …) render outside
+                    // MainScreen, which is where LocalNavigationBarHeight is normally
+                    // provided. Without this they fall back to 0.dp and their FABs and
+                    // list padding slide underneath the mini player.
+                    androidx.compose.runtime.CompositionLocalProvider(
+                      LocalNavigationBarHeight provides
+                        (NavigationBarState.navigationBarClearance + NavigationBarState.miniPlayerClearance),
+                    ) {
+                      app.infinity.mpvz.ui.theme.BrowserGlassPopupSceneHost(enabled = popupGlassEnabled) {
+                        route.Content()
+                      }
                     }
                   }
                 }

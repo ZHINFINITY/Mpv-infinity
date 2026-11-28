@@ -8,11 +8,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.ui.theme.liquidGlassPane
+import app.infinity.mpvz.ui.theme.paneIsInPopupWindow
 import app.infinity.mpvz.ui.theme.LocalGlassCustomization
 import app.infinity.mpvz.ui.theme.GlassSurfacePolicy
 import org.koin.compose.koinInject
@@ -49,12 +51,16 @@ fun Modifier.settingsGlassSurface(
   val tuning = LocalGlassCustomization.current
   // Independent geometry never bypasses the master or global material tuning.
   // liquidGlassPane owns the override policy for both browser and player scenes.
+  // A pane composed into a dialog/popup window presents itself as a popup pane: Clear panes
+  // never sample the popup scene by policy, so a dialog that stayed Clear had nothing to frost
+  // and fell back to a flat fill — that is why liquid glass was missing from popups.
+  val inPopupWindow = paneIsInPopupWindow()
   return liquidGlassPane(
     enabled = enabled,
     opacity = opacity ?: tuning.opacity,
     highlight = highlight ?: tuning.highlight,
     cornerRadius = cornerRadius,
-    materialRole = if (independent) GlassSurfacePolicy.MaterialRole.Regular
+    materialRole = if (independent || inPopupWindow) GlassSurfacePolicy.MaterialRole.Regular
       else GlassSurfacePolicy.MaterialRole.Clear,
   )
 }
@@ -64,5 +70,9 @@ fun Modifier.settingsGlassSurface(
 fun settingsGlassContainerColor(fallback: androidx.compose.ui.graphics.Color): androidx.compose.ui.graphics.Color {
   val appearance = koinInject<AppearancePreferences>()
   val enabled by appearance.liquidGlassSurfaces.collectAsState()
-  return if (enabled) androidx.compose.ui.graphics.Color.Transparent else fallback
+  // Glass optics sample the backdrop behind the pane and paint their own adaptive film, which
+  // already guarantees text contrast (see GlassSurfacePolicy.regularAdaptiveFilmAlpha). Any extra
+  // fill here is a second film over that glass: the 0.42 and 0.12 versions both turned every
+  // popup into a flat slab, so the container is transparent while glass is on.
+  return if (enabled) Color.Transparent else fallback
 }

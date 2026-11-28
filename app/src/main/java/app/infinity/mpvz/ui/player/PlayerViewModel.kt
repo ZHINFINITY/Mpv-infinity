@@ -74,8 +74,12 @@ import app.infinity.mpvz.ui.player.anime4k.clearAnime4KShaders
 import app.infinity.mpvz.ui.player.anime4k.selectRuntimeStableAnime4K
 import app.infinity.mpvz.ui.player.controls.components.sheets.EQ_MAX_DB
 import app.infinity.mpvz.ui.player.controls.components.sheets.EQ_MIN_DB
+import app.infinity.mpvz.ui.player.controls.components.sheets.EqualizerFilterKind
+import app.infinity.mpvz.ui.player.controls.components.sheets.EqualizerMode
 import app.infinity.mpvz.ui.player.controls.components.sheets.EqualizerPreset
 import app.infinity.mpvz.ui.player.controls.components.sheets.EqualizerState
+import app.infinity.mpvz.ui.player.controls.components.sheets.activeFilters
+import app.infinity.mpvz.ui.player.controls.components.sheets.recommendedPreampDb
 import app.infinity.mpvz.ui.player.ytdlp.YtdlpManager
 import app.infinity.mpvz.ui.player.screenshot.ScreenshotSaver
 import app.infinity.mpvz.ui.player.screenshot.ScreenshotSettings
@@ -1024,9 +1028,26 @@ class PlayerViewModel(
   val albumArtBounds = MutableStateFlow<android.graphics.Rect?>(null)
   // The style and artwork/visualizer display choice are persisted via audioPreferences.
   val showVisualizerInAudioPlayer = MutableStateFlow(audioPreferences.showAudioVisualizer.get())
-  val equalizerState = MutableStateFlow(EqualizerState())
+  val equalizerState = MutableStateFlow(restoreEqualizerState())
   private val audioEqualizerManager = AudioEqualizerManager()
   private var equalizerMpvDebounceJob: Job? = null
+
+  private fun restoreEqualizerState(): EqualizerState =
+    EqualizerState(
+      isEnabled = audioPreferences.equalizerEnabled.get(),
+      mode = audioPreferences.equalizerMode.get(),
+      currentPreset = audioPreferences.equalizerPreset.get(),
+      bandGains = audioPreferences.equalizerBandGains.get(),
+      volumeBoostDb = audioPreferences.equalizerVolumeBoostDb.get(),
+    )
+
+  private fun persistEqualizerState(state: EqualizerState) {
+    audioPreferences.equalizerEnabled.set(state.isEnabled)
+    audioPreferences.equalizerMode.set(state.mode)
+    audioPreferences.equalizerPreset.set(state.currentPreset)
+    audioPreferences.equalizerBandGains.set(state.bandGains)
+    audioPreferences.equalizerVolumeBoostDb.set(state.volumeBoostDb)
+  }
 
   data class LyricsUiState(
     val isLoading: Boolean = false,
@@ -1069,18 +1090,43 @@ class PlayerViewModel(
     equalizerState.value =
       equalizerState.value.copy(
         currentPreset = preset,
-        bandGains = preset.gains,
+        bandGains = preset.gains.map { it.toFloat() },
       )
     applyEqualizerMpvFilters(immediate = true)
   }
 
+  fun setEqualizerMode(mode: EqualizerMode) {
+    if (equalizerState.value.mode != mode) {
+      equalizerState.value = equalizerState.value.copy(mode = mode)
+      applyEqualizerMpvFilters(immediate = true)
+    }
+  }
+
+  fun setEqualizerTone(
+    x: Int,
+    y: Int,
+  ) {
+    val current = equalizerState.value
+    if (current.toneX != x || current.toneY != y) {
+      equalizerState.value = current.copy(toneX = x, toneY = y)
+      applyEqualizerMpvFilters(immediate = false)
+    }
+  }
+
+  fun setEqualizerToneFocus(focused: Boolean) {
+    if (equalizerState.value.toneFocused != focused) {
+      equalizerState.value = equalizerState.value.copy(toneFocused = focused)
+      applyEqualizerMpvFilters(immediate = true)
+    }
+  }
+
   fun setEqualizerBandGain(
     index: Int,
-    gainDb: Int,
+    gainDb: Float,
   ) {
     val currentGains = equalizerState.value.bandGains.toMutableList()
     if (index in currentGains.indices && currentGains[index] != gainDb) {
-      currentGains[index] = gainDb.coerceIn(EQ_MIN_DB, EQ_MAX_DB)
+      currentGains[index] = gainDb.coerceIn(EQ_MIN_DB.toFloat(), EQ_MAX_DB.toFloat())
       equalizerState.value =
         equalizerState.value.copy(
           currentPreset = EqualizerPreset.CUSTOM,
@@ -1358,11 +1404,12 @@ class PlayerViewModel(
 
   fun applyEqualizerMpvFilters(immediate: Boolean = false) {
     val state = equalizerState.value
+    persistEqualizerState(state)
 
     // 1. Hardware Android AudioFx (Equalizer & LoudnessEnhancer matching AFinity)
     audioEqualizerManager.updateState(
       enabled = state.isEnabled,
-      bandGains = state.bandGains,
+      bandGains = state.bandGains.map { it.roundToInt() },
       volumeBoostDb = state.volumeBoostDb,
     )
 
@@ -1421,27 +1468,35 @@ class PlayerViewModel(
       filterList.add("pan=[stereo|c0=c1|c1=c0]")
     }
 
-    // 5. Equalizer filters (if enabled)
+    // 5. Equalizer filters (if enabled). One lavfi graph owns the whole curve so Android AudioFx
+    // does not stack a second, device-dependent EQ on top of it.
     if (state.isEnabled) {
-      val maxGain = state.bandGains.maxOrNull() ?: 0
-      if (maxGain > 0) {
-        filterList.add("volume=volume=${-maxGain}dB")
+      val filters = state.activeFilters()
+      val outputGain = state.recommendedPreampDb() + state.volumeBoostDb
+      if (kotlin.math.abs(outputGain) >= 0.01f) {
+        filterList.add("volume=volume=${formatEqualizerNumber(outputGain)}dB")
       }
-      val freqs = listOf(60, 230, 910, 3600, 14000)
-      for (i in 0 until 5) {
-        val gain = state.bandGains.getOrElse(i) { 0 }
-        if (gain != 0) {
-          filterList.add("equalizer=f=${freqs[i]}:width_type=o:width=1.5:g=$gain")
-        }
-      }
-      if (state.volumeBoostDb > 0) {
-        filterList.add("volume=volume=${state.volumeBoostDb}dB")
+      if (filters.isNotEmpty()) {
+        val graph =
+          filters.joinToString(",") { filter ->
+            val gain = formatEqualizerNumber(filter.gainDb)
+            val q = formatEqualizerNumber(filter.q)
+            when (filter.kind) {
+              EqualizerFilterKind.BELL -> "equalizer=f=${filter.frequencyHz}:t=q:w=$q:g=$gain"
+              EqualizerFilterKind.LOW_SHELF -> "bass=f=${filter.frequencyHz}:t=q:w=$q:g=$gain"
+              EqualizerFilterKind.HIGH_SHELF -> "treble=f=${filter.frequencyHz}:t=q:w=$q:g=$gain"
+            }
+          }
+        filterList.add("lavfi=[$graph]")
       }
     }
 
     val afString = filterList.joinToString(",")
     PlaybackSession.setPropertyString("af", afString)
   }
+
+  private fun formatEqualizerNumber(value: Float): String =
+    String.format(java.util.Locale.US, "%.2f", value).trimEnd('0').trimEnd('.')
 
   fun updateAlbumArtBounds(rect: android.graphics.Rect?) {
     albumArtBounds.value = rect
@@ -2281,6 +2336,24 @@ class PlayerViewModel(
           }
         }
         launch { PlaybackSession.propInt["volume-max"].collect { _volumeBoostCap.value = it } }
+        launch {
+          // Lyrics: the first load often runs before mpv has published media-title / metadata
+          // Title, so the embedded extractor and the online fetch both come up empty. Retry
+          // once the title becomes available if the lyrics pane is still empty.
+          var lastRetriedTitle: String? = null
+          combine(
+            PlaybackSession.propString["media-title"],
+            PlaybackSession.propString["metadata/by-key/Title"],
+          ) { mediaTitle, metaTitle -> mediaTitle ?: metaTitle ?: "" }
+            .collect { title ->
+              val state = lyricsUiState.value
+              if (title.isBlank() || state.isLoading) return@collect
+              if (state.lyrics != null || state.embeddedLyrics != null || state.onlineLyrics != null) return@collect
+              if (title == lastRetriedTitle) return@collect
+              lastRetriedTitle = title
+              loadLyricsForCurrentTrack()
+            }
+        }
         launch {
           PlaybackSession.queue
             .map { it.repeatMode }
@@ -6363,6 +6436,7 @@ class PlayerViewModel(
             context = context,
             settings = ScreenshotSettings.fromPreferences(playerPreferences),
             includeSubtitles = includeSubtitles,
+            useNativeCapture = isNativeEngineActive(),
           ).getOrThrow()
         withContext(Dispatchers.Main) {
           Toast
@@ -7192,7 +7266,7 @@ class PlayerViewModel(
     if (enabled) {
       disableAmbientShader()
     } else if (
-      AmbientRendererPolicy.shouldResumeGlowAfterFrameCaptureFallback(enabled, isAmbientGlowRuntimeActive())
+      AmbientRendererPolicy.shouldResumeGlowAfterFrameCaptureFallback(enabled, isAmbientShaderRuntimeActive())
     ) {
       lastAmbientScaleX = -1.0
       lastAmbientScaleY = -1.0
@@ -7206,15 +7280,15 @@ class PlayerViewModel(
       _isAmbientEnabled.value &&
       !MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.AMBIENT)
 
-  private fun isAmbientGlowRuntimeActive(): Boolean =
-    isAmbientRuntimeActive() && _ambientStyle.value == AmbientStyle.Glow && !frameCapturedAmbientFallback
+  private fun isAmbientShaderRuntimeActive(): Boolean =
+    isAmbientRuntimeActive() && _ambientStyle.value.isShaderBacked && !frameCapturedAmbientFallback
 
   fun toggleAmbientMode() {
     if (MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.AMBIENT)) return
     _isAmbientEnabled.value = !_isAmbientEnabled.value
     playerPreferences.isAmbientEnabled.set(_isAmbientEnabled.value)
     if (_isAmbientEnabled.value) {
-      if (_ambientStyle.value == AmbientStyle.Glow) {
+      if (_ambientStyle.value.isShaderBacked) {
         lastAmbientScaleX = -1.0
         scheduleAmbientUpdate(0)
       }
@@ -7235,7 +7309,7 @@ class PlayerViewModel(
       PlayerUpdates.ShowText(
         appContext.getString(R.string.ambient_style_update, appContext.getString(style.titleRes)),
       )
-    if (style == AmbientStyle.Glow) {
+    if (style.isShaderBacked) {
       lastAmbientScaleX = -1.0
       scheduleAmbientUpdate(0)
     } else {
@@ -7271,7 +7345,7 @@ class PlayerViewModel(
 
   /** Called when the device orientation changes. Refreshes Glow for the new output dimensions. */
   fun onOrientationChanged() {
-    if (!isAmbientGlowRuntimeActive()) return
+    if (!isAmbientShaderRuntimeActive()) return
 
     // The compiled spec is the cache key; scale sentinels alone do not force a rebuild.
     lastCompiledSpec = null
@@ -7293,7 +7367,7 @@ class PlayerViewModel(
    * Called after shader-stack changes so ambient stays as the last OUTPUT pass.
    */
   fun restartAmbientIfActive() {
-    if (!isAmbientGlowRuntimeActive()) return
+    if (!isAmbientShaderRuntimeActive()) return
     disableAmbientShader()
     // Small delay to let Anime4K shaders settle.
     scheduleAmbientUpdate(200)
@@ -7333,7 +7407,7 @@ class PlayerViewModel(
 
   private fun scheduleAmbientUpdate(delayMs: Long = 150L) {
     synchronized(ambientScheduleLock) {
-      if (!isAmbientGlowRuntimeActive()) return
+      if (!isAmbientShaderRuntimeActive()) return
 
       val generation = ambientUpdateGeneration.incrementAndGet()
       ambientDebounceJob?.cancel()
@@ -7440,7 +7514,7 @@ class PlayerViewModel(
   }
 
   private suspend fun updateAmbientStretch(generation: Long) {
-    if (!isAmbientGlowRuntimeActive() || generation != ambientUpdateGeneration.get()) return
+    if (!isAmbientShaderRuntimeActive() || generation != ambientUpdateGeneration.get()) return
 
     runCatching {
       val osdW = PlaybackSession.getPropertyInt("osd-width") ?: 1920
@@ -7523,7 +7597,7 @@ class PlayerViewModel(
       currentCoroutineContext().ensureActive()
 
       synchronized(ambientRenderLock) {
-        if (!isAmbientGlowRuntimeActive() || generation != ambientUpdateGeneration.get()) {
+        if (!isAmbientShaderRuntimeActive() || generation != ambientUpdateGeneration.get()) {
           newFile.delete()
           return@synchronized
         }
@@ -7585,6 +7659,7 @@ class PlayerViewModel(
       satBoost = satBoost,
       warmth = warmth,
       fadeCurve = fadeCurve,
+      style = _ambientStyle.value,
     )
   }
 

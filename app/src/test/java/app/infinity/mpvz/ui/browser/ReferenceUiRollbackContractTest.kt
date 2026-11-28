@@ -41,10 +41,11 @@ class ReferenceUiRollbackContractTest {
       // Accessibility follow-up: shared press, slider, and lens feedback respects reduced motion.
       // UI follow-up: density-aware tick-dot spacing keeps dense slider marks distinct.
       // Device-support follow-up: shared player glass is disabled when the device cannot support it.
-      "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/GlassControls.kt" to "e61a88b329c6b2b03e672247144905095b995f83f90ff297c9e06507dfd4fa02",
+      "app/src/main/java/app/infinity/mpvz/ui/player/controls/components/GlassControls.kt" to "589995f4a16d83f78803f173b86dcd05931f6cdba434bceccaed706bdeac304a" /* mpvRx-style 3D switch thumb: GlassSwitchDepthPolicy rocks the thumb on its pressed edge (rotationX/scaleY spring). Toggle feedback: haptic on/off. The checked-state accent halo, spring scale pop and translucent accent track tint were reverted: they drew a coloured circle around the thumb and the on state now reads from the lens thumb alone. */,
       // Build 1910: player sheets opt into the centralized inner thickness bands.
       // Build 1910 integration: edge-attached landscape sheets draw one rim on the asymmetric shape.
-      "app/src/main/java/app/infinity/mpvz/presentation/components/PlayerSheet.kt" to "7838a785e17d4bd1479a348a04c6f9ac7af0bacc0891ba817b165a1f53348c81",
+      // mpvRx mini-player port: extracted PlayerSheetDragHandle (slim centered bar) for the remodeled mini player.
+      "app/src/main/java/app/infinity/mpvz/presentation/components/PlayerSheet.kt" to "156abe2bfc609024b445507f852c1bbce507526a8e017f5d5918eb4bc7655224",
       "app/src/main/java/app/infinity/mpvz/presentation/components/PlayerGlassOverlays.kt" to "82a115d195711b391235b5f32a4d7b2bac75e494aef0ff22be55251f9307b54f",
     )
     expected.forEach { (path, digest) -> assertEquals(path, digest, sha(read(path))) }
@@ -669,7 +670,8 @@ half4 main(float2 p) {
     assertTrue(navBody.contains("onRelease = { target, _ -> latestVisibleTabs.getOrNull(target)?.let(latestOnTabSelected) }"))
     assertTrue(!navBody.contains("retainedFinalDrag"))
     // Owner-requested removal of the Stream tab changes this navigation-only fingerprint.
-    assertEquals("b162c4662e64627ba2f4a7323c4fd614b1ee62a85316d93a47cf09118b37255b", sha(navBody))
+    // mpvRx Profile tab: a fifth navigation entry joins the pill, changing the fingerprint again.
+    assertEquals("225baa94124977d96063a0f9c4ffcc6640e78bb5cdb4f632def7dbef16af31e9", sha(navBody))
     val scene = read("app/src/main/java/app/infinity/mpvz/ui/theme/BrowserGlassScene.kt")
     val lensStart = scene.indexOf("internal const val BROWSER_LENS")
     val q = scene.indexOf("\"\"\"", lensStart)

@@ -60,6 +60,11 @@ class App :
     private const val POST_START_MAINTENANCE_DELAY_MS = 10_000L
     private const val THUMBNAIL_WARMUP_DELAY_MS = 1_500L
     private const val IDLE_MPV_CORE_GRACE_MS = 3L * 60L * 1000L
+
+    /** Toast routing and other UI checks read this instead of guessing from a Context. */
+    @Volatile
+    var isInForeground: Boolean = false
+      private set
   }
 
   override fun onCreate() {
@@ -139,6 +144,7 @@ class App :
 
   override fun onActivityStarted(activity: Activity) {
     if (startedActivityCount++ == 0) {
+      isInForeground = true
       getKoin().get<app.infinity.mpvz.domain.syncplay.SyncplayManager>().onAppForegrounded()
       scheduleFastThumbnailWarmupOnce()
       scheduleMetadataMaintenanceOnce()
@@ -147,6 +153,7 @@ class App :
 
   override fun onActivityStopped(activity: Activity) {
     startedActivityCount = (startedActivityCount - 1).coerceAtLeast(0)
+    if (startedActivityCount == 0) isInForeground = false
     if (startedActivityCount == 0 && !activity.isChangingConfigurations) {
       pauseVideoWhenBackgroundPlaybackDisabled(activity)
       MediaPlaybackService.onAppBackgrounded()

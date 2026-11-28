@@ -67,8 +67,8 @@ def _compile_probe(api: int, source: str) -> None:
     if not compiler:
         raise AssertionError("CC must name a host C compiler for the libplacebo ABI probe")
     with tempfile.TemporaryDirectory(prefix=f"mpvflow-placebo-{api}-") as tmp:
-        source_path = Path(tmp) / f"fongmi_api{api}_layout.c"
-        output_path = Path(tmp) / f"fongmi_api{api}_layout"
+        source_path = Path(tmp) / f"pinned_api{api}_layout.c"
+        output_path = Path(tmp) / f"pinned_api{api}_layout"
         source_path.write_text(source, encoding="utf-8")
         result = subprocess.run(
             [*compiler, "-std=c11", f"-I{API_HEADERS[api].parent}", str(source_path), "-o", str(output_path)],
@@ -81,7 +81,7 @@ def _compile_probe(api: int, source: str) -> None:
         assert run.returncode == 0, run.stderr
 
 
-def assert_fongmi_struct_layouts() -> None:
+def assert_pinned_struct_layouts() -> None:
     """Compile probes for the fork-specific layouts passed across the shared-library ABI."""
     for api, render_size, extra in (
         (387, 304, ""),
@@ -94,24 +94,24 @@ def assert_fongmi_struct_layouts() -> None:
 #include <libplacebo/shaders.h>
 #include <libplacebo/renderer.h>
 _Static_assert(PL_API_VER == {api}, "wrong libplacebo API version");
-_Static_assert(sizeof(struct pl_desc) == 40, "FongMi pl_desc ABI mismatch");
-_Static_assert(offsetof(struct pl_desc, sampler_signature) == 24, "missing FongMi sampler signature");
-_Static_assert(offsetof(struct pl_desc, address_mode) == 32, "missing FongMi address mode");
-_Static_assert(offsetof(struct pl_desc, sample_mode) == 36, "missing FongMi sample mode");
+_Static_assert(sizeof(struct pl_desc) == 40, "Pinned pl_desc ABI mismatch");
+_Static_assert(offsetof(struct pl_desc, sampler_signature) == 24, "missing Pinned sampler signature");
+_Static_assert(offsetof(struct pl_desc, address_mode) == 32, "missing Pinned address mode");
+_Static_assert(offsetof(struct pl_desc, sample_mode) == 36, "missing Pinned sample mode");
 _Static_assert(sizeof(struct pl_desc_binding) == 16, "descriptor binding ABI mismatch");
-_Static_assert(sizeof(struct pl_shader_desc) == 72, "FongMi shader descriptor ABI mismatch");
-_Static_assert(offsetof(struct pl_shader_desc, binding) == 40, "FongMi shader descriptor offset mismatch");
+_Static_assert(sizeof(struct pl_shader_desc) == 72, "Pinned shader descriptor ABI mismatch");
+_Static_assert(offsetof(struct pl_shader_desc, binding) == 40, "Pinned shader descriptor offset mismatch");
 _Static_assert(sizeof(struct pl_render_params) == {render_size}, "render-parameter ABI mismatch");
 _Static_assert(offsetof(struct pl_render_params, frame_mixer) == 40, "frame mixer ABI offset mismatch");
 {extra}
-_Static_assert(PL_SAMPLER_EXTERNAL_YUV >= 0, "missing FongMi external YUV sampler");
+_Static_assert(PL_SAMPLER_EXTERNAL_YUV >= 0, "missing Pinned external YUV sampler");
 int main(void) {{ return 0; }}
 """
         _compile_probe(api, source)
 
 
 def assert_snapshot_hashes(api: int) -> None:
-    """Require each complete FongMi header tree and generated config to stay pinned."""
+    """Require each complete Pinned header tree and generated config to stay pinned."""
     include_root = API_HEADERS[api].parent
     manifest = include_root / "FONGMI_HEADERS.sha256"
     assert manifest.is_file(), f"missing FongMi API-{api} header hash manifest: {manifest}"
@@ -231,6 +231,6 @@ assert config_api(API_HEADERS[374]) == 374
 assert_snapshot_hashes(387)
 assert_snapshot_hashes(391)
 assert_api391_upstream_snapshot()
-assert_fongmi_struct_layouts()
+assert_pinned_struct_layouts()
 
-print("libplacebo API 374/387/391 selection and FongMi header/runtime ABI contracts OK")
+print("libplacebo API 374/387/391 selection and Pinned header/runtime ABI contracts OK")

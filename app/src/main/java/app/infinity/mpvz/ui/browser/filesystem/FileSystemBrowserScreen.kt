@@ -110,6 +110,7 @@ import app.infinity.mpvz.ui.browser.dialogs.FileSystemSortDialog
 import app.infinity.mpvz.ui.browser.dialogs.FolderPickerDialog
 import app.infinity.mpvz.ui.browser.dialogs.RenameDialog
 import app.infinity.mpvz.ui.browser.dialogs.VideoCompressorOverlay
+import app.infinity.mpvz.ui.browser.music.MusicPlaybackLauncher
 import app.infinity.mpvz.ui.browser.selection.rememberSelectionManager
 import app.infinity.mpvz.ui.browser.sheets.PlayLinkSheet
 import app.infinity.mpvz.ui.browser.states.EmptyState
@@ -825,7 +826,17 @@ fun FileSystemBrowserScreen(path: String? = null) {
                 navigationBarHeight = navigationBarHeight,
                 isFabVisible = isFabVisible, // Pass FAB visibility state
                 onVideoClick = { video ->
-                  MediaUtils.playFile(video, context, "search")
+                  coroutineScope.launch {
+                    val handled =
+                      MusicPlaybackLauncher.playLocalAudioPathsIfPresent(
+                        context = context,
+                        paths = listOf(video.path),
+                        fallbackTitles = listOf(video.title),
+                        currentIndex = 0,
+                        launchSource = "search",
+                      )
+                    if (!handled) MediaUtils.playFile(video, context, "search")
+                  }
                 },
                 onFolderClick = { folder ->
                   backstack.add(FileSystemDirectoryScreen(folder.path))

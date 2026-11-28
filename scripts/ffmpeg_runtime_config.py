@@ -11,10 +11,10 @@ _SWITCH = re.compile(
 )
 _FFMPEG_VERSION_MARKER = re.compile(r"(?m)^FFmpeg version (?P<version>\S+)$")
 _FFMPEG_N90_VERSION = re.compile(r"n9\.0(?:\.\d+)?(?:[-+][A-Za-z0-9._-]+)?\Z")
-_FONGMI_FFMPEG_REVISION = "f2c5162b7c4b3e8835de270ff78cecc524decad1"
-_FONGMI_FFMPEG_DATE_PREFIX = "git-2026-11-10-"
-_FONGMI_FFMPEG_VERSION_SUFFIX = f"mpvflow-fongmi-{_FONGMI_FFMPEG_REVISION}"
-_FONGMI_FFMPEG_VERSION = f"{_FONGMI_FFMPEG_DATE_PREFIX}{_FONGMI_FFMPEG_REVISION[:7]}-{_FONGMI_FFMPEG_VERSION_SUFFIX}"
+_PINNED_FFMPEG_REVISION = "f2c5162b7c4b3e8835de270ff78cecc524decad1"
+_PINNED_FFMPEG_DATE_PREFIX = "git-2026-11-10-"
+_PINNED_FFMPEG_VERSION_SUFFIX = f"mpvflow-pinned-{_PINNED_FFMPEG_REVISION}"
+_PINNED_FFMPEG_VERSION = f"{_PINNED_FFMPEG_DATE_PREFIX}{_PINNED_FFMPEG_REVISION[:7]}-{_PINNED_FFMPEG_VERSION_SUFFIX}"
 
 
 class RuntimeEvidenceError(ValueError):
@@ -52,27 +52,27 @@ def effective_ffmpeg_flags(configuration: str) -> dict[str, int]:
 
 
 def ffmpeg_runtime_version(text: str) -> str:
-    """Accept checked-in FFmpeg n9.0 or the exact commit-stamped FongMi build."""
+    """Accept checked-in FFmpeg n9.0 or the exact commit-stamped Pinned build."""
     versions = set(_FFMPEG_VERSION_MARKER.findall(text))
     if len(versions) == 1:
         version = next(iter(versions))
         if _FFMPEG_N90_VERSION.fullmatch(version):
             return version
-        if version.startswith(_FONGMI_FFMPEG_DATE_PREFIX):
-            remainder = version[len(_FONGMI_FFMPEG_DATE_PREFIX):]
-            stamp = f"-{_FONGMI_FFMPEG_VERSION_SUFFIX}"
+        if version.startswith(_PINNED_FFMPEG_DATE_PREFIX):
+            remainder = version[len(_PINNED_FFMPEG_DATE_PREFIX):]
+            stamp = f"-{_PINNED_FFMPEG_VERSION_SUFFIX}"
             abbreviation, separator, trailing = remainder.partition(stamp)
             if (
                 separator
                 and trailing == ""
-                and 7 <= len(abbreviation) <= len(_FONGMI_FFMPEG_REVISION)
-                and _FONGMI_FFMPEG_REVISION.startswith(abbreviation)
+                and 7 <= len(abbreviation) <= len(_PINNED_FFMPEG_REVISION)
+                and _PINNED_FFMPEG_REVISION.startswith(abbreviation)
             ):
-                return f"n9.1-FongMi-{_FONGMI_FFMPEG_REVISION[:8]}"
+                return f"n9.1-Pinned-{_PINNED_FFMPEG_REVISION[:8]}"
     found = ", ".join(sorted(versions)) if versions else "none"
     raise RuntimeEvidenceError(
-        "expected FFmpeg n9.0 or the exact FongMi version marker "
-        f"{_FONGMI_FFMPEG_VERSION}; found {found}"
+        "expected FFmpeg n9.0 or the exact Pinned version marker "
+        f"{_PINNED_FFMPEG_VERSION}; found {found}"
     )
 
 

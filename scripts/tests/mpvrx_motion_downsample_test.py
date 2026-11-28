@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Focused tests for the pinned FongMi analysis downsample candidate."""
+"""Focused tests for the pinned Pinned analysis downsample candidate."""
 from __future__ import annotations
 
 import argparse
@@ -13,7 +13,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
-from patch_fongmi_motion_downsample import (  # noqa: E402
+from patch_motion_downsample import (  # noqa: E402
     MARKER,
     PATCHED_BLOCK,
     UPSTREAM_MOTION_SHA256,
@@ -21,7 +21,7 @@ from patch_fongmi_motion_downsample import (  # noqa: E402
     has_antialias_filter,
     transform_source,
 )
-from patch_fongmi_paired_color_mask import (  # noqa: E402
+from patch_paired_color_mask import (  # noqa: E402
     MARKER as PAIRED_COLOR_MASK_MARKER,
     PATCHED_SUPPORT as PAIRED_COLOR_MASK_SUPPORT,
     has_paired_color_mask,
@@ -179,7 +179,7 @@ def check_pinned_source(mpv_dir: Path) -> None:
                 pass
             else:
                 raise AssertionError("patched shader was accepted without the test-workflow opt-in")
-    print(f"Pinned FongMi source transform verified: {actual} -> {patched_hash}")
+    print(f"Pinned Pinned source transform verified: {actual} -> {patched_hash}")
 
 
 def main() -> None:

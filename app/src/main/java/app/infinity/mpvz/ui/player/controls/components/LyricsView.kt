@@ -618,7 +618,7 @@ private fun SyncOffsetButton(
  * a stalled poll cannot run ahead.
  */
 @Composable
-private fun rememberSmoothedPositionMs(
+internal fun rememberSmoothedPositionMs(
   rawPositionMs: Long,
   isPlaying: Boolean,
   speed: Float,

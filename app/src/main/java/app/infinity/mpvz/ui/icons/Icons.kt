@@ -56,6 +56,11 @@ object Icons {
     val Camera by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Camera) }
     val CameraAlt by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Photo_camera) }
     val Cancel by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Cancel) }
+    val Image by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Image) }
+    val Subscriptions by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Subscriptions) }
+    val AccountCircle by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Account_circle) }
+    val RotateLeft by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Rotate_left) }
+    val RotateRight by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Rotate_right) }
     val CatchingPokemon by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Pets) }
     val Cast by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Cast) }
     val Check by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Check) }
@@ -139,6 +144,8 @@ object Icons {
     val HdrOff by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Hdr_off) }
     val HdrOn by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Hdr_on) }
     val History by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.History_2) }
+    val Speaker by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Speaker) }
+    val Bluetooth by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Bluetooth) }
     val NewReleases by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.New_releases) }
     val Home by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Home) }
     val Info by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Info) }
@@ -304,6 +311,11 @@ object Icons {
     val Camera get() = Shared.Camera
     val CameraAlt get() = Shared.CameraAlt
     val Cancel get() = Shared.Cancel
+    val Image get() = Shared.Image
+    val Subscriptions get() = Shared.Subscriptions
+    val AccountCircle get() = Shared.AccountCircle
+    val RotateLeft get() = Shared.RotateLeft
+    val RotateRight get() = Shared.RotateRight
     val CatchingPokemon get() = Shared.CatchingPokemon
     val Cast get() = Shared.Cast
     val Check get() = Shared.Check
@@ -371,6 +383,8 @@ object Icons {
     val HdrOff get() = Shared.HdrOff
     val HdrOn get() = Shared.HdrOn
     val History get() = Shared.History
+    val Speaker get() = Shared.Speaker
+    val Bluetooth get() = Shared.Bluetooth
     val NewReleases get() = Shared.NewReleases
     val Home get() = Shared.Home
     val Info get() = Shared.Info

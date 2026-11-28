@@ -80,6 +80,12 @@
   <string name="pref_nav_navidrome_summary">إظهار Navidrome أو إخفاؤه في شريط التنقل السفلي</string>
   <string name="pref_nav_audiobooks_title">إظهار تبويب الكتب الصوتية</string>
   <string name="pref_nav_audiobooks_summary">إظهار الكتب الصوتية المحلية وكتب Audiobookshelf الصوتية أو إخفاؤها في شريط التنقل السفلي</string>
+
+  <string name="pref_nav_profile_title">إظهار تبويب الملف الشخصي</string>
+  <string name="pref_nav_profile_summary">إظهار أو إخفاء قسم الملف الشخصي في شريط التنقل السفلي</string>
+  <string name="playlist_zip_option_title">تشغيل ملف مضغوط</string>
+  <string name="playlist_zip_option_summary">اختر أرشيف zip من مقاطع أو موسيقا وشغّله كقائمة تشغيل</string>
+  <string name="playlist_zip_option_failed">تعذر فتح ملف zip</string>
   <string name="pref_section_network">الشبكة</string>
   <string name="pref_media_servers_title">خوادم الوسائط</string>
   <string name="pref_media_servers_summary">إدارة اتصالات Jellyfin وNavidrome وAudiobookshelf</string>
@@ -1199,6 +1205,9 @@
   <string name="ui_view_options">خيارات العرض</string>
   <string name="ambient_glow">توهّج</string>
   <string name="ambient_style_youtube">YouTube</string>
+  <string name="ambient_style_cinema">سينما</string>
+  <string name="ambient_style_echo">صدى</string>
+  <string name="ambient_style_mirror">مرآة</string>
   <string name="ambient_color">اللون</string>
   <string name="ambient_compositing">الدمج</string>
   <string name="ambient_visual_style">النمط المرئي</string>

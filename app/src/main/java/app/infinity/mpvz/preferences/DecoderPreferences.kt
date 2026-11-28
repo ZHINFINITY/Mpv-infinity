@@ -74,8 +74,18 @@ class DecoderPreferences(
   val playbackEngine = preferenceStore.getEnum("playback_engine", PlaybackEngineMode.AUTO)
   val profile = preferenceStore.getString("mpv_profile", "fast")
   val tryHWDecoding = preferenceStore.getBoolean("try_hw_dec", true)
-  val gpuNext = preferenceStore.getBoolean("gpu_next")
-  val useVulkan = preferenceStore.getBoolean("use_vulkan", false)
+
+  /**
+   * Decoder picked in the decoder sheet (`""` = let the renderer policy decide). It has to be
+   * persisted: the sheet only changed `hwdec` on the running core, so every new file fell back to
+   * the copy-mode default and the player never reported "HW+" again.
+   */
+  val requestedDecoder = preferenceStore.getString("requested_decoder", "")
+  // Defaults match mpvRx: gpu-next + Vulkan is the only output with a MediaCodec import path,
+  // so HW+ (zero-copy) can only engage here. A build without Vulkan support resets these to
+  // OpenGL on first launch (App.kt's first-run migration).
+  val gpuNext = preferenceStore.getBoolean("gpu_next", true)
+  val useVulkan = preferenceStore.getBoolean("use_vulkan", true)
   val hdrScreenOutput = preferenceStore.getBoolean("hdr_screen_output", false)
   val hdrScreenMode = preferenceStore.getEnum("hdr_screen_mode", HdrScreenMode.OFF)
   val lastHdrMode = preferenceStore.getEnum("hdr_last_selected_mode", HdrScreenMode.BT_2020)
@@ -102,6 +112,9 @@ class DecoderPreferences(
   val contrastFilter = preferenceStore.getInt("filter_contrast")
   val hueFilter = preferenceStore.getInt("filter_hue")
   val sharpnessFilter = preferenceStore.getInt("filter_sharpness")
+
+  /** Comma-separated ids of enabled on-video effect filters (see VideoFxFilters). */
+  val videoFxFilters = preferenceStore.getString("video_fx_filters", "")
 
   // Anime4K Preferences
   val enableAnime4K = preferenceStore.getBoolean("enable_anime4k", false)

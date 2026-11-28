@@ -17,7 +17,7 @@ class MpvAspectContractTest {
     val mpvView = source("ui/player/MPVView.kt")
     val transition = viewModel.substringAfter("fun changeVideoAspect(")
       .substringBefore("fun setCustomAspectRatio(")
-    val fongmiInterpolationOptions = mpvView.substringAfter("val mpvFlowRendererOptionResult =")
+    val pinnedInterpolationOptions = mpvView.substringAfter("val mpvFlowRendererOptionResult =")
       .substringBefore("val appVideoFilters =")
 
     assertTrue(transition.contains("setMpvAspectOverrideIfChanged"))
@@ -28,19 +28,19 @@ class MpvAspectContractTest {
     assertFalse(transition.contains("unbindSurface("))
     assertFalse(transition.contains("initializeSession("))
     assertFalse(transition.contains("mpvFlowFrameInterpolation"))
-    // FongMi uses a target-FPS option; do not revive mpv's separate boolean mixer.
+    // Pinned uses a target-FPS option; do not revive mpv's separate boolean mixer.
     assertTrue(
-      fongmiInterpolationOptions.contains(
+      pinnedInterpolationOptions.contains(
         "val targetFps = if (mpvFlowFrameInterpolationEnabled) mpvFlowTargetFps else 0",
       ),
     )
     assertTrue(
-      fongmiInterpolationOptions.contains(
+      pinnedInterpolationOptions.contains(
         "PlaybackSession.setOptionString(\"motion-interpolation\", targetFps.toString())",
       ),
     )
     assertFalse(
-      fongmiInterpolationOptions.contains("PlaybackSession.setOptionString(\"interpolation\","),
+      pinnedInterpolationOptions.contains("PlaybackSession.setOptionString(\"interpolation\","),
     )
   }
 
@@ -233,5 +233,62 @@ class MpvAspectContractTest {
     assertTrue(repository.contains("rotationCache"))
     // The rotation probe is a second full container parse per file; it must be cached.
     assertTrue(repository.contains("rotationCache.getOrPut(video.uri.toString())"))
+  }
+
+  @Test fun loopbackProxiesGetFreshConnectionsWhileRemoteStreamsKeepPersistentOnes() {
+    val session = source("ui/player/PlaybackSession.kt")
+    val mpvView = source("ui/player/MPVView.kt")
+
+    // The torrent proxy and the stream relays are NanoHTTPD servers on 127.0.0.1 that close
+    // every response, so reusing the socket aborts the next range request.
+    assertTrue(PlaybackLoopbackLavfOptions.isLoopback("http://127.0.0.1:8099/stream/movie.mkv"))
+    assertTrue(PlaybackLoopbackLavfOptions.isLoopback("http://localhost:8099/stream.mkv"))
+    assertTrue(PlaybackLoopbackLavfOptions.isLoopback("http://[::1]:8099/stream.mkv"))
+    assertFalse(PlaybackLoopbackLavfOptions.isLoopback("https://cdn.example.com/a/b.m3u8"))
+    assertFalse(PlaybackLoopbackLavfOptions.isLoopback("magnet:?xt=urn:btih:abc"))
+    assertFalse(PlaybackLoopbackLavfOptions.isLoopback("file:///sdcard/movie.mkv"))
+
+    // Loopback drops persistence, remote keeps the handshake-saving default MPVView installs.
+    assertTrue(PlaybackLoopbackLavfOptions.LOOPBACK_STREAM.startsWith("http_persistent=0,"))
+    assertTrue(PlaybackLoopbackLavfOptions.LOOPBACK_DEMUXER.startsWith("http_persistent=0"))
+    assertTrue(PlaybackLoopbackLavfOptions.REMOTE_STREAM.startsWith("http_persistent=1,"))
+    // The reconnect family and http_persistent are http protocol options: libavformat applies
+    // stream-lavf-o to the opened URLContext. In demuxer-lavf-o mpv rejects each one
+    // ("Could not set AVOption reconnect='1'"), so a demuxer set carrying them silently lost the
+    // loopback policy and torrent/relay playback stalled on the first reuse.
+    val protocolOnlyKeys =
+      listOf(
+        "reconnect=1",
+        "reconnect_on_network_error=1",
+        "reconnect_streamed=1",
+        "reconnect_delay_max=1",
+        "reconnect_max_retries=8",
+        "reconnect_delay_total_max=20",
+      )
+    listOf(PlaybackLoopbackLavfOptions.REMOTE_DEMUXER, PlaybackLoopbackLavfOptions.LOOPBACK_DEMUXER)
+      .forEach { demuxer ->
+        assertTrue(demuxer, demuxer.startsWith("http_persistent="))
+        protocolOnlyKeys.forEach { key ->
+          assertFalse("demuxer-lavf-o must not carry $key: $demuxer", demuxer.contains(key))
+        }
+      }
+    // The per-file fallback must be the same value MPVView installs on init, so a switch back
+    // to a remote source restores exactly what the instance started with.
+    val streamHalves =
+      listOf(
+        "http_persistent=1,reconnect=1,reconnect_on_network_error=1,reconnect_on_http_error=5xx,",
+        "reconnect_streamed=1,reconnect_delay_max=1,reconnect_max_retries=8,",
+        "reconnect_delay_total_max=20",
+      )
+    assertTrue(streamHalves.all { mpvView.contains("\"$it\"") })
+    assertEquals(PlaybackLoopbackLavfOptions.REMOTE_STREAM, streamHalves.joinToString(""))
+    // MPVView's demuxer set carries the hls/dash persistence flag and nothing else.
+    assertTrue(mpvView.contains("\"${PlaybackLoopbackLavfOptions.REMOTE_DEMUXER}\""))
+
+    // Chosen per opened file, right before the load, so a remote -> loopback switch cannot
+    // inherit the other connection policy.
+    val beforeLoad =
+      session.substringBefore("MPVLib.command(\"loadfile\", playableUri, \"replace\", \"-1\", loadOptions)")
+    assertTrue(beforeLoad.contains("PlaybackLoopbackLavfOptions.applyFor(playableUri)"))
   }
 }

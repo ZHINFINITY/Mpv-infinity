@@ -24,6 +24,20 @@ object MusicLibraryScanner {
   private const val TAG = "MusicLibraryScanner"
   private val ALBUM_ART_BASE_URI = Uri.parse("content://media/external/audio/albumart")
 
+  @Volatile private var cachedSongs: List<MusicSong>? = null
+
+  /** Cheap per-artist lookup for the player's artist sheet; reuses the last library scan. */
+  suspend fun songsByArtist(context: Context, artist: String): List<MusicSong> {
+    val name = artist.trim()
+    if (name.isEmpty()) return emptyList()
+    val songs = cachedSongs ?: scanSongs(context)
+    return songs.filter {
+      it.artist.equals(name, ignoreCase = true) ||
+        it.artist.contains(name, ignoreCase = true) ||
+        name.contains(it.artist, ignoreCase = true)
+    }
+  }
+
   suspend fun scanSongs(context: Context): List<MusicSong> = withContext(Dispatchers.IO) {
     val songs = mutableListOf<MusicSong>()
     val projection = arrayOf(
@@ -113,6 +127,7 @@ object MusicLibraryScanner {
       Log.e(TAG, "Error scanning songs from MediaStore", e)
     }
 
+    cachedSongs = songs
     songs
   }
 

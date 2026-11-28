@@ -19,7 +19,13 @@ object GlassSurfacePolicy {
   /** Light ceiling: a bright backdrop may darken a sheet/popup this far, never into a slab. */
   const val RegularMaximumFilmAlpha = 0.50f
   /** Browser popups only, when no scene can be frosted (power/thermal): the content is unblurred. */
-  const val RegularNoSceneFilmAlpha = 0.85f
+  const val RegularNoSceneFilmAlpha = 0.90f
+  /**
+   * Extra container scrim painted over a pane that already draws its own adaptive film. Kept to a
+   * trace: a second heavy film (0.42 alpha) stacked on the pane film pushed a popup body towards
+   * ~0.63 opacity, so every dialog and bottom sheet read as a flat grey slab instead of glass.
+   */
+  const val GlassContainerScrimAlpha = 0.12f
   /** Browser popup blur floor so library/settings text behind a popup is not readable. */
   const val BrowserPopupMinimumFrostDp = 22f
   /** Frost floor behind popup/menu text at frost strength 0; the frost setting adds on top. */

@@ -107,6 +107,7 @@ data class JellyfinUiState(
   val librarySections: List<JellyfinHomeSection> = emptyList(),
   val heroItems: List<JellyfinItem> = emptyList(),
   val resumeItems: List<JellyfinItem> = emptyList(),
+  val nextUpItems: List<JellyfinItem> = emptyList(),
   val latestMovies: List<JellyfinItem> = emptyList(),
   val latestShows: List<JellyfinItem> = emptyList(),
   val latestMusic: List<JellyfinItem> = emptyList(),
@@ -166,6 +167,9 @@ class JellyfinViewModel(
   private val downloadManager: AppDownloadManager by inject()
 
   private var loadDashboardJob: Job? = null
+  // Which server/mode the current state was built for. Re-entering a tab recomposes the pager
+  // page, and without this guard every return reset the dashboard and refetched everything.
+  private var enteredMode: Pair<Long, Boolean>? = null
   private val listRequestOwner = JellyfinListRequestOwner()
   private var loadItemsJob: Job? = null
   private var searchJob: Job? = null
@@ -204,6 +208,7 @@ class JellyfinViewModel(
   }
 
   fun selectServer(server: JellyfinServer) {
+    enteredMode = null
     invalidateListRequests()
     val selected = server.copy(lastConnected = System.currentTimeMillis())
     _uiState.update {
@@ -212,6 +217,7 @@ class JellyfinViewModel(
         openLibrary = null,
         currentItems = emptyList(),
         resumeItems = emptyList(),
+        nextUpItems = emptyList(),
         heroItems = emptyList(),
         latestMovies = emptyList(),
         latestShows = emptyList(),
@@ -258,7 +264,12 @@ class JellyfinViewModel(
     loadHomeDashboard(server)
   }
 
+  /** True when the state already reflects this server and mode, so re-entry must not reload. */
+  fun hasEnteredMode(serverId: Long, musicOnly: Boolean): Boolean =
+    enteredMode == (serverId to musicOnly)
+
   fun enterMusicOnlyMode(server: JellyfinServer) {
+    enteredMode = server.id to true
     invalidateListRequests()
     loadDashboardJob?.cancel()
     loadItemsJob?.cancel()
@@ -271,6 +282,7 @@ class JellyfinViewModel(
         libraryCounts = emptyMap(),
         currentItems = emptyList(),
         resumeItems = emptyList(),
+        nextUpItems = emptyList(),
         heroItems = emptyList(),
         latestMovies = emptyList(),
         latestShows = emptyList(),
@@ -311,6 +323,7 @@ class JellyfinViewModel(
   }
 
   fun enterFullLibraryMode(server: JellyfinServer) {
+    enteredMode = server.id to false
     loadDashboardJob?.cancel()
     loadItemsJob?.cancel()
     musicLoadJob?.cancel()
@@ -322,6 +335,7 @@ class JellyfinViewModel(
         libraryCounts = emptyMap(),
         currentItems = emptyList(),
         resumeItems = emptyList(),
+        nextUpItems = emptyList(),
         heroItems = emptyList(),
         latestMovies = emptyList(),
         latestShows = emptyList(),
@@ -344,6 +358,7 @@ class JellyfinViewModel(
 
         val libsDeferred = async { jellyfinRepository.getLibraries(server) }
         val resumeDeferred = async { jellyfinRepository.getResumeItems(server, limit = 16) }
+        val nextUpDeferred = async { jellyfinRepository.getNextUpEpisodes(server, limit = 12) }
         val latestDeferred = async { jellyfinRepository.getLatestMedia(server, limit = 32) }
         val suggestionsDeferred = async { jellyfinRepository.getSuggestions(server, limit = 36) }
         val topRatedDeferred =
@@ -392,6 +407,7 @@ class JellyfinViewModel(
           }
         }
         val resumeResult = resumeDeferred.await()
+        val nextUpResult = nextUpDeferred.await()
         val latestResult = latestDeferred.await()
         val suggestionsResult = suggestionsDeferred.await()
         val topRatedResult = topRatedDeferred.await()
@@ -411,6 +427,16 @@ class JellyfinViewModel(
         }
 
         val resume = resumeRaw.filter { isVideoMedia(it) }
+
+        // Next Up: the episode that follows what was last watched in each series. Skip any
+        // episode that is already sitting in Continue Watching so the rows never duplicate.
+        val resumeIds = resume.map { it.id }.toSet()
+        val nextUp =
+          nextUpResult
+            .getOrDefault(emptyList())
+            .filter { isVideoMedia(it) && it.id !in resumeIds }
+            .distinctBy { mediaDeduplicationKey(it) }
+            .take(12)
 
         // Fetch latest media for each non-music library concurrently
         val videoLibs = libs.filter { !isMusicLibrary(it) }
@@ -510,6 +536,7 @@ class JellyfinViewModel(
             libraryCounts = libraryCounts,
             librarySections = librarySections,
             resumeItems = resume,
+            nextUpItems = nextUp,
             latestMovies = latestMovies,
             latestShows = latestShows,
             latestMusic = latestMusic,
@@ -1862,6 +1889,7 @@ class JellyfinViewModel(
           currentItems = emptyList(),
           libraries = emptyList(),
           resumeItems = emptyList(),
+        nextUpItems = emptyList(),
           heroItems = emptyList(),
           latestMovies = emptyList(),
           latestShows = emptyList(),

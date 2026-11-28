@@ -225,7 +225,7 @@ def main() -> None:
                 missing_placebo_exports = sorted(required_placebo_exports - dynamic_defined_symbols(placebo))
                 if missing_placebo_exports:
                     raise SystemExit(
-                        f"{abi} libplacebo.so is missing Vulkan API exports required by Media3 JNI/FongMi synthesis: "
+                        f"{abi} libplacebo.so is missing Vulkan API exports required by Media3 JNI/Pinned synthesis: "
                         + ", ".join(missing_placebo_exports)
                     )
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regression tests for FongMi's native motion-interpolation stats row."""
+"""Regression tests for Pinned's native motion-interpolation stats row."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -13,11 +13,11 @@ def main() -> None:
     assert 'command_path = mpv_dir / "player/command.c"' in PREPARE
     assert '{"motion-interpolation-info", mp_property_motion_info}' in PREPARE
     assert 'mp.get_property_native("motion-interpolation-info")' in PREPARE
-    assert 'FONGMI_PATCH = VENDOR / "fongmi/mpv-fongmi-android.patch"' not in PREPARE
+    assert 'PINNED_PATCH = VENDOR / "pinned/mpv-pinned-android.patch"' not in PREPARE
     assert "patch_mpvflow_stats_lua" not in PREPARE, "the retired Flow OSD injector must not be staged into MPV"
     assert "mpvFlowOsdStatsEnabled = mpvFlowFrameInterpolationActive" not in MPV_VIEW
-    assert "mpvFlowOsdStatsEnabled = false" in MPV_VIEW, "the old MPVFlow-to-app OSD bridge must remain disabled for FongMi MPV"
-    print("FongMi native motion-interpolation OSD regression tests passed")
+    assert "mpvFlowOsdStatsEnabled = false" in MPV_VIEW, "the old MPVFlow-to-app OSD bridge must remain disabled for Pinned MPV"
+    print("Pinned native motion-interpolation OSD regression tests passed")
 
 
 if __name__ == "__main__":

@@ -18,7 +18,7 @@ actual_builder_revision="$(git -C "$MPV_BUILDER_DIR" rev-parse HEAD 2>/dev/null 
 }
 actual_mpv_revision="$(git -C "$MPV_SOURCE_DIR" rev-parse HEAD 2>/dev/null || true)"
 [[ "$actual_mpv_revision" == "$EXPECTED_MPV_REVISION" ]] || {
-  echo "Unexpected MPV source revision: expected FongMi $EXPECTED_MPV_REVISION, got ${actual_mpv_revision:-not-a-git-checkout}" >&2
+  echo "Unexpected MPV source revision: expected Pinned $EXPECTED_MPV_REVISION, got ${actual_mpv_revision:-not-a-git-checkout}" >&2
   exit 1
 }
 [[ -n "${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}" ]] || { echo "ANDROID_HOME/ANDROID_SDK_ROOT is required" >&2; exit 1; }
@@ -101,7 +101,7 @@ ffmpeg_clone = (
 )
 if download.count(ffmpeg_clone) != 1:
     raise SystemExit(f"Expected one stock FFmpeg clone in {download_path}; refusing unpinned source")
-ffmpeg_fongmi_clone = (
+ffmpeg_pinned_clone = (
     "# ffmpeg\n"
     "if [ ! -d ffmpeg ]; then\n"
     "\tgit init ffmpeg\n"
@@ -116,27 +116,27 @@ ffmpeg_fongmi_clone = (
     '\texit 1\n'
     "fi"
 )
-download = download.replace(ffmpeg_clone, ffmpeg_fongmi_clone, 1)
+download = download.replace(ffmpeg_clone, ffmpeg_pinned_clone, 1)
 print(f"Pinned FongMi/FFmpeg {ffmpeg_revision} from {ffmpeg_repository}")
 
 libplacebo_clone = "[ ! -d libplacebo ] && git clone --recursive https://github.com/haasn/libplacebo"
 if download.count(libplacebo_clone) != 1:
     raise SystemExit(f"Expected one unpinned libplacebo clone in {download_path}")
 libplacebo_revision = "63659d96d1bff7d7a5a1368e9538056a193fc6fb"
-libplacebo_fongmi_clone = (
+libplacebo_pinned_clone = (
     "if [ ! -d libplacebo ]; then\n"
     "\tgit clone https://github.com/FongMi/libplacebo.git libplacebo\n"
     "fi"
 )
 download = download.replace(
     libplacebo_clone,
-    libplacebo_fongmi_clone + "\n" +
+    libplacebo_pinned_clone + "\n" +
     "git -C libplacebo remote set-url origin https://github.com/FongMi/libplacebo.git\n" +
     f"git -C libplacebo fetch --depth=1 origin {libplacebo_revision}\n" +
     "git -C libplacebo checkout --detach FETCH_HEAD\n" +
     f'libplacebo_actual="$(git -C libplacebo rev-parse HEAD)"\n' +
     f'if [ "$libplacebo_actual" != "{libplacebo_revision}" ]; then\n' +
-    '    echo "Unexpected FongMi libplacebo source: $libplacebo_actual" >&2\n' +
+    '    echo "Unexpected Pinned libplacebo source: $libplacebo_actual" >&2\n' +
     "    exit 1\n" +
     "fi\n" +
     "git -C libplacebo submodule update --init --recursive",
@@ -205,7 +205,7 @@ if ffmpeg_script.count(ffmpeg_gpl_switch) != 1:
     raise SystemExit(f"Expected one FFmpeg GPL configure switch in {ffmpeg_script_path}")
 if "--extra-version=" in ffmpeg_script:
     raise SystemExit(f"Unexpected pre-existing FFmpeg version suffix in {ffmpeg_script_path}")
-ffmpeg_version_suffix = f"mpvflow-fongmi-{ffmpeg_revision}"
+ffmpeg_version_suffix = f"mpvflow-pinned-{ffmpeg_revision}"
 ffmpeg_script_replacement = (
     "--disable-static --enable-shared --disable-gpl --disable-nonfree --enable-version3\n"
     f"\t--extra-version={ffmpeg_version_suffix}"
@@ -316,7 +316,7 @@ depinfo_path.write_text(depinfo.replace(
     "-libxml2-${v_libxml2}-libbluray-${v_libbluray}-fontconfig-",
     1,
 ))
-print(f"Excluded unused QAIRT; pinned FongMi FFmpeg {ffmpeg_revision} and LGPL libbluray 1.4.1 for the arm64 AAR ABI")
+print(f"Excluded unused QAIRT; pinned Pinned FFmpeg {ffmpeg_revision} and LGPL libbluray 1.4.1 for the arm64 AAR ABI")
 
 libbluray_build_script = '''#!/bin/bash -e
 . ../../include/path.sh
@@ -364,7 +364,7 @@ mkdir -p "$BUILDSCRIPTS/deps" "$LIBBLURAY_SOURCE"
 curl -fsSL "https://downloads.videolan.org/pub/videolan/libbluray/$LIBBLURAY_VERSION/libbluray-$LIBBLURAY_VERSION.tar.xz" -o "$LIBBLURAY_ARCHIVE"
 echo "$LIBBLURAY_SHA256  $LIBBLURAY_ARCHIVE" | sha256sum -c -
 tar -xJf "$LIBBLURAY_ARCHIVE" -C "$LIBBLURAY_SOURCE" --strip-components=1
-"$ROOT/scripts/patches/mpvlibandroid-fongmi/patch-libbluray.sh" "$LIBBLURAY_SOURCE"
+"$ROOT/scripts/patches/mpvlibandroid-pinned/patch-libbluray.sh" "$LIBBLURAY_SOURCE"
 rm -f "$LIBBLURAY_ARCHIVE"
 
 cd "$BUILDSCRIPTS"
@@ -475,7 +475,7 @@ shutil.copytree(source, target)
 files = sorted(path for path in target.rglob("*") if path.is_file())
 if not files:
     raise SystemExit(f"No installed libplacebo headers found under {target}")
-manifest = destination / "FONGMI_HEADERS.sha256"
+manifest = destination / "PINNED_HEADERS.sha256"
 manifest.write_text(
     "".join(
         f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.relative_to(destination).as_posix()}\n"
@@ -483,7 +483,7 @@ manifest.write_text(
     ),
     encoding="utf-8",
 )
-print(f"Staged {len(files)} matching FongMi API-391 libplacebo headers: {destination}")
+print(f"Staged {len(files)} matching Pinned API-391 libplacebo headers: {destination}")
 PY
 APK="$(find "$MPV_BUILDER_DIR/app/build/outputs/apk" -type f -path '*/debug/*' -name '*arm64-v8a-debug*.apk' -print -quit)"
 if [[ -z "$APK" ]]; then

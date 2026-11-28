@@ -26,6 +26,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,6 +53,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import android.os.Build
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearOutSlowInEasing
@@ -313,6 +315,15 @@ private object GlassWaterRippleEffects {
     }
 }
 
+/** Pure switch-thumb 3D depth geometry used by rendering and unit tests (mpvRx-style). */
+object GlassSwitchDepthPolicy {
+  /** Thumb tilts toward the pressed edge like a physical rocker. */
+  fun rotationX(pressProgress: Float): Float = pressProgress.coerceIn(0f, 1f) * 8f
+
+  /** Pressed thumb squashes slightly into the track. */
+  fun scaleY(pressProgress: Float): Float = 1f - pressProgress.coerceIn(0f, 1f) * .08f
+}
+
 @Composable
 fun GlassSwitch(
   checked: Boolean,
@@ -353,17 +364,40 @@ fun GlassSwitch(
   val switchInteraction = remember { MutableInteractionSource() }
   val switchPressed by switchInteraction.collectIsPressedAsState()
   val switchDragged by switchInteraction.collectIsDraggedAsState()
+  val haptics = LocalHapticFeedback.current
+  val handleToggle: (Boolean) -> Unit = { next ->
+    if (enabled) {
+      haptics.performHapticFeedback(
+        if (next) HapticFeedbackType.ToggleOn else HapticFeedbackType.ToggleOff,
+      )
+      onCheckedChange?.invoke(next)
+    }
+  }
   val lensMotionSpec = if (reducedMotion) snap<Float>() else spring<Float>(dampingRatio = 0.62f, stiffness = Spring.StiffnessMediumLow)
   val lensProgress by animateFloatAsState(
     if (lensEnabled && !reducedMotion && (switchPressed || switchDragged)) 1f else 0f,
     lensMotionSpec, label = "switchLens",
   )
+  // 3D depth: the thumb rocks on its pressed edge and settles with a spring, mpvRx-style.
+  val depthSpec = if (reducedMotion) snap<Float>() else spring<Float>(dampingRatio = 0.55f, stiffness = Spring.StiffnessMedium)
+  val depthPress by animateFloatAsState(
+    if (!reducedMotion && (switchPressed || switchDragged)) 1f else 0f, depthSpec, label = "switchDepth",
+  )
+  val depthDensity = androidx.compose.ui.platform.LocalDensity.current
+  val depthCamera = with(depthDensity) { 24.dp.toPx() }
+  val depthLayer = Modifier.graphicsLayer {
+    cameraDistance = depthCamera
+    rotationX = GlassSwitchDepthPolicy.rotationX(depthPress)
+    scaleY = GlassSwitchDepthPolicy.scaleY(depthPress)
+  }
   val trackBackdrop = rememberLayerBackdrop()
   val trackOptics = Modifier.glassTrackOptics(opacity, highlight, 16.dp, height = GlassControlGeometryPolicy.switchTrackHeightDp.dp,
     checked = checked, overhang = GlassControlGeometryPolicy.switchTrackOverhangDp().dp)
   val glassThumb: @Composable () -> Unit = {
     val thumbShape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
-    val base = Modifier.size(width = GlassControlGeometryPolicy.switchThumbWidthDp.dp, height = GlassControlGeometryPolicy.switchThumbHeightDp.dp)
+    val base = Modifier
+      .size(width = GlassControlGeometryPolicy.switchThumbWidthDp.dp, height = GlassControlGeometryPolicy.switchThumbHeightDp.dp)
+      .then(depthLayer)
     Box(
       if (lensEnabled) base
         .lensControlThumb(trackBackdrop, thumbShape, if (checked) contrast.checkedThumb else contrast.uncheckedThumb) { lensProgress }
@@ -378,13 +412,13 @@ fun GlassSwitch(
     Box(modifier, contentAlignment = Alignment.Center) {
       Box(Modifier.matchParentSize().layerBackdrop(trackBackdrop).then(trackOptics))
       Switch(
-        checked = checked, onCheckedChange = onCheckedChange, enabled = enabled,
+        checked = checked, onCheckedChange = if (enabled) handleToggle else null, enabled = enabled,
         colors = transparent, thumbContent = glassThumb, interactionSource = switchInteraction,
       )
     }
   } else {
     Switch(
-      checked = checked, onCheckedChange = onCheckedChange, enabled = enabled,
+      checked = checked, onCheckedChange = if (enabled) handleToggle else null, enabled = enabled,
       colors = if (glass) transparent else tuned,
       thumbContent = if (!glass) thumbContent else glassThumb,
       interactionSource = switchInteraction,
