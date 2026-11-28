@@ -556,11 +556,26 @@ data class VideoListScreen(
                 }
               } else if (isAudio && MusicPlaybackLauncher.isEligibleLocalMusicPath(video.path)) {
                 coroutineScope.launch {
+                  // Playlist mode queues the whole folder (tapped item at its position);
+                  // a single-item prepared queue would defeat PlayerActivity's folder
+                  // playlist generation because the staged queue is restored first.
+                  val paths =
+                    if (playlistMode) {
+                      val folderPaths =
+                        sortedVideosWithInfo.map { it.video }
+                          .filter { MusicPlaybackLauncher.isEligibleLocalMusicPath(it.path) }
+                          .map { it.path }
+                      if (video.path in folderPaths) folderPaths else listOf(video.path)
+                    } else {
+                      listOf(video.path)
+                    }
                   MusicPlaybackLauncher.playLocalAudioPathsIfPresent(
                     context = context,
-                    paths = listOf(video.path),
-                    fallbackTitles = listOf<String?>(video.title),
-                    currentIndex = 0,
+                    paths = paths,
+                    fallbackTitles = paths.map { path ->
+                      sortedVideosWithInfo.firstOrNull { it.video.path == path }?.video?.title
+                    },
+                    currentIndex = paths.indexOf(video.path).coerceAtLeast(0),
                     launchSource = "video_list_search",
                   ) || run { MediaUtils.playFile(video, context, "video_list_search"); true }
                 }

@@ -1039,6 +1039,9 @@ class PlayerViewModel(
       currentPreset = audioPreferences.equalizerPreset.get(),
       bandGains = audioPreferences.equalizerBandGains.get(),
       volumeBoostDb = audioPreferences.equalizerVolumeBoostDb.get(),
+      toneX = audioPreferences.equalizerToneX.get(),
+      toneY = audioPreferences.equalizerToneY.get(),
+      toneFocused = audioPreferences.equalizerToneFocused.get(),
     )
 
   private fun persistEqualizerState(state: EqualizerState) {
@@ -1047,6 +1050,9 @@ class PlayerViewModel(
     audioPreferences.equalizerPreset.set(state.currentPreset)
     audioPreferences.equalizerBandGains.set(state.bandGains)
     audioPreferences.equalizerVolumeBoostDb.set(state.volumeBoostDb)
+    audioPreferences.equalizerToneX.set(state.toneX)
+    audioPreferences.equalizerToneY.set(state.toneY)
+    audioPreferences.equalizerToneFocused.set(state.toneFocused)
   }
 
   data class LyricsUiState(
